@@ -1,76 +1,85 @@
-# rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
-# falls back to the generic defaults in riglib/config.py. Nothing below is personal —
-# these are placeholder examples; replace with your paths / IPs / device names / MACs.
+# rig.toml — copy this to `rig.toml` (git-ignored) and adapt to YOUR rig. Everything
+# omitted falls back to the defaults in riglib/config.py.
+#
+# This is a COMPLETE, realistic example (a funk-band keyboard rig) so you can see every
+# feature wired up. It is anonymised — no real paths, IPs, MACs or ntfy topic. Replace
+# the placeholders with your own.
 
 [set]
 ableton_app = "/Applications/Ableton Live 12 Suite.app"
-project     = "/path/to/your/Gig Set.als"    # the .als preflight opens
+project     = "/Users/you/Music/Gig Sets/Funk Set.als"   # the .als preflight opens
 open_after_launch = true
 
 [launch]
+# Launch order (Bome owns the MIDI plumbing, so it comes up before the set).
 apps = [
   "/Applications/Bome MIDI Translator Pro.app",
   "/Applications/Bome Network.app",
   "/Applications/Elgato Stream Deck.app",
-  # "/Applications/Stage Traxx 4.app",
-  # "/Applications/Amphetamine.app",
+  "/Applications/Stage Traxx 4.app",
+  "/Applications/Amphetamine.app",
 ]
 settle_seconds = 2
 amphetamine_session = true   # start an anti-sleep session during bring-up
 
 [checks]
-apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
-midi_required = ["Ableton Loopback"]      # MIDI input ports that MUST exist
-breath_port   = "Breath Controller"       # breath controller's MIDI input name
-audio_interface = "USB Audio"             # your interface's CoreAudio name
-default_output_match = "MacBook"          # macOS default output should be the Mac
-# Network (your stage + studio):
-stage_network = "192.168.1"               # subnet the Mac must be on
-studio_router = "192.168.1.1"             # reachable → "auto" mode = studio
-# USB devices that must be plugged: {label = product-name substring} (ioreg).
+# label -> regex matched against the full process command line (pgrep -f).
+apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player", "Stage Traxx" = "Stage Traxx" }
+midi_required = ["Ableton Loopback"]       # MIDI input ports that MUST exist
+breath_port   = "Breath Controller"        # breath controller's MIDI input name
+audio_interface = "RME Fireface UCX"       # your audio interface's CoreAudio name
+default_output_match = "MacBook"           # macOS default output should be the Mac
+stage_network = "192.168.1"                # subnet the Mac must be on
+studio_router = "192.168.1.1"              # reachable → "auto" mode = studio
+# USB devices that must be plugged: {label = product-name substring} (via ioreg).
 usb_devices = { "Stream Deck XL" = "Stream Deck XL", "Stream Deck Plus" = "Stream Deck Plus" }
 
-# Keep-awake app holding a power assertion (optional). `owner` = the name shown in
-# `pmset -g assertions`. Checked only in modes with require_awake = true.
-# [checks.keepawake]
-# process = "Amphetamine.app/Contents/MacOS/Amphetamine"
-# owner   = "Amphetamine"
-# label   = "Anti-veille"
-# icon    = "☕"
+# Keep-awake app holding a power assertion. `owner` = the name in `pmset -g assertions`.
+# Checked only in modes with require_awake = true.
+[checks.keepawake]
+process = "Amphetamine.app/Contents/MacOS/Amphetamine"
+owner   = "Amphetamine"
+label   = "Amphetamine (anti-veille)"
+icon    = "☕"
 
-# A value read from an app's log, compared to the mode's `live_output` (optional).
-# pattern must have ONE capture group.
-# [checks.output_probe]
-# log_glob = "~/Library/Preferences/Ableton/Live*/Log.txt"
-# pattern  = "Audio In Out: Output Device: (.+)"
-# label    = "Sortie audio"
-# icon     = "🎚️"
+# A value read from an app's log, compared to the mode's `live_output`. Here: the audio
+# output device Ableton logs on startup. `pattern` needs one capture group.
+[checks.output_probe]
+log_glob = "~/Library/Preferences/Ableton/Live*/Log.txt"
+pattern  = "Audio In Out: Output Device: (.+)"
+label    = "Ableton output"
+icon     = "🎚️"
 
-# Remote links = an ESTABLISHED TCP connection on a port (e.g. iPhone ↔ a network app).
-# [[checks.links]]
-# name = "iPhone ↔ Bome"
-# port = 37000
-# icon = "📱"
+# Remote links = an ESTABLISHED TCP connection on a port. Here: an iPhone (running a
+# network-MIDI app) connecting to Bome Network's port.
+[[checks.links]]
+name = "iPhone ↔ Bome"
+port = 37000
+icon = "📱"
 
-# Hosts that must respond — lamps, modem, mixer, anything. The engine just pings them
-# (by `ip`, or by `mac` resolved via ARP); the name + icon carry the meaning.
-# [[checks.hosts]]
-# name = "Modem"
-# ip   = "192.168.1.1"
-# severity = "fail"
-# icon = "📡"
-# [[checks.hosts]]
-# name = "Lampe L1"
-# mac  = "aa:bb:cc:dd:ee:ff"
-# icon = "💡"
+# Hosts that must respond — a stage modem (by IP, blocking) and two smart lamps (by MAC,
+# resolved via ARP, warn). The engine just pings; the name + icon carry the meaning.
+[[checks.hosts]]
+name = "Stage modem"
+ip   = "192.168.1.1"
+severity = "fail"
+icon = "📡"
+[[checks.hosts]]
+name = "Lamp L1"
+mac  = "aa:bb:cc:00:00:01"
+icon = "💡"
+[[checks.hosts]]
+name = "Lamp L2"
+mac  = "aa:bb:cc:00:00:02"
+icon = "💡"
 
 [mode]
 default = "auto"    # boots live; flips to studio when studio_router answers
 
 [modes.live]
-keyboard_ok   = ["Piano"]             # your main keyboard's MIDI port (green if present)
-keyboard_warn = []                    # fallback keyboards (yellow if only these)
-live_output   = ["Piano"]            # Ableton must output here on stage
+keyboard_ok   = ["P-225"]              # main stage keyboard (green if present)
+keyboard_warn = []                     # fallback keyboards (yellow if only these)
+live_output   = ["P-225"]              # Ableton must output here on stage
 require_awake = true
 breath_severity = "fail"
 interface_severity = "fail"
@@ -79,9 +88,9 @@ iphone_power_severity = "fail"
 # (Mac plugged but battery still draining = always FAIL, both modes.)
 
 [modes.studio]
-keyboard_ok   = ["Piano"]
-keyboard_warn = ["microKey"]
-live_output   = ["MacBook", "USB Audio"]
+keyboard_ok   = ["Digital Piano", "P-225"]   # preferred desk keyboard → green
+keyboard_warn = ["microKey"]                 # a mini-keyboard alone → warning
+live_output   = ["MacBook", "RME Fireface UCX"]
 require_awake = false
 breath_severity = "warn"
 interface_severity = "warn"
@@ -99,7 +108,7 @@ recovery_alerts = true
 server   = "https://ntfy.sh"
 topic    = ""            # e.g. "my-rig-9d3f2a" — leave empty to disable push
 priority = "high"
-insecure = false         # set true only if your LAN does SSL interception (self-signed)
+insecure = false         # true only if your LAN does SSL interception (self-signed cert)
 
 [alerts.streamdeck]
 # Emits a note on a dead-end IAC port. Create it once: Audio MIDI Setup → IAC Driver
@@ -108,20 +117,21 @@ port    = "rig-alert"
 channel = 15
 note    = 60
 
+# Signal-flow diagram. Each node references check keys; its colour = the worst status
+# among them. Positions are on a 764×300 canvas. Empty nodes list → diagram hidden.
+[diagram]
+edges = [["iphone","bome"],["streamdeck","bome"],["keyboard","daw"],["bome","daw"],["traxx","daw"],["daw","out"]]
+nodes = [
+  {id="iphone",    label="iPhone",       icon="📱", x=88,  y=56,  keys=["link:iPhone ↔ Bome"]},
+  {id="streamdeck",label="Stream Deck",  icon="🎛️", x=88,  y=150, keys=["usb:Stream Deck XL","usb:Stream Deck Plus","app:Stream Deck"]},
+  {id="keyboard",  label="Keyboard",     icon="🎹", x=88,  y=244, keys=["kbd:keyboard"]},
+  {id="bome",      label="Bome",         icon="🔀", x=312, y=103, keys=["app:Bome MIDI Translator","app:Bome Network"]},
+  {id="traxx",     label="Stage Traxx",  icon="▶️", x=312, y=244, keys=["app:Stage Traxx"]},
+  {id="daw",       label="Ableton Live", icon="🎵", x=520, y=150, keys=["app:Ableton","midi:Ableton Loopback"]},
+  {id="out",       label="Audio out",    icon="🔊", x=684, y=150, keys=["audio","audio:probe"]},
+]
+
 # Dashboard icons are config data (defaults in riglib/config.py). Override any here —
-# keyed by check key or prefix (exact wins, else longest prefix). A host's own `icon`
-# always wins for that host.
+# keyed by check key or prefix (exact wins, else longest prefix).
 # [icons]
 # "app:Ableton" = "🎹"
-# "sys:vpn" = "🛡️"
-
-# Signal-flow diagram (optional). nodes reference check keys; a node is coloured by
-# the worst status among its keys. Positions are on a 764×300 canvas. Empty → hidden.
-# [diagram]
-# edges = [["deck","daw"],["daw","out"]]
-# nodes = [
-#   {id="deck", label="Stream Deck", icon="🎛️", x=110, y=150, keys=["usb:Stream Deck XL"]},
-#   {id="daw",  label="Ableton",     icon="🎵", x=380, y=150, keys=["app:Ableton"]},
-#   {id="out",  label="Sortie",      icon="🔊", x=650, y=150, keys=["audio"]},
-# ]
-
