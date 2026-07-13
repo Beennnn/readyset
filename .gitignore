@@ -1,0 +1,7 @@
+# private local config (holds your machine specifics)
+rig.toml
+__pycache__/
+*.pyc
+logs/
+audiolevel/audiolevel
+menubar/RigMenuBar.app

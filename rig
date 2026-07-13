@@ -1,0 +1,199 @@
+#!/usr/bin/env python3
+"""rig — bring-up + live monitoring for the stage keyboard rig.
+
+  rig preflight     launch the apps in order, open the gig set, then verify → checklist
+  rig check         verify only (no launch), one-shot checklist + exit code
+  rig monitor       watch continuously; alert the moment something dies (and recovers)
+  rig alert-test    fire a test alert through every active backend
+
+Exit codes for check/preflight: 0 all-ok, 1 warnings only, 2 a required check failed.
+Config: bin/rig.toml (copy from rig.example.toml). Python 3.11+, needs `mido`.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from datetime import datetime
+
+from riglib import alerts, checks, config, launch, server
+
+
+def _hr() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _print_results(results: list[checks.Result]) -> None:
+    width = max((len(r.label) for r in results), default=0)
+    for r in results:
+        detail = f"  — {r.detail}" if r.detail else ""
+        print(f"  {r.icon} {r.label.ljust(width)}{detail}")
+
+
+def _summary_line(results: list[checks.Result]) -> tuple[str, int]:
+    status = checks.worst(results)
+    fails = sum(1 for r in results if r.status == checks.FAIL)
+    warns = sum(1 for r in results if r.status == checks.WARN)
+    if status == checks.OK:
+        return "✅ Rig prêt — tout est vert.", 0
+    if status == checks.WARN:
+        return f"⚠️  Rig jouable — {warns} avertissement(s) (matériel optionnel).", 1
+    return f"❌ Rig PAS prêt — {fails} bloquant(s), {warns} avertissement(s).", 2
+
+
+def _mode(cfg: dict, args) -> str:
+    req = getattr(args, "mode", None) or cfg.get("mode", {}).get("default", "auto")
+    return checks.resolve_mode(cfg, req)
+
+
+def cmd_check(cfg: dict, args) -> int:
+    mode = _mode(cfg, args)
+    print(f"[{_hr()}] Vérification du rig — mode {mode}\n")
+    results = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(results)
+    line, code = _summary_line(results)
+    print(f"\n{line}")
+    return code
+
+
+def cmd_preflight(cfg: dict, args) -> int:
+    dry = getattr(args, "dry_run", False)
+    mode = _mode(cfg, args)
+    tag = " (DRY-RUN — rien n'est lancé)" if dry else ""
+    print(f"[{_hr()}] Mise en place du rig — mode {mode}{tag}\n")
+    launch.bring_up(cfg, log=print, dry_run=dry)
+    print(f"\n[{_hr()}] Vérification finale…\n")
+    results = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(results)
+    line, code = _summary_line(results)
+    print(f"\n{line}")
+    if code == 2:
+        active = cfg["monitor"]["alerts"]
+        alerts.Alerter(cfg, active, dry_run=dry).notify(
+            "Rig — préflight", "Un check bloquant a échoué au démarrage.", "fail")
+    return code
+
+
+def cmd_monitor(cfg: dict, args) -> int:
+    active = args.alerts.split(",") if args.alerts else cfg["monitor"]["alerts"]
+    interval = args.interval or cfg["monitor"]["interval"]
+    audio_every = cfg["monitor"]["audio_every"]
+    recovery = cfg["monitor"].get("recovery_alerts", True)
+    dry = getattr(args, "dry_run", False)
+    mode = _mode(cfg, args)
+    alerter = alerts.Alerter(cfg, active, dry_run=dry)
+
+    print(f"[{_hr()}] Monitoring live — mode {mode} — alertes: {', '.join(active)} — "
+          f"toutes les {interval}s (Ctrl-C pour arrêter)\n")
+
+    # Baseline: show the full checklist once and seed state. If the rig is
+    # already broken at startup, alert now — don't wait for a transition.
+    baseline = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(baseline)
+    prev: dict[str, str] = {r.key: r.status for r in baseline}
+    if checks.worst(baseline) == checks.FAIL:
+        broken = [r.label for r in baseline if r.status == checks.FAIL]
+        alerter.notify("🎹 Rig — démarrage KO", "En panne au lancement : " + ", ".join(broken), "fail")
+    print()
+    cycle = 1
+    try:
+        while True:
+            with_audio = (cycle % audio_every == 0)
+            results = checks.run_all(cfg, mode, with_audio=with_audio)
+            transitions = []
+            for r in results:
+                was = prev.get(r.key)
+                if was is not None and was != r.status:
+                    transitions.append((r, was))
+                prev[r.key] = r.status
+
+            for r, was in transitions:
+                if r.status == checks.FAIL:
+                    alerter.notify("🎹 Rig — panne", f"{r.label} : {r.detail or 'HS'}", "fail")
+                    print(f"[{_hr()}] ❌ {r.label} → FAIL ({r.detail})")
+                elif was == checks.FAIL and r.status == checks.OK and recovery:
+                    alerter.notify("🎹 Rig — rétabli", f"{r.label} de nouveau OK", "ok")
+                    print(f"[{_hr()}] ✅ {r.label} → rétabli")
+                elif r.status == checks.WARN:
+                    print(f"[{_hr()}] ⚠️  {r.label} ({r.detail})")
+
+            status = checks.worst(results)
+            if cycle % 12 == 0:   # heartbeat so silence never looks like a hang
+                icon = {"ok": "✅", "warn": "⚠️", "fail": "❌"}[status]
+                fails = sum(1 for r in results if r.status == checks.FAIL)
+                print(f"[{_hr()}] {icon} heartbeat — {len(results)} checks, {fails} en panne")
+
+            cycle += 1
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print(f"\n[{_hr()}] Monitoring arrêté.")
+        return 0
+
+
+def cmd_serve(cfg: dict, args) -> int:
+    if getattr(args, "mode", None):
+        server._MODE["requested"] = args.mode
+    server.serve(cfg, port=args.port, open_browser=not args.no_open)
+    return 0
+
+
+def cmd_alert_test(cfg: dict, args) -> int:
+    active = args.alerts.split(",") if args.alerts else cfg["monitor"]["alerts"]
+    dry = getattr(args, "dry_run", False)
+    print(f"[{_hr()}] Test des alertes: {', '.join(active)}{' (dry-run)' if dry else ''}")
+    alerts.Alerter(cfg, active, dry_run=dry).notify(
+        "🎹 Rig — test", "Ceci est une alerte de test.", "warn")
+    print("Envoyé. Vérifie la notif / le téléphone / le bouton Stream Deck.")
+    return 0
+
+
+def main(argv=None) -> int:
+    # Line-buffer stdout so `rig monitor >log` streams live instead of blocking.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+    cfg = config.load()
+    p = argparse.ArgumentParser(prog="rig", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def _add_mode(pr):
+        pr.add_argument("--mode", choices=["auto", "live", "studio"],
+                        help="rig ciblé (défaut: auto — studio si le routeur 192.168.1.1 répond)")
+
+    pf = sub.add_parser("preflight", help="lance les apps + ouvre le set + vérifie")
+    pf.add_argument("--dry-run", action="store_true",
+                    help="montre ce qui serait lancé/ouvert sans rien exécuter")
+    _add_mode(pf)
+    _add_mode(sub.add_parser("check", help="vérifie seulement (pas de lancement)"))
+
+    m = sub.add_parser("monitor", help="surveille en continu + alerte")
+    m.add_argument("--alerts", help="backends (csv): macos,push,streamdeck")
+    m.add_argument("--interval", type=int, help="secondes entre deux checks")
+    m.add_argument("--dry-run", action="store_true",
+                   help="surveille mais n'envoie aucune alerte (les affiche)")
+    _add_mode(m)
+
+    t = sub.add_parser("alert-test", help="envoie une alerte de test")
+    t.add_argument("--alerts", help="backends (csv) à tester")
+    t.add_argument("--dry-run", action="store_true", help="n'envoie rien, affiche")
+
+    s = sub.add_parser("serve", help="dashboard web d'état + fix/relaunch")
+    s.add_argument("--port", type=int, default=8765, help="port local (défaut 8765)")
+    s.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
+    _add_mode(s)
+
+    args = p.parse_args(argv)
+    return {
+        "preflight": cmd_preflight,
+        "check": cmd_check,
+        "monitor": cmd_monitor,
+        "alert-test": cmd_alert_test,
+        "serve": cmd_serve,
+    }[args.cmd](cfg, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
