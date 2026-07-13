@@ -1,14 +1,14 @@
 #!/bin/bash
 # Install the login agents:
-#   com.stage-rig.dashboard — auto-starts `rig serve` (dashboard on :8765)
-#   com.stage-rig.menubar   — 🎹 menu-bar icon that opens the dashboard
+#   com.readyset.dashboard — auto-starts `rig serve` (dashboard on :8765)
+#   com.readyset.menubar   — 🎹 menu-bar icon that opens the dashboard
 # Both are relaunched by launchd if they die.
 #   ./launchd/install.sh          # build menubar + install/start both
 #   ./launchd/install.sh remove   # stop + uninstall both
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-LABELS=(com.stage-rig.dashboard com.stage-rig.menubar)
+LABELS=(com.readyset.dashboard com.readyset.menubar)
 UID_="$(id -u)"
 
 if [ "${1:-}" = "remove" ]; then

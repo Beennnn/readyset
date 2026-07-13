@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.stage-rig.dashboard</string>
+    <string>com.readyset.dashboard</string>
     <!-- bash -lc so the shebang's `env python3` resolves to the interpreter that has mido -->
     <key>ProgramArguments</key>
     <array>

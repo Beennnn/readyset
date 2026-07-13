@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.stage-rig.menubar</string>
+    <string>com.readyset.menubar</string>
     <!-- bash -lc wrapper: launchd refuses to bootstrap the bare GUI Mach-O directly
          (I/O error 5), but the same binary launched through a login shell works. -->
     <key>ProgramArguments</key>

@@ -1,4 +1,4 @@
-# stage-rig
+# readyset
 
 A config-driven **readiness manager** for a set of apps, devices and network endpoints
 on macOS. Declare the state your setup should be in; the tool brings it up, checks it,
@@ -10,7 +10,7 @@ devices, hosts, commands, profiles, icons, topology — lives in **`rig.toml`**.
 names nothing proprietary.
 
 ```bash
-cd stage-rig
+cd readyset
 cp rig.example.toml rig.toml     # then edit for your setup
 
 ./rig preflight     # launch the apps, run post-launch commands, open the project, verify
