@@ -19,7 +19,7 @@ _MODE = {"requested": None}    # None → use cfg default; else "auto"|"live"|"s
 _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't detect)
 
 _GROUP = {"app:": "Apps", "usb:": "Stream Deck", "kbd:": "Clavier & jeu",
-          "net:": "Réseau", "lamp:": "Lampes", "sys:": "Système",
+          "net:": "Réseau", "host:": "Réseau", "sys:": "Système",
           "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
 
 
@@ -227,9 +227,9 @@ function iconFor(k){
   if(k.startsWith("lamp:"))return"💡";
   if(k.startsWith("kbd:breath"))return"🌬️";
   if(k.startsWith("kbd:"))return"🎹";
-  if(k.startsWith("net:modem"))return"📡";
   if(k.startsWith("net:stage"))return"🌐";
   if(k.startsWith("net:"))return"📱";
+  if(k.startsWith("host:"))return"📡";
   if(k.startsWith("sys:vpn"))return"🔒";
   if(k.startsWith("sys:output"))return"💻";
   if(k.startsWith("sys:amphetamine"))return"☕";
@@ -293,7 +293,7 @@ async function refresh(){
   if(!bad.length){prob.innerHTML='<div class="allok">✅ Tout est vert — rien à corriger.</div>';}
   else{prob.innerHTML="";for(const it of bad){
     const row=document.createElement("div");row.className="row "+it.status;
-    row.innerHTML=`<div class="ic">${iconFor(it.key)}</div>
+    row.innerHTML=`<div class="ic">${it.glyph||iconFor(it.key)}</div>
       <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
@@ -305,7 +305,7 @@ async function refresh(){
   document.getElementById("oksum").textContent=good.length?`▸ ${good.length} checks OK (déplier)`:"";
   const okc=document.getElementById("okchips");okc.innerHTML="";
   for(const it of good){const c=document.createElement("span");c.className="chip";
-    c.innerHTML=`${iconFor(it.key)} ${it.label}`;c.title=it.detail||"";
+    c.innerHTML=`${it.glyph||iconFor(it.key)} ${it.label}`;c.title=it.detail||"";
     if(it.key==="sys:iphonecharge"){c.style.cursor="pointer";c.title="cliquer pour réinitialiser";
       c.onclick=()=>manualSet("iphone_charge",false);}
     okc.appendChild(c);}

@@ -31,6 +31,7 @@ class Result:
     label: str      # human label
     status: str     # ok | warn | fail
     detail: str = ""
+    glyph: str = ""  # optional per-item icon (e.g. from config); "" = dashboard derives it
 
     @property
     def icon(self) -> str:
@@ -41,8 +42,8 @@ class Result:
         return self.status == OK
 
     def to_dict(self) -> dict:
-        return {"key": self.key, "label": self.label,
-                "status": self.status, "detail": self.detail}
+        return {"key": self.key, "label": self.label, "status": self.status,
+                "detail": self.detail, "glyph": self.glyph}
 
 
 def _pgrep(pattern: str) -> bool:
@@ -209,13 +210,6 @@ def check_stage_network(cfg: dict) -> Result:
                   OK if ip else FAIL, ip or "pas d'IP sur ce subnet")
 
 
-def check_modem(cfg: dict) -> Result:
-    host = cfg["checks"].get("modem_host", "192.168.1.1")
-    up = _ping(host)
-    return Result("net:modem", f"Modem « {host} »", OK if up else FAIL,
-                  "répond" if up else "pas de réponse")
-
-
 def check_streamdeck(cfg: dict) -> list[Result]:
     """Each Stream Deck must be present on USB (via ioreg — SPUSBDataType is empty on
     this Mac). 'Asleep' (dimmed screen) is an app-internal state we can't read."""
@@ -235,8 +229,8 @@ def check_streamdeck(cfg: dict) -> list[Result]:
 
 
 def _ip_for_mac(mac: str) -> str | None:
-    """Resolve a device's current IP from its MAC via the ARP table (the lamps get
-    reserved-but-variable DHCP addresses, so MAC is the stable key)."""
+    """Resolve a host's current IP from its MAC via the ARP table (for devices on
+    reserved-but-variable DHCP addresses, the MAC is the stable key)."""
     target = mac.lower().replace("-", ":")
     target = ":".join(p.zfill(2) for p in target.split(":"))
     try:
@@ -254,20 +248,27 @@ def _ip_for_mac(mac: str) -> str | None:
     return None
 
 
-def check_lamps(cfg: dict, mode: str) -> list[Result]:
-    """Stage lamps L1/L2 (Tuya). Found by MAC in the ARP table, then pinged. Warn-level
-    (ambiance, not sound-critical); ARP only sees them once they've talked on the net."""
-    sev = cfg["checks"].get("lamp_severity", WARN)
+def check_hosts(cfg: dict) -> list[Result]:
+    """Named network hosts that must respond. The engine is domain-agnostic — a host
+    is just a thing that answers on the network; whether it's a lamp, a modem or a
+    mixer lives only in the name. Each host has an `ip` (pinged directly) OR a `mac`
+    (resolved via ARP then pinged), an optional `severity` (default warn) and an
+    optional `icon` (emoji shown in the dashboard)."""
     res = []
-    for lamp in cfg["checks"].get("lamps", []):
-        name = lamp.get("name", "?")
-        ip = _ip_for_mac(lamp.get("mac", ""))
+    for h in cfg["checks"].get("hosts", []):
+        name = h.get("name", "?")
+        sev = h.get("severity", WARN)
+        glyph = h.get("icon", "")
+        by_ip = bool(h.get("ip"))
+        ip = h.get("ip") or _ip_for_mac(h.get("mac", ""))
+        key = f"host:{name}"
         if ip and _ping(ip):
-            res.append(Result(f"lamp:{name}", f"Lampe {name}", OK, f"connectée ({ip})"))
+            res.append(Result(key, name, OK, f"répond ({ip})", glyph))
         elif ip:
-            res.append(Result(f"lamp:{name}", f"Lampe {name}", sev, f"vue ({ip}) mais ne répond pas"))
+            res.append(Result(key, name, sev, f"vu ({ip}) mais ne répond pas", glyph))
         else:
-            res.append(Result(f"lamp:{name}", f"Lampe {name}", sev, "introuvable (éteinte ?)"))
+            res.append(Result(key, name, sev,
+                              "pas de réponse" if by_ip else "introuvable (ARP)", glyph))
     return res
 
 
@@ -429,8 +430,8 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     m = cfg["modes"][mode]
     results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
     results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
-    results += [check_stage_network(cfg), check_modem(cfg)]
-    results += check_lamps(cfg, mode)
+    results += [check_stage_network(cfg)]
+    results += check_hosts(cfg)
     results += [check_bome_iphone(cfg), check_vpn(cfg)]
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]

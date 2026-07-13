@@ -28,15 +28,21 @@ bome_network_port = 37000                 # Bome Network port; ESTABLISHED = rem
 iphone_host = ""                          # require a specific peer IP, or empty = any
 # Network (your stage + studio):
 stage_network = "192.168.1"               # subnet the Mac must be on
-modem_host    = "192.168.1.1"             # stage router/modem to ping
 studio_router = "192.168.1.1"             # reachable → "auto" mode = studio
 streamdecks = { XL = "Stream Deck XL", Plus = "Stream Deck Plus" }
-lamp_severity = "warn"
 
-# Stage lamps (Tuya/WLED) — found by MAC via ARP, then pinged. Add one block per lamp.
-# [[checks.lamps]]
-# name = "L1"
+# Hosts that must respond on the network — lamps, modem, mixer, anything. The engine
+# just pings them (by `ip`, or by `mac` resolved via ARP); the name + icon carry the
+# meaning. Optional `severity` ("warn" default / "fail") and `icon` (emoji).
+# [[checks.hosts]]
+# name = "Modem"
+# ip   = "192.168.1.1"
+# severity = "fail"
+# icon = "📡"
+# [[checks.hosts]]
+# name = "Lampe L1"
 # mac  = "aa:bb:cc:dd:ee:ff"
+# icon = "💡"
 
 [mode]
 default = "auto"    # boots live; flips to studio when studio_router answers
