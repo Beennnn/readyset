@@ -6,7 +6,7 @@
 # the placeholders with your own.
 
 [set]
-ableton_app = "/Applications/Ableton Live 12 Suite.app"
+app = "/Applications/Ableton Live 12 Suite.app"   # app that opens the project
 project     = "/Users/you/Music/Gig Sets/Funk Set.als"   # the .als preflight opens
 open_after_launch = true
 
@@ -91,6 +91,13 @@ icon = "💡"
 # fix_label = "Start Postgres"
 # icon = "🗄️"
 
+# Things software can't detect → a human ticks them before playing. severity can be a
+# string or a per-profile map.
+[[checks.manual_confirms]]
+name = "Phone charging"
+icon = "🔋"
+severity = { live = "fail", studio = "warn" }
+
 [mode]
 default = "auto"
 fallback = "live"          # no rule matches → this profile
@@ -110,7 +117,6 @@ require_awake = true
 breath_severity = "fail"
 interface_severity = "fail"
 mac_power_severity = "fail"
-iphone_power_severity = "fail"
 # (Mac plugged but battery still draining = always FAIL, both modes.)
 
 [modes.studio]
@@ -121,12 +127,11 @@ require_awake = false
 breath_severity = "warn"
 interface_severity = "warn"
 mac_power_severity = "warn"
-iphone_power_severity = "warn"
 
 [monitor]
 interval    = 5
 audio_every = 6
-alerts      = ["macos", "push", "streamdeck"]
+alerts      = ["macos", "push", "midi"]
 recovery_alerts = true
 
 [alerts.push]
@@ -136,7 +141,7 @@ topic    = ""            # e.g. "my-rig-9d3f2a" — leave empty to disable push
 priority = "high"
 insecure = false         # true only if your LAN does SSL interception (self-signed cert)
 
-[alerts.streamdeck]
+[alerts.midi]
 # Emits a note on a dead-end IAC port. Create it once: Audio MIDI Setup → IAC Driver
 # → "+" → rename "rig-alert". Map a Stream Deck key to MIDI feedback (note 60, ch 15).
 port    = "rig-alert"

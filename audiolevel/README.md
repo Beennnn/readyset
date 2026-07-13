@@ -1,9 +1,9 @@
 # audiolevel — EXPERIMENTAL, not wired into the tool
 
 A Swift CoreAudio process-tap helper that measures whether audio **signal** is
-flowing on Ableton Live's output (mean RMS), without hearing it. It **works** from
+flowing on a target process's output (mean RMS), without hearing it. It **works** from
 a clean state (silence → RMS 0.000, real audio → ~0.08) and correctly taps the
-Ableton process.
+target process.
 
 ## Why it's NOT integrated
 

@@ -1,12 +1,12 @@
 // audiolevel — measure whether audio SIGNAL is flowing, without hearing it.
 //
 // Uses the macOS 14.4+ CoreAudio process-tap API to tap a process's audio output
-// (Ableton Live by default, so it catches what Live sends to the P-225 wherever that
+// (a target process by bundle-id substring, default "ableton" — passed as arg 2 — so it
 // device is routed), accumulate mean RMS over a short window, and print it. The rig
 // tool compares it to a threshold: > threshold = sound is passing, ~0 = silence.
 //
 //   audiolevel [seconds] [bundle-id-substring]
-//   audiolevel 1.5 ableton      # default: 1.5s window, tap Ableton (falls back to global)
+//   audiolevel 1.5 ableton      # 1.5s window, tap processes matching 'ableton' (else global)
 //
 // Prints one line:  RMS <mean> TARGET <what-was-tapped> FRAMES <n>
 // Exit 0 always (RMS 0 on failure), so the caller can treat "no signal" uniformly.

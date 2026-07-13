@@ -144,7 +144,7 @@ def cmd_alert_test(cfg: dict, args) -> int:
     print(f"[{_hr()}] Test des alertes: {', '.join(active)}{' (dry-run)' if dry else ''}")
     alerts.Alerter(cfg, active, dry_run=dry).notify(
         "🎹 Rig — test", "Ceci est une alerte de test.", "warn")
-    print("Envoyé. Vérifie la notif / le téléphone / le bouton Stream Deck.")
+    print("Envoyé. Vérifie la notif / le téléphone / la surface MIDI.")
     return 0
 
 

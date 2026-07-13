@@ -23,17 +23,13 @@ BIN_DIR = Path(__file__).resolve().parent.parent
 # lives in rig.toml, which is git-ignored and deep-merged over these defaults.
 DEFAULTS: dict = {
     "set": {
-        "ableton_app": "/Applications/Ableton Live 12 Suite.app",
+        "app": "",                         # app that opens the project (set in rig.toml)
         "project": "",                     # your gig .als — set in rig.toml
         "open_after_launch": True,
     },
     "launch": {
         # Standard app locations; override the list in rig.toml for your own rig.
-        "apps": [
-            "/Applications/Bome MIDI Translator Pro.app",
-            "/Applications/Bome Network.app",
-            "/Applications/Elgato Stream Deck.app",
-        ],
+        "apps": [],   # apps to launch (paths) — set in rig.toml
         "settle_seconds": 2,   # grace after an app launches before polling readiness
         # Shell commands run after launching apps (e.g. start an anti-sleep session).
         # Each: a string, or {cmd, label}.
@@ -41,14 +37,9 @@ DEFAULTS: dict = {
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
-        "apps": {
-            "Ableton": "Ableton Live.*/MacOS/Live",
-            "Stream Deck": "Elgato Stream Deck.app/Contents/MacOS/Stream Deck",
-            "Bome MIDI Translator": "MIDITranslatorPro",
-            "Bome Network": "Bome Network.app/Contents/MacOS/MT Player",
-        },
+        "apps": {},
         # MIDI input ports that MUST be present (substring match).
-        "midi_required": ["Ableton Loopback"],
+        "midi_required": [],
         "breath_port": "Breath Controller",     # breath controller's MIDI input name
         "audio_interface": "USB Audio",         # your interface's name — set in rig.toml
         "default_output_match": "MacBook",      # macOS default output should be the Mac
@@ -59,11 +50,14 @@ DEFAULTS: dict = {
         # Named hosts that must respond: {name, ip OR mac, severity?, icon?}.
         "hosts": [],
         # Remote links = an ESTABLISHED TCP connection on a port: {name, port, host?,
-        # severity?, icon?}. (e.g. an iPhone connecting to Bome Network.)
+        # severity?, icon?}. (e.g. a remote device connecting to a network app.)
         "links": [],
         # Arbitrary command checks — the domain-open escape hatch. Each:
         # {name, cmd, expect_exit?=0, expect_match?, severity?, icon?, timeout?}.
         "commands": [],
+        # Things the Mac can't detect → a human ticks them before playing. Each:
+        # {name, icon?, severity? ("warn"/"fail" or {profile=sev})}. Unconfirmed = severity.
+        "manual_confirms": [],
         # Keep-awake app holding a power assertion (optional): {process, owner, label,
         # icon}. `owner` = name shown in `pmset -g assertions`. Absent = not checked.
         # "keepawake": {"process": "...", "owner": "...", "label": "...", "icon": "☕"},
@@ -81,12 +75,11 @@ DEFAULTS: dict = {
             # keyboard_ok present → green; only keyboard_warn present → yellow; none → red.
             "keyboard_ok": ["Piano"],              # your main keyboard's MIDI port name
             "keyboard_warn": [],
-            "live_output": ["Piano"],              # Ableton's audio output device on stage
+            "live_output": ["Piano"],              # the DAW's audio output device on stage
             "require_awake": True,
             "breath_severity": "fail",
             "interface_severity": "fail",
             "mac_power_severity": "fail",
-            "iphone_power_severity": "fail",
         },
         "studio": {
             "keyboard_ok": ["Piano"],
@@ -96,13 +89,12 @@ DEFAULTS: dict = {
             "breath_severity": "warn",
             "interface_severity": "warn",
             "mac_power_severity": "warn",
-            "iphone_power_severity": "warn",
         },
     },
     "monitor": {
         "interval": 5,        # seconds between fast checks (apps + MIDI)
         "audio_every": 6,     # run the slow audio check once every N cycles
-        "alerts": ["macos", "push", "streamdeck"],  # backends: macos, push, streamdeck
+        "alerts": ["macos"],  # active backends: macos, push, midi
         "recovery_alerts": True,
     },
     "alerts": {
@@ -111,7 +103,7 @@ DEFAULTS: dict = {
             "topic": "",       # set a PRIVATE topic, e.g. "my-rig-9d3f", to enable
             "priority": "high",
         },
-        "streamdeck": {
+        "midi": {
             # Dedicated dead-end IAC port so the alert note never hits the live routing.
             # Create it: Audio MIDI Setup → IAC Driver → "+" → rename to "rig-alert".
             "port": "rig-alert",
@@ -126,14 +118,11 @@ DEFAULTS: dict = {
     # key or a prefix; resolution = exact key, else the longest matching prefix, else
     # "•". A host's own `icon` (from [[checks.hosts]]) always wins. Override in rig.toml.
     "icons": {
-        "app:Ableton": "🎵", "app:Stream": "🎛️", "app:Bome": "🔀", "app:Stage": "▶️",
-        "usb": "🎛️", "host": "📡",
+        "app": "📦", "usb": "🎛️", "host": "📡", "link": "🔗", "cmd": "⚙️", "manual": "✋",
         "kbd:breath": "🌬️", "kbd": "🎹",
         "net:stage": "🌐", "net": "📱",
-        "sys:vpn": "🔒", "sys:output": "💻", "sys:keepawake": "☕",
-        "sys:macpower": "🔌", "sys:iphonecharge": "🔋",
-        "audio:probe": "🎚️", "audio": "🔊",
-        "midi?": "🎹", "midi": "🔌", "cmd": "⚙️",
+        "sys:vpn": "🔒", "sys:output": "💻", "sys:keepawake": "☕", "sys:macpower": "🔌",
+        "audio:probe": "🎚️", "audio": "🔊", "kbd": "🎹", "midi": "🔌",
     },
 }
 
