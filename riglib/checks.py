@@ -130,20 +130,26 @@ def check_breath(cfg: dict, mode: str) -> Result:
                   "absent" if sev == FAIL else "absent (optionnel en studio)")
 
 
-def check_amphetamine(cfg: dict) -> Result:
-    """Amphetamine must be running AND holding an active anti-sleep session. A live
-    session shows up as an '(Amphetamine)' power assertion in `pmset -g assertions`."""
-    if not _pgrep("Amphetamine.app/Contents/MacOS/Amphetamine"):
-        return Result("sys:amphetamine", "Amphetamine (anti-veille)", FAIL, "pas lancé")
+def check_keepawake(cfg: dict) -> Result | None:
+    """A configurable keep-awake app holding a power assertion (e.g. Amphetamine).
+    Config `keepawake`: {process, owner, label, icon}. `owner` is the name that shows
+    in `pmset -g assertions`. Returns None if not configured. Domain-agnostic."""
+    ka = cfg["checks"].get("keepawake")
+    if not ka:
+        return None
+    label = ka.get("label", "Anti-veille")
+    icon = ka.get("icon", "")
+    if ka.get("process") and not _pgrep(ka["process"]):
+        return Result("sys:keepawake", label, FAIL, "pas lancé", icon)
     try:
         out = subprocess.run(["pmset", "-g", "assertions"],
                              capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
-        return Result("sys:amphetamine", "Amphetamine (anti-veille)", WARN, f"pmset: {exc}")
-    active = "(Amphetamine)" in out
-    return Result("sys:amphetamine", "Amphetamine (anti-veille)",
-                  OK if active else FAIL,
-                  "session active" if active else "lancé, aucune session active")
+        return Result("sys:keepawake", label, WARN, f"pmset: {exc}", icon)
+    owner = ka.get("owner", "")
+    active = bool(owner) and f"({owner})" in out
+    return Result("sys:keepawake", label, OK if active else FAIL,
+                  "session active" if active else "lancé, aucune session active", icon)
 
 
 def _tail(path: str, nbytes: int = 200_000) -> str:
@@ -154,30 +160,37 @@ def _tail(path: str, nbytes: int = 200_000) -> str:
         return fh.read().decode("utf-8", "ignore")
 
 
-def check_live_output(cfg: dict, mode: str) -> Result:
-    """Ableton Live's audio output device, read from its Log.txt. Acceptable devices
-    depend on mode: the P-225 on stage; the macOS output or the RME in the studio."""
-    wants = cfg["modes"][mode]["live_output"]
-    label = "Sortie de Live → " + " / ".join(wants)
-    logs = sorted(
-        glob.glob(os.path.expanduser("~/Library/Preferences/Ableton/Live*/Log.txt")),
-        key=lambda p: os.path.getmtime(p), reverse=True,
-    )
+def check_output_probe(cfg: dict, mode: str) -> Result | None:
+    """Read the current value of something from an app's log and check it's in the
+    mode's allowed set. Generic 'value from a log' probe — config `output_probe`:
+    {log_glob, pattern (1 capture group), label, icon}; allowed = mode.live_output.
+    Returns None if not configured."""
+    op = cfg["checks"].get("output_probe")
+    if not op:
+        return None
+    import re as _re
+    allowed = cfg["modes"][mode].get("live_output", [])
+    label = op.get("label", "Sortie") + " → " + " / ".join(allowed)
+    icon = op.get("icon", "")
+    logs = sorted(glob.glob(os.path.expanduser(op.get("log_glob", ""))),
+                  key=lambda p: os.path.getmtime(p), reverse=True)
     if not logs:
-        return Result("audio:live", label, WARN, "log Ableton introuvable")
-    dev = None
+        return Result("audio:probe", label, WARN, "log introuvable", icon)
+    pat = _re.compile(op.get("pattern", "(.+)"))
+    val = None
     try:
         for line in _tail(logs[0]).splitlines():
-            if "Audio In Out: Output Device:" in line:
-                dev = line.split("Output Device:", 1)[1].strip()
+            m = pat.search(line)
+            if m:
+                val = m.group(1).strip()
     except Exception as exc:
-        return Result("audio:live", label, WARN, f"lecture log: {exc}")
-    if dev is None:
-        return Result("audio:live", label, WARN, "indéterminée")
-    short = dev.split(" (")[0]
-    ok = any(w.lower() in dev.lower() for w in wants)
-    return Result("audio:live", label, OK if ok else FAIL,
-                  short if ok else f"actuellement : {short}")
+        return Result("audio:probe", label, WARN, f"lecture log: {exc}", icon)
+    if val is None:
+        return Result("audio:probe", label, WARN, "indéterminée", icon)
+    short = val.split(" (")[0]
+    ok = any(a.lower() in val.lower() for a in allowed)
+    return Result("audio:probe", label, OK if ok else FAIL,
+                  short if ok else f"actuellement : {short}", icon)
 
 
 def _ping(host: str, timeout_s: int = 1) -> bool:
@@ -210,20 +223,22 @@ def check_stage_network(cfg: dict) -> Result:
                   OK if ip else FAIL, ip or "pas d'IP sur ce subnet")
 
 
-def check_streamdeck(cfg: dict) -> list[Result]:
-    """Each Stream Deck must be present on USB (via ioreg — SPUSBDataType is empty on
-    this Mac). 'Asleep' (dimmed screen) is an app-internal state we can't read."""
-    decks = cfg["checks"].get("streamdecks", {"XL": "Stream Deck XL", "Plus": "Stream Deck Plus"})
+def check_usb(cfg: dict) -> list[Result]:
+    """USB devices that must be plugged, matched by ioreg product-name substring
+    (SPUSBDataType is empty on some Macs). Domain-agnostic: config `usb_devices` maps
+    a label to a product substring."""
+    devices = cfg["checks"].get("usb_devices", {})
+    if not devices:
+        return []
     try:
         out = subprocess.run(["ioreg", "-r", "-c", "IOUSBHostDevice"],
                              capture_output=True, text=True, timeout=8).stdout
     except Exception as exc:
-        return [Result("usb:streamdeck", "Stream Deck (USB)", WARN, f"ioreg: {exc}")]
+        return [Result("usb:_backend", "USB", WARN, f"ioreg: {exc}")]
     res = []
-    for label, product in decks.items():
+    for label, product in devices.items():
         present = product in out
-        res.append(Result(f"usb:{label}", f"Stream Deck {label}",
-                          OK if present else FAIL,
+        res.append(Result(f"usb:{label}", label, OK if present else FAIL,
                           "branché" if present else "non détecté en USB"))
     return res
 
@@ -324,33 +339,33 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False) -> Result:
     return Result("sys:iphonecharge", "iPhone en charge", sev, "à confirmer (non détectable)")
 
 
-def check_bome_iphone(cfg: dict) -> Result:
-    """Detect the Bome Network ↔ iPhone link via an ESTABLISHED TCP connection on
-    Bome Network's port (37000). The iPhone runs Bome Network and connects here."""
-    port = cfg["checks"].get("bome_network_port", 37000)
-    host = str(cfg["checks"].get("iphone_host", "")).strip()
-    try:
-        out = subprocess.run(
-            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:ESTABLISHED"],
-            capture_output=True, text=True, timeout=6,
-        ).stdout
-    except Exception as exc:
-        return Result("net:iphone", "Bome Network ↔ iPhone", FAIL, f"lsof: {exc}")
-
-    lines = [l for l in out.splitlines() if "ESTABLISHED" in l]
-    if host:
-        lines = [l for l in lines if host in l]
-    if not lines:
-        return Result("net:iphone", "Bome Network ↔ iPhone", FAIL,
-                      "aucune connexion (iPhone déconnecté ?)")
-    # NAME column looks like "192.168.1.10:37000->192.168.1.20:52345 (ESTABLISHED)"
-    peer = ""
-    for tok in lines[0].split():
-        if "->" in tok:
-            peer = tok.split("->", 1)[1]
-            break
-    return Result("net:iphone", "Bome Network ↔ iPhone", OK,
-                  f"connecté{f' ({peer})' if peer else ''}")
+def check_links(cfg: dict) -> list[Result]:
+    """Named remote links = an ESTABLISHED TCP connection on a port (e.g. an iPhone
+    connecting to Bome Network). Domain-agnostic: config `links` = list of
+    {name, port, host? (peer substring filter), severity?, icon?}."""
+    res = []
+    for lk in cfg["checks"].get("links", []):
+        name = lk.get("name", "?")
+        port = lk.get("port")
+        icon = lk.get("icon", "")
+        sev = lk.get("severity", FAIL)
+        host = str(lk.get("host", "")).strip()
+        try:
+            out = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:ESTABLISHED"],
+                                 capture_output=True, text=True, timeout=6).stdout
+        except Exception as exc:
+            res.append(Result(f"link:{name}", name, WARN, f"lsof: {exc}", icon))
+            continue
+        lines = [l for l in out.splitlines() if "ESTABLISHED" in l]
+        if host:
+            lines = [l for l in lines if host in l]
+        if not lines:
+            res.append(Result(f"link:{name}", name, sev, "aucune connexion", icon))
+            continue
+        peer = next((tok.split("->", 1)[1] for tok in lines[0].split() if "->" in tok), "")
+        res.append(Result(f"link:{name}", name, OK,
+                          f"connecté{f' ({peer})' if peer else ''}", icon))
+    return res
 
 
 # system_profiler is slow (~1s); cache its JSON so audio + default-output checks
@@ -428,18 +443,23 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
             manual: dict | None = None) -> list[Result]:
     manual = manual or {}
     m = cfg["modes"][mode]
-    results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
+    results = check_apps(cfg) + check_usb(cfg) + check_midi(cfg)
     results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
     results += [check_stage_network(cfg)]
     results += check_hosts(cfg)
-    results += [check_bome_iphone(cfg), check_vpn(cfg)]
+    results += check_links(cfg)
+    results += [check_vpn(cfg)]
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]
-    if m.get("require_amphetamine", True):
-        results.append(check_amphetamine(cfg))
+    if m.get("require_awake", False):
+        r = check_keepawake(cfg)
+        if r:
+            results.append(r)
     if with_audio:
-        results += [check_default_output(cfg), check_audio(cfg, mode),
-                    check_live_output(cfg, mode)]
+        results += [check_default_output(cfg), check_audio(cfg, mode)]
+        op = check_output_probe(cfg, mode)
+        if op:
+            results.append(op)
     return results
 
 

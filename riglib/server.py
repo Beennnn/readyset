@@ -19,7 +19,7 @@ _MODE = {"requested": None}    # None → use cfg default; else "auto"|"live"|"s
 _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't detect)
 
 _GROUP = {"app:": "Apps", "usb:": "Stream Deck", "kbd:": "Clavier & jeu",
-          "net:": "Réseau", "host:": "Réseau", "sys:": "Système",
+          "net:": "Réseau", "host:": "Réseau", "link:": "Réseau", "sys:": "Système",
           "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
 
 
@@ -66,6 +66,7 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
         "warns": sum(1 for r in results if r.status == checks.WARN),
         "total": len(results),
         "items": items,
+        "diagram": cfg.get("diagram", {}),
     }
 
 
@@ -236,31 +237,28 @@ async function manualSet(key,val){await fetch("/api/manual",{method:"POST",heade
 const stc=s=>({ok:"#2ecc71",warn:"#f4b942",fail:"#ff5468"}[s]||"#55607a");
 function nstat(keys,map){let s="neutral";for(const k of keys){const v=map[k];
   if(v==="fail")return"fail";if(v==="warn")s="warn";else if(v==="ok"&&s==="neutral")s="ok";}return s;}
-const DNODES=[
-  {e:"📱",l:"iPhone",k:["net:iphone"],x:88,y:56},
-  {e:"🎛️",l:"Stream Deck",k:["app:Stream Deck"],x:88,y:150},
-  {e:"🎹",l:"Clavier",k:["kbd:keyboard"],x:88,y:244},
-  {e:"🔀",l:"Bome",k:["app:Bome MIDI Translator","app:Bome Network"],x:312,y:103},
-  {e:"▶️",l:"Stage Traxx",k:["app:Stage Traxx"],x:312,y:244},
-  {e:"🎵",l:"Ableton Live",k:["app:Ableton","midi:Ableton Loopback"],x:520,y:150},
-  {e:"🔊",l:"Sortie audio",k:["audio","audio:live"],x:684,y:150},
-];
-const DEDGES=[[0,3],[1,3],[2,5],[3,5],[4,5],[5,6]];
-function renderDiagram(items){
+// Topology comes from config (state.diagram): nodes {id,label,icon,keys,x,y} + edges
+// [[fromId,toId],…]. A node's colour = the worst status among its check keys. No
+// topology in config → the diagram is hidden.
+function renderDiagram(items,diagram){
+  const box=document.getElementById("diagram");
+  const nodes=(diagram&&diagram.nodes)||[];
+  if(!nodes.length){box.style.display="none";return;}
+  box.style.display="";
   const map={};for(const it of items)map[it.key]=it.status;
-  const N=DNODES.map(n=>({...n,s:nstat(n.k,map)}));
+  const byId={};for(const n of nodes)byId[n.id]=n;
   let e="";
-  for(const [a,b] of DEDGES){const A=N[a],B=N[b];
-    const dx=B.x-A.x,dy=B.y-A.y,d=Math.hypot(dx,dy),ux=dx/d,uy=dy/d;
+  for(const pair of (diagram.edges||[])){const A=byId[pair[0]],B=byId[pair[1]];if(!A||!B)continue;
+    const dx=B.x-A.x,dy=B.y-A.y,d=Math.hypot(dx,dy)||1,ux=dx/d,uy=dy/d;
     const x1=A.x+ux*76,y1=A.y+uy*30,x2=B.x-ux*80,y2=B.y-uy*30;
     e+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3a4356" stroke-width="2" marker-end="url(#ar)"/>`;}
   let g="";
-  for(const n of N){const c=stc(n.s);
+  for(const n of nodes){const c=stc(nstat(n.keys||[],map));
     g+=`<g><rect x="${n.x-72}" y="${n.y-25}" width="144" height="50" rx="12" fill="#12161e" stroke="${c}" stroke-width="2"/>`
-      +`<text x="${n.x-56}" y="${n.y+7}" font-size="21">${n.e}</text>`
-      +`<text x="${n.x-28}" y="${n.y+5}" fill="#e7ebf2" font-size="12.5" font-weight="600">${n.l}</text>`
+      +`<text x="${n.x-56}" y="${n.y+7}" font-size="21">${n.icon||"•"}</text>`
+      +`<text x="${n.x-28}" y="${n.y+5}" fill="#e7ebf2" font-size="12.5" font-weight="600">${n.label||""}</text>`
       +`<circle cx="${n.x+58}" cy="${n.y-14}" r="4.5" fill="${c}"/></g>`;}
-  document.getElementById("diagram").innerHTML=
+  box.innerHTML=
     `<svg viewBox="0 0 764 300" xmlns="http://www.w3.org/2000/svg">`
     +`<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">`
     +`<path d="M0,0 L7,3 L0,6 Z" fill="#3a4356"/></marker></defs>${e}${g}</svg>`
@@ -276,7 +274,7 @@ async function refresh(){
     :`❌ Rig PAS prêt — ${s.fails} bloquant(s), ${s.warns} avertissement(s).`;
   document.querySelectorAll("#modeseg button").forEach(b=>b.classList.toggle("on",b.dataset.m===s.requested));
   document.getElementById("modeinfo").innerHTML=`mode : <b>${s.mode==="live"?"🎤 Live":"🎧 Studio"}</b>${s.requested==="auto"?" (auto)":""}`;
-  renderDiagram(s.items);
+  renderDiagram(s.items,s.diagram);
   // Problems first (fail then warn) as full rows; everything OK collapses to chips.
   const bad=s.items.filter(it=>it.status!=="ok").sort((a,b)=>(a.status==="fail"?0:1)-(b.status==="fail"?0:1));
   const good=s.items.filter(it=>it.status==="ok");
