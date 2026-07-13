@@ -20,7 +20,7 @@ _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't
 
 _GROUP = {"app:": "Apps", "usb:": "Stream Deck", "kbd:": "Clavier & jeu",
           "net:": "Réseau", "host:": "Réseau", "link:": "Réseau", "sys:": "Système",
-          "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
+          "cmd:": "Commandes", "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
 
 
 def _group_of(key: str) -> str:

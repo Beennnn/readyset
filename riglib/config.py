@@ -35,7 +35,9 @@ DEFAULTS: dict = {
             "/Applications/Elgato Stream Deck.app",
         ],
         "settle_seconds": 2,   # grace after an app launches before polling readiness
-        "amphetamine_session": True,   # start an anti-sleep session during bring-up
+        # Shell commands run after launching apps (e.g. start an anti-sleep session).
+        # Each: a string, or {cmd, label}.
+        "post_cmds": [],
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
@@ -50,9 +52,8 @@ DEFAULTS: dict = {
         "breath_port": "Breath Controller",     # breath controller's MIDI input name
         "audio_interface": "USB Audio",         # your interface's name — set in rig.toml
         "default_output_match": "MacBook",      # macOS default output should be the Mac
-        # --- network (examples — set your own in rig.toml) ---
-        "stage_network": "192.168.1",     # subnet the Mac must hold an IP on
-        "studio_router": "192.168.1.1",   # if reachable → "auto" resolves to studio
+        # Subnet the Mac must hold an IP on (example — set your own in rig.toml).
+        "stage_network": "192.168.1",
         # USB devices that must be plugged: {label = product-name substring} (ioreg).
         "usb_devices": {},
         # Named hosts that must respond: {name, ip OR mac, severity?, icon?}.
@@ -60,6 +61,9 @@ DEFAULTS: dict = {
         # Remote links = an ESTABLISHED TCP connection on a port: {name, port, host?,
         # severity?, icon?}. (e.g. an iPhone connecting to Bome Network.)
         "links": [],
+        # Arbitrary command checks — the domain-open escape hatch. Each:
+        # {name, cmd, expect_exit?=0, expect_match?, severity?, icon?, timeout?}.
+        "commands": [],
         # Keep-awake app holding a power assertion (optional): {process, owner, label,
         # icon}. `owner` = name shown in `pmset -g assertions`. Absent = not checked.
         # "keepawake": {"process": "...", "owner": "...", "label": "...", "icon": "☕"},
@@ -69,7 +73,9 @@ DEFAULTS: dict = {
     },
     # Two rigs, one tool. Start "live"; when the studio router is reachable, "auto"
     # resolves to "studio". The dashboard tirette forces it; CLI: --mode live|studio|auto.
-    "mode": {"default": "auto"},
+    # Profile auto-detection. `detect` = ordered [{profile, <criterion>}]; first whose
+    # criterion holds wins (criteria: ping / interface / cmd), else `fallback`.
+    "mode": {"default": "auto", "fallback": "live", "detect": []},
     "modes": {
         "live": {
             # keyboard_ok present → green; only keyboard_warn present → yellow; none → red.
@@ -127,7 +133,7 @@ DEFAULTS: dict = {
         "sys:vpn": "🔒", "sys:output": "💻", "sys:keepawake": "☕",
         "sys:macpower": "🔌", "sys:iphonecharge": "🔋",
         "audio:probe": "🎚️", "audio": "🔊",
-        "midi?": "🎹", "midi": "🔌",
+        "midi?": "🎹", "midi": "🔌", "cmd": "⚙️",
     },
 }
 
