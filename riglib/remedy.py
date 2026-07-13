@@ -15,12 +15,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import launch
 
 
 @dataclass
 class Remedy:
-    label: str                                  # button text, e.g. "Relancer Bome"
+    label: str                                  # button text, e.g. "Relancer <app>"
     run: Callable[[bool], tuple[bool, str]]     # run(dry_run) -> (ok, message)
 
 
@@ -36,24 +35,11 @@ def _launch_app(path: str, dry: bool) -> tuple[bool, str]:
     return True, f"{name} relancé"
 
 
-def _open_set(cfg: dict, dry: bool) -> tuple[bool, str]:
-    logs: list[str] = []
-    # force open_after_launch for this explicit action even if config disables it
-    forced = dict(cfg)
-    forced["set"] = {**cfg["set"], "open_after_launch": True}
-    launch.open_set(forced, log=logs.append, dry_run=dry)
-    return True, "\n".join(logs)
-
-
 def _app_path_for(cfg: dict, label: str) -> str | None:
     for app in cfg["launch"]["apps"]:
         if label.lower() in Path(app).stem.lower():
             return app
     return None
-
-
-def _bome_path(cfg: dict) -> str | None:
-    return _app_path_for(cfg, "Bome")
 
 
 def resolve(cfg: dict, result) -> Remedy | None:
@@ -62,26 +48,14 @@ def resolve(cfg: dict, result) -> Remedy | None:
 
 
 def resolve_key(cfg: dict, key: str) -> Remedy | None:
-    """Same as resolve() but keyed by string — used by the dashboard fix endpoint."""
+    """Same as resolve() but keyed by string — used by the dashboard fix endpoint.
+    Remedies are generic: relaunch a configured app, run a command check's fix_cmd, or
+    a keep-awake start command. Everything specific lives in config."""
+    # A launched app that's down → relaunch it (path from launch.apps).
     if key.startswith("app:"):
-        label = key.split(":", 1)[1]
-        if "ableton" in label.lower():
-            return Remedy("Ouvrir le set (relance Ableton)",
-                          lambda dry: _open_set(cfg, dry))
-        path = _app_path_for(cfg, label)
+        path = _app_path_for(cfg, key.split(":", 1)[1])
         if path:
-            return Remedy(f"Relancer {label}", lambda dry: _launch_app(path, dry))
-        return None
-
-    # Required MIDI ports only (optional ones use the "midi?:" prefix → no remedy).
-    if key.startswith("midi:") and not key.startswith("midi?:"):
-        name = key.split(":", 1)[1]
-        if "ableton loopback" in name.lower():
-            return Remedy("Rouvrir le set Ableton", lambda dry: _open_set(cfg, dry))
-        bome = _bome_path(cfg)
-        if bome:
-            return Remedy("Relancer Bome (routing MIDI)",
-                          lambda dry: _launch_app(bome, dry))
+            return Remedy(f"Relancer {Path(path).stem}", lambda dry: _launch_app(path, dry))
         return None
 
     # Command checks: run the configured fix_cmd (generic, config-driven).

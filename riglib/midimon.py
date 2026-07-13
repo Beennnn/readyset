@@ -50,7 +50,7 @@ class MidiMonitor:
             self.events: list[dict] = []         # most-recent-first, capped
             self.flags = {"pedal_cc64": None, "notes": 0, "breath": None}
             self.state: dict[str, dict] = {}     # "port|ch" -> live per-channel state
-            self.audio_ok: bool | None = None    # human confirm ("I hear the P-225")
+            self.audio_ok: bool | None = None    # human confirm ("I hear sound")
             self._watched: list[str] = []        # physical ports actually opened
             self.started = time.time()
 

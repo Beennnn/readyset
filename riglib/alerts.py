@@ -1,15 +1,11 @@
-"""Alert backends — pluggable, chosen per-config so you pick what fits the venue.
+"""Alert backends — pluggable, chosen per-config so you pick what fits.
 
-Why not trevligaspel for the Stream Deck alert? That plugin is button → MIDI
-(outgoing) — it cannot repaint a key from an external script. To make a button
-react, the honest path is MIDI *feedback*: this backend emits a note on a virtual
-port; a Stream Deck key configured with MIDI feedback (most MIDI SD plugins,
-incl. trevligaspel, support incoming-MIDI state) then lights red. The emit side
-lives here; the one-time button-side mapping is yours to set (see rig.example.toml).
-
-  macos       — osascript banner + sound. Zero setup, but the laptop is closed on stage.
-  push        — HTTP POST to ntfy.sh (stdlib, no install). Buzzes your phone anywhere.
-  streamdeck  — MIDI note to a virtual port → lights a feedback-configured key.
+  macos       — notification banner + sound (osascript). Zero setup; needs the screen.
+  push        — HTTP POST to an ntfy server (stdlib, no install). Buzzes a phone anywhere.
+  midi        — emits a MIDI note on a virtual port. Software can't repaint a control
+                surface from outside, so instead a control key configured with MIDI
+                *feedback* (listening for that note) lights up. The emit side lives here;
+                the one-time key mapping is done in your surface's own software.
 """
 
 from __future__ import annotations
@@ -83,13 +79,13 @@ class Alerter:
             ctx.verify_mode = ssl.CERT_NONE
         urllib.request.urlopen(req, timeout=5, context=ctx).read()
 
-    def _streamdeck(self, title: str, message: str, level: str) -> None:
-        sc = self.cfg["alerts"]["streamdeck"]
+    def _midi(self, title: str, message: str, level: str) -> None:
+        sc = self.cfg["alerts"]["midi"]
         target = sc["port"]
         outs = mido.get_output_names()
         match = next((p for p in outs if target.lower() in p.lower()), None)
         if match is None:
-            self.log(f"  (streamdeck : port de sortie « {target} » absent)")
+            self.log(f"  (midi : port de sortie « {target} » absent)")
             return
         ch = int(sc.get("channel", 15)) - 1     # mido is 0-based
         note = int(sc.get("note", 60))

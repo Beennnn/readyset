@@ -2,7 +2,7 @@
 # Install the login agents:
 #   com.stage-rig.dashboard — auto-starts `rig serve` (dashboard on :8765)
 #   com.stage-rig.menubar   — 🎹 menu-bar icon that opens the dashboard
-# Both are relaunched by launchd if they die (like the Bome keepalive).
+# Both are relaunched by launchd if they die.
 #   ./launchd/install.sh          # build menubar + install/start both
 #   ./launchd/install.sh remove   # stop + uninstall both
 set -euo pipefail

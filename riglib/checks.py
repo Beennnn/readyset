@@ -103,9 +103,9 @@ def _present(substr: str) -> str | None:
 
 
 def check_keyboard(cfg: dict, mode: str) -> Result:
-    """Three tiers: a preferred keyboard (keyboard_ok, e.g. Digital Piano / P-225) →
-    green; only a fallback (keyboard_warn, e.g. microKey Air) → yellow; none → red.
-    So in the studio microKey alone works but warns; the P-225 always satisfies."""
+    """Master keyboard, three tiers: a preferred keyboard (keyboard_ok) present → green;
+    only a fallback (keyboard_warn) present → yellow; none → red. Both lists are MIDI
+    input-port name substrings, per mode."""
     m = cfg["modes"][mode]
     ok_list = m.get("keyboard_ok", m.get("keyboard", []))
     warn_list = m.get("keyboard_warn", [])
@@ -131,7 +131,7 @@ def check_breath(cfg: dict, mode: str) -> Result:
 
 
 def check_keepawake(cfg: dict) -> Result | None:
-    """A configurable keep-awake app holding a power assertion (e.g. Amphetamine).
+    """A configurable keep-awake app holding a power assertion (an anti-sleep utility).
     Config `keepawake`: {process, owner, label, icon}. `owner` is the name that shows
     in `pmset -g assertions`. Returns None if not configured. Domain-agnostic."""
     ka = cfg["checks"].get("keepawake")
@@ -385,19 +385,27 @@ def check_mac_power(cfg: dict, mode: str) -> Result:
     return Result("sys:macpower", "Alimentation Mac", OK, f"branché ({pct})")
 
 
-def check_iphone_charge(cfg: dict, mode: str, acked: bool = False) -> Result:
-    """iPhone charging — NOT detectable from the Mac (the iPhone charges on a separate
-    charger and talks to Bome over Wi-Fi, so it never appears here). Manual confirm:
-    tick it before playing. Unconfirmed → fail live / warn studio."""
-    sev = cfg["modes"][mode].get("iphone_power_severity", "warn")
-    if acked:
-        return Result("sys:iphonecharge", "iPhone en charge", OK, "confirmé manuellement")
-    return Result("sys:iphonecharge", "iPhone en charge", sev, "à confirmer (non détectable)")
+def check_manual_confirms(cfg: dict, mode: str, acks: dict) -> list[Result]:
+    """Things software can't detect → a human ticks them before playing. Config
+    `manual_confirms` = [{name, icon?, severity?}] where severity is "warn"/"fail" or a
+    {profile: severity} map. Unconfirmed → the severity; confirmed → green."""
+    res = []
+    for mc in cfg["checks"].get("manual_confirms", []):
+        name = mc.get("name", "?")
+        icon = mc.get("icon", "")
+        sev = mc.get("severity", "warn")
+        if isinstance(sev, dict):
+            sev = sev.get(mode, "warn")
+        if acks.get(name):
+            res.append(Result(f"manual:{name}", name, OK, "confirmé manuellement", icon))
+        else:
+            res.append(Result(f"manual:{name}", name, sev, "à confirmer", icon))
+    return res
 
 
 def check_links(cfg: dict) -> list[Result]:
-    """Named remote links = an ESTABLISHED TCP connection on a port (e.g. an iPhone
-    connecting to Bome Network). Domain-agnostic: config `links` = list of
+    """Named remote links = an ESTABLISHED TCP connection on a port (e.g. a remote
+    device connecting to a network app). Domain-agnostic: config `links` = list of
     {name, port, host? (peer substring filter), severity?, icon?}."""
     res = []
     for lk in cfg["checks"].get("links", []):
@@ -506,8 +514,8 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += check_links(cfg)
     results += check_commands(cfg)
     results += [check_vpn(cfg)]
-    results += [check_mac_power(cfg, mode),
-                check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]
+    results += [check_mac_power(cfg, mode)]
+    results += check_manual_confirms(cfg, mode, manual)
     if m.get("require_awake", False):
         r = check_keepawake(cfg)
         if r:

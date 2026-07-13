@@ -2,8 +2,8 @@
 # Use with:  RIG_CONF=bin/rig.test.toml bin/rig <cmd>
 #
 # It launches nothing, opens no set, and routes the Stream Deck MIDI alert to a
-# dead-end IAC bus instead of "Ableton Loopback", so even a *real* (non-dry-run)
-# test can't inject MIDI into the set Ableton is running.
+# dead-end virtual MIDI port, so even a *real* (non-dry-run) test can't inject
+# MIDI into the live routing.
 
 [set]
 open_after_launch = false          # never open a project

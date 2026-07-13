@@ -1,62 +1,71 @@
-# `rig` — stage keyboard rig bring-up & live monitoring
+# stage-rig
 
-Control tool for a live keyboard rig (macOS): one command puts it on stage,
-one command watches it while I play. macOS, Python 3.11+ (`mido`), stdlib otherwise.
+A config-driven **readiness manager** for a set of apps, devices and network endpoints
+on macOS. Declare the state your setup should be in; the tool brings it up, checks it,
+watches it, and shows you — at a glance — what's wrong.
+
+Built for a live keyboard rig (its example config is one), but the engine is
+domain-agnostic: it knows only generic concepts. Everything specific — which apps,
+devices, hosts, commands, profiles, icons, topology — lives in **`rig.toml`**. The code
+names nothing proprietary.
 
 ```bash
 cd stage-rig
-cp rig.example.toml rig.toml   # then edit — set your gig .als, alerts, etc.
+cp rig.example.toml rig.toml     # then edit for your setup
 
-./rig preflight     # launch Bome → Stream Deck → Stage Traxx → open the gig set, then verify
+./rig preflight     # launch the apps, run post-launch commands, open the project, verify
 ./rig check         # verify only (no launch) — a fast go/no-go checklist
-./rig monitor       # watch continuously; alert the moment something dies
-./rig serve         # web dashboard: signal-flow diagram + per-item fix/relaunch button
+./rig monitor       # watch continuously; alert the moment something breaks (and recovers)
+./rig serve         # web dashboard: signal-flow diagram + per-item fix, on 127.0.0.1:8765
 ./rig alert-test    # fire a test alert through every active backend
 ```
+Exit codes for `check`/`preflight`: `0` all-green, `1` warnings only, `2` a required
+check failed — so you can gate a launcher or a button on it.
 
-## Dashboard (`rig serve`)
+## What it can check (generic primitives)
 
-`./rig serve` opens a local page (127.0.0.1 only) with the whole rig at a glance:
-a red/amber/green banner, then every check grouped **Apps / MIDI requis / Audio /
-MIDI optionnel** with its status and detail. The state auto-refreshes (read-only).
+Each is a config entry, not code:
 
-Each **broken and fixable** row gets an action button — app down → *Relancer …*,
-Ableton missing → *Ouvrir le set*, a required MIDI port gone → *Rouvrir le set* /
-*Relancer Bome*. Hardware faults (audio interface unplugged) show the detail with no
-button. Up top: **Préflight complet** (full bring-up) and a **mode simulation
-(dry-run)** toggle that makes every action inert end to end. Flags: `--port`, `--no-open`.
+- **apps** — a process is running (regex on the command line)
+- **usb_devices** — a USB device is plugged (ioreg product-name match)
+- **midi_required** / **keyboard** / **breath_port** — MIDI input ports present (the
+  keyboard has ok/fallback tiers per profile)
+- **hosts** — a named host answers, by `ip` (ping) or `mac` (ARP → ping)
+- **links** — an ESTABLISHED TCP connection exists on a port
+- **commands** — *any* condition: run a command, pass on exit 0 (or `expect_match`);
+  optional `fix_cmd` gives a one-click remedy. This is the escape hatch — no code needed.
+- **keepawake** — an anti-sleep app holds a power assertion (`pmset`)
+- **output_probe** — a value read from an app's log matches an allowed set
+- **audio_interface** / **default_output** — CoreAudio device present / default output
+- **vpn** — inactive
+- **manual_confirms** — things software can't detect → a human ticks them before playing
 
-## What it checks
+Failed-and-fixable items get a one-click remedy (relaunch an app, run a `fix_cmd`, …).
 
-| Check | Level | Why |
-|---|---|---|
-| Ableton / Stream Deck / Bome running | ❌ fail | the core apps — matched by process, version-agnostic |
-| Virtual MIDI ports (`Ableton Loopback`, `Daw2Mackie`, `Mackie2XR18`, `XR182Mackie`) | ❌ fail | if these are gone, nothing routes |
-| Optional MIDI gear (keyboard, breath, foot) | ⚠️ warn | absent = just unplugged, not a showstopper |
-| Audio interface (`RME Fireface UCX` / `XR18`) | ❌ fail | no interface = no sound |
+## Profiles & auto-detection
 
-`preflight` / `check` exit **0** all-green, **1** warnings only, **2** a required check failed —
-so you can gate a launcher or a Stream Deck button on the exit code.
+Define any number of **profiles** (`[modes.*]`) — e.g. `live` / `studio` — each with its
+own required devices, severities and audio targets. `[mode].detect` picks one from the
+environment: an ordered list of `{profile, criterion}` where criterion is `ping` (a host
+answers), `interface` (the Mac holds an IP on a subnet) or `cmd` (a command exits 0);
+first match wins, else `fallback`. The dashboard also has a manual toggle.
 
-## Monitoring & alerts
+## Dashboard, soundcheck, alerts
 
-`monitor` prints a baseline checklist, then alerts **on transitions** (something dies →
-alert; it comes back → recovery alert) plus a heartbeat so silence never looks like a hang.
-If the rig is already broken when monitoring starts, it alerts immediately.
-
-Pick backends in `rig.toml` (`[monitor].alerts`) or per-run (`--alerts macos,push`):
-
-- **`macos`** — banner + sound via `osascript`. Zero setup; needs the laptop screen.
-- **`push`** — HTTP POST to [ntfy.sh](https://ntfy.sh) (stdlib, no install). Set a private
-  `[alerts.push].topic`, subscribe to it in the ntfy phone app → buzzes anywhere.
-- **`streamdeck`** — emits a MIDI note on the dedicated `rig-alert` IAC port. Configure a
-  Stream Deck key with **MIDI feedback** (note 60, ch 15) to light red on note-on / clear on
-  note-off. Full spec + wiring: [docs/rig-alert-protocol.md](docs/rig-alert-protocol.md).
-  *(This is why the alert doesn't use the trevligaspel plugin: that plugin is button → MIDI
-  only and can't repaint a key from outside. MIDI feedback is the honest inbound path.)*
+- **`rig serve`** — a local (127.0.0.1) auto-refreshing page: a red/amber/green banner,
+  a **signal-flow diagram** (nodes/edges from config, coloured by their checks), then the
+  **problems first** with per-item fix buttons; everything OK collapses to chips.
+- **Soundcheck** — a live MIDI monitor + a guided "play test" (press the pedal → see CC64
+  arrive, play → notes, etc.), and an audio-signal meter.
+- **Alerts** (`[monitor].alerts`): `macos` (notification), `push`
+  ([ntfy](https://ntfy.sh)), `midi` (a note to a virtual port that lights a
+  feedback-configured control-surface key — see
+  [docs/midi-alert-protocol.md](docs/midi-alert-protocol.md)).
+- A **menu-bar icon** (login agent) opens the dashboard in one click.
 
 ## Config
 
-`riglib/config.py` holds baked defaults (real process names + virtual ports as of 2026-07).
-`rig.toml` (git-ignored) overrides only what differs; `rig.example.toml` is the template.
-Requires Python 3.11+ and `mido` (`pip install mido python-rtmidi`).
+All of it lives in **`rig.toml`** (git-ignored; copy `rig.example.toml`, which is a
+complete, realistic, anonymised example). `riglib/config.py` holds only a neutral,
+non-personal skeleton. Requires Python 3.11 + `mido` (`pip install mido python-rtmidi`);
+two optional Swift helpers (`audiolevel/`, `menubar/`) build with `build.sh`.

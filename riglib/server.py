@@ -16,9 +16,9 @@ from . import checks, launch, midimon, remedy
 
 _MON = midimon.MidiMonitor()   # shared live MIDI monitor for the soundcheck page
 _MODE = {"requested": None}    # None → use cfg default; else "auto"|"live"|"studio"
-_MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't detect)
+_MANUAL = {}   # manual confirmations by name (things software can't detect)
 
-_GROUP = {"app:": "Apps", "usb:": "Stream Deck", "kbd:": "Clavier & jeu",
+_GROUP = {"app:": "Apps", "usb:": "USB", "kbd:": "Clavier & jeu",
           "net:": "Réseau", "host:": "Réseau", "link:": "Réseau", "sys:": "Système",
           "cmd:": "Commandes", "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
 
@@ -115,11 +115,11 @@ class _Handler(BaseHTTPRequestHandler):
         dry = bool(body.get("dry", False))
         if self.path == "/api/mode":
             m = body.get("mode", "auto")
-            _MODE["requested"] = m if m in ("auto", "live", "studio") else None
+            _MODE["requested"] = m if (m == "auto" or m in self.cfg.get("modes", {})) else None
             self._json({"ok": True, "requested": _MODE["requested"]})
         elif self.path == "/api/manual":
             key = body.get("key", "")
-            if key in _MANUAL:
+            if key:
                 _MANUAL[key] = bool(body.get("value", False))
             self._json({"ok": True, key: _MANUAL.get(key)})
         elif self.path == "/api/midi/start":
@@ -287,16 +287,16 @@ async function refresh(){
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
       btn.onclick=()=>fix(it.key,it.remedy);row.appendChild(btn);}
-    if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
-      b.textContent="✓ Confirmer en charge";b.onclick=()=>manualSet("iphone_charge",true);row.appendChild(b);}
+    if(it.key.startsWith("manual:")){const nm=it.key.slice(7);const b=document.createElement("button");
+      b.className="fix";b.textContent="✓ Confirmer";b.onclick=()=>manualSet(nm,true);row.appendChild(b);}
     prob.appendChild(row);
   }}
   document.getElementById("oksum").textContent=good.length?`▸ ${good.length} checks OK (déplier)`:"";
   const okc=document.getElementById("okchips");okc.innerHTML="";
   for(const it of good){const c=document.createElement("span");c.className="chip";
     c.innerHTML=`${it.glyph||"•"} ${it.label}`;c.title=it.detail||"";
-    if(it.key==="sys:iphonecharge"){c.style.cursor="pointer";c.title="cliquer pour réinitialiser";
-      c.onclick=()=>manualSet("iphone_charge",false);}
+    if(it.key.startsWith("manual:")){const nm=it.key.slice(7);c.style.cursor="pointer";
+      c.title="cliquer pour réinitialiser";c.onclick=()=>manualSet(nm,false);}
     okc.appendChild(c);}
   document.getElementById("stamp").textContent="maj "+new Date().toLocaleTimeString();
   window.scrollTo(0,y);
@@ -401,7 +401,7 @@ SOUNDCHECK = r"""<!doctype html>
   <h2>Flux brut</h2>
   <div id="log">—</div>
   <div class="audio" id="audiobox">
-    <b>🔊 Son sur <span id="audiotarget">le P-225</span> ?</b> — le logiciel ne peut pas l'entendre, confirme toi-même :
+    <b>🔊 Son en sortie ?</b> — le logiciel ne peut pas l'entendre, confirme toi-même :
     <div style="margin-top:8px;display:flex;gap:10px">
       <button onclick="audio(true)">✅ J'entends le son</button>
       <button onclick="audio(false)">❌ Pas de son</button>
@@ -415,7 +415,6 @@ let scMode="live";
 async function fetchMode(){
   try{const m=await(await fetch("/api/mode")).json();scMode=m.resolved;}catch(e){}
   document.getElementById("scmode").textContent=scMode==="studio"?"— 🎧 Studio":"— 🎤 Live";
-  document.getElementById("audiotarget").textContent=scMode==="studio"?"macOS / RME":"le P-225";
 }
 const NN=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
 function noteName(n){return NN[n%12]+(Math.floor(n/12)-1);}
@@ -450,7 +449,7 @@ function wizSteps(s){
     {id:"notes",txt:"Joue quelques notes au clavier",ok:x=>x.flags&&x.flags.notes>0,info:x=>x.flags&&x.flags.notes>0?`✔ ${x.flags.notes} notes`:""},
     {id:"breath",txt:"Souffle dans le breath controller"+(scMode==="studio"?" (optionnel)":""),skippable:true,ok:x=>!!(x.flags&&x.flags.breath),info:x=>x.flags&&x.flags.breath?"✔ souffle reçu":""},
     {id:"ctrls",txt:"Actionne chacun de tes contrôleurs",skippable:true,ok:_=>watched.length>0&&watched.every(w=>active.has(w)),info:_=>`${[...active].filter(a=>watched.includes(a)).length}/${watched.length} contrôleurs actifs`},
-    {id:"audio",txt:`Entends-tu le son ${scMode==="studio"?"(macOS / RME)":"sur le P-225"} ?`,manual:true,ok:x=>x.audio_ok===true,info:x=>x.audio_ok===true?"✔ confirmé":""},
+    {id:"audio",txt:"Entends-tu le son en sortie ?",manual:true,ok:x=>x.audio_ok===true,info:x=>x.audio_ok===true?"✔ confirmé":""},
   ];
 }
 function renderWiz(s){

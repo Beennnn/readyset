@@ -1,8 +1,8 @@
-"""Bring-up sequence — launch the rig apps in order, then open the gig set.
+"""Bring-up sequence — launch the configured apps in order, then open the project.
 
-Poll-for-readiness rather than fixed sleeps: after launching Bome we wait until
-its virtual MIDI ports actually appear before opening the Ableton set, so the set
-binds to live ports instead of racing an app that is still booting.
+Poll-for-readiness rather than fixed sleeps: after launching, wait until an expected
+MIDI port appears before opening the project, so it binds to live ports instead of
+racing an app that is still booting.
 """
 
 from __future__ import annotations
@@ -64,38 +64,41 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
         if _wait_for(lambda: _midi_port_present(anchor), timeout=15):
             log(f"  ✔ ports MIDI virtuels présents")
         else:
-            log(f"  ⚠️  « {anchor} » toujours absent après 15s (Bome pas prêt ?)")
+            log(f"  ⚠️  « {anchor} » toujours absent après 15s (routeur MIDI pas prêt ?)")
 
 
-def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
+def open_project(cfg: dict, log=print, dry_run: bool = False) -> None:
     if not cfg["set"].get("open_after_launch", True):
-        log("  (ouverture du set désactivée : [set].open_after_launch = false)")
+        log("  (ouverture du projet désactivée : [set].open_after_launch = false)")
         return
     project = cfg["set"]["project"]
-    app = cfg["set"]["ableton_app"]
+    app = cfg["set"]["app"]
     if dry_run:
-        pe = "" if Path(project).exists() else "  (set introuvable !)"
-        ae = "" if Path(app).exists() else "  (Ableton introuvable !)"
+        pe = "" if Path(project).exists() else "  (projet introuvable !)"
+        ae = "" if Path(app).exists() else "  (app introuvable !)"
         log(f"  [dry-run] ouvrirait « {Path(project).name} »{pe}")
         log(f"  [dry-run]   dans {Path(app).stem}{ae}")
         return
     if not Path(project).exists():
-        log(f"  ✖ set introuvable : {project}")
+        log(f"  ✖ projet introuvable : {project}")
         log(f"    → corrige [set].project dans rig.toml")
         return
     if not Path(app).exists():
-        log(f"  ✖ Ableton introuvable : {app}")
+        log(f"  ✖ app introuvable : {app}")
         return
     r = subprocess.run(["open", "-a", app, project], capture_output=True, text=True)
     if r.returncode != 0:
-        log(f"  ✖ ouverture du set : {r.stderr.strip()}")
+        log(f"  ✖ ouverture du projet : {r.stderr.strip()}")
         return
     log(f"  ▶ ouverture de « {Path(project).name} » dans {Path(app).stem}")
-    log("  … attente du port « Ableton Loopback »")
-    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=45, interval=1):
-        log("  ✔ Ableton en ligne")
-    else:
-        log("  ⚠️  Ableton pas encore prêt après 45s (gros set / plugins qui chargent)")
+    req = cfg["checks"].get("midi_required") or []
+    if req:
+        anchor = req[0]
+        log(f"  … attente du port « {anchor} »")
+        if _wait_for(lambda: _midi_port_present(anchor), timeout=45, interval=1):
+            log("  ✔ projet en ligne")
+        else:
+            log("  ⚠️  pas encore prêt après 45s (gros projet / plugins qui chargent)")
 
 
 def run_post_cmds(cfg: dict, log=print, dry_run: bool = False) -> None:
@@ -120,4 +123,4 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     log("Lancement des apps du rig…" if not dry_run else "Séquence de mise en place (dry-run) :")
     launch_apps(cfg, log=log, dry_run=dry_run)
     run_post_cmds(cfg, log=log, dry_run=dry_run)
-    open_set(cfg, log=log, dry_run=dry_run)
+    open_project(cfg, log=log, dry_run=dry_run)
