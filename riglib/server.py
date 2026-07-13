@@ -30,16 +30,30 @@ def _group_of(key: str) -> str:
     return "Autre"
 
 
+def _resolve_icon(key: str, icons: dict) -> str:
+    """Icon for a check key, from config: exact key, else longest matching prefix, else •."""
+    if key in icons:
+        return icons[key]
+    best = ""
+    for k in icons:
+        if key.startswith(k) and len(k) > len(best):
+            best = k
+    return icons[best] if best else "•"
+
+
 def build_state(cfg: dict, with_audio: bool = True) -> dict:
     requested = _MODE["requested"] or cfg.get("mode", {}).get("default", "auto")
     mode = checks.resolve_mode(cfg, requested)
     # checks.run_all caches the slow system_profiler call internally, so polling is cheap.
     results = checks.run_all(cfg, mode, with_audio=with_audio, manual=_MANUAL)
+    icons = cfg.get("icons", {})
     items = []
     for r in results:
         rem = remedy.resolve(cfg, r)
+        d = r.to_dict()
+        d["glyph"] = d.get("glyph") or _resolve_icon(r.key, icons)   # config-driven icon
         items.append({
-            **r.to_dict(),
+            **d,
             "group": _group_of(r.key),
             "remedy": rem.label if (rem and r.status != checks.OK) else None,
         })
@@ -218,29 +232,6 @@ const IC={ok:"✅",warn:"⚠️",fail:"❌"};
 const dry=()=>document.getElementById("dry").checked;
 async function setMode(m){await fetch("/api/mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:m})});refresh();}
 async function manualSet(key,val){await fetch("/api/manual",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value:val})});refresh();}
-function iconFor(k){
-  if(k.startsWith("app:Ableton"))return"🎵";
-  if(k.startsWith("app:Stream"))return"🎛️";
-  if(k.startsWith("app:Bome"))return"🔀";
-  if(k.startsWith("app:Stage"))return"▶️";
-  if(k.startsWith("usb:"))return"🎛️";
-  if(k.startsWith("lamp:"))return"💡";
-  if(k.startsWith("kbd:breath"))return"🌬️";
-  if(k.startsWith("kbd:"))return"🎹";
-  if(k.startsWith("net:stage"))return"🌐";
-  if(k.startsWith("net:"))return"📱";
-  if(k.startsWith("host:"))return"📡";
-  if(k.startsWith("sys:vpn"))return"🔒";
-  if(k.startsWith("sys:output"))return"💻";
-  if(k.startsWith("sys:amphetamine"))return"☕";
-  if(k.startsWith("sys:macpower"))return"🔌";
-  if(k.startsWith("sys:iphonecharge"))return"🔋";
-  if(k.startsWith("audio:live"))return"🎚️";
-  if(k==="audio")return"🔊";
-  if(k.startsWith("midi?:"))return"🎹";
-  if(k.startsWith("midi:"))return"🔌";
-  return"•";
-}
 // --- signal-flow diagram: nodes coloured by the checks that feed them ----------
 const stc=s=>({ok:"#2ecc71",warn:"#f4b942",fail:"#ff5468"}[s]||"#55607a");
 function nstat(keys,map){let s="neutral";for(const k of keys){const v=map[k];
@@ -293,7 +284,7 @@ async function refresh(){
   if(!bad.length){prob.innerHTML='<div class="allok">✅ Tout est vert — rien à corriger.</div>';}
   else{prob.innerHTML="";for(const it of bad){
     const row=document.createElement("div");row.className="row "+it.status;
-    row.innerHTML=`<div class="ic">${it.glyph||iconFor(it.key)}</div>
+    row.innerHTML=`<div class="ic">${it.glyph||"•"}</div>
       <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
@@ -305,7 +296,7 @@ async function refresh(){
   document.getElementById("oksum").textContent=good.length?`▸ ${good.length} checks OK (déplier)`:"";
   const okc=document.getElementById("okchips");okc.innerHTML="";
   for(const it of good){const c=document.createElement("span");c.className="chip";
-    c.innerHTML=`${it.glyph||iconFor(it.key)} ${it.label}`;c.title=it.detail||"";
+    c.innerHTML=`${it.glyph||"•"} ${it.label}`;c.title=it.detail||"";
     if(it.key==="sys:iphonecharge"){c.style.cursor="pointer";c.title="cliquer pour réinitialiser";
       c.onclick=()=>manualSet("iphone_charge",false);}
     okc.appendChild(c);}

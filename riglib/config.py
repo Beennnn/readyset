@@ -110,6 +110,19 @@ DEFAULTS: dict = {
             "note": 60,
         },
     },
+    # Dashboard icons, as data (no emoji hardcoded in the engine). Keyed by a check
+    # key or a prefix; resolution = exact key, else the longest matching prefix, else
+    # "•". A host's own `icon` (from [[checks.hosts]]) always wins. Override in rig.toml.
+    "icons": {
+        "app:Ableton": "🎵", "app:Stream": "🎛️", "app:Bome": "🔀", "app:Stage": "▶️",
+        "usb": "🎛️", "host": "📡",
+        "kbd:breath": "🌬️", "kbd": "🎹",
+        "net:stage": "🌐", "net": "📱",
+        "sys:vpn": "🔒", "sys:output": "💻", "sys:amphetamine": "☕",
+        "sys:macpower": "🔌", "sys:iphonecharge": "🔋",
+        "audio:live": "🎚️", "audio": "🔊",
+        "midi?": "🎹", "midi": "🔌",
+    },
 }
 
 
