@@ -1,0 +1,83 @@
+# rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
+# falls back to the generic defaults in riglib/config.py. Nothing below is personal —
+# these are placeholder examples; replace with your paths / IPs / device names / MACs.
+
+[set]
+ableton_app = "/Applications/Ableton Live 12 Suite.app"
+project     = "/path/to/your/Gig Set.als"    # the .als preflight opens
+open_after_launch = true
+
+[launch]
+apps = [
+  "/Applications/Bome MIDI Translator Pro.app",
+  "/Applications/Bome Network.app",
+  "/Applications/Elgato Stream Deck.app",
+  # "/Applications/Stage Traxx 4.app",
+  # "/Applications/Amphetamine.app",
+]
+settle_seconds = 2
+amphetamine_session = true   # start an anti-sleep session during bring-up
+
+[checks]
+apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
+midi_required = ["Ableton Loopback"]      # MIDI input ports that MUST exist
+breath_port   = "Breath Controller"       # breath controller's MIDI input name
+audio_interface = "USB Audio"             # your interface's CoreAudio name
+default_output_match = "MacBook"          # macOS default output should be the Mac
+bome_network_port = 37000                 # Bome Network port; ESTABLISHED = remote connected
+iphone_host = ""                          # require a specific peer IP, or empty = any
+# Network (your stage + studio):
+stage_network = "192.168.1"               # subnet the Mac must be on
+modem_host    = "192.168.1.1"             # stage router/modem to ping
+studio_router = "192.168.1.1"             # reachable → "auto" mode = studio
+streamdecks = { XL = "Stream Deck XL", Plus = "Stream Deck Plus" }
+lamp_severity = "warn"
+
+# Stage lamps (Tuya/WLED) — found by MAC via ARP, then pinged. Add one block per lamp.
+# [[checks.lamps]]
+# name = "L1"
+# mac  = "aa:bb:cc:dd:ee:ff"
+
+[mode]
+default = "auto"    # boots live; flips to studio when studio_router answers
+
+[modes.live]
+keyboard_ok   = ["Piano"]             # your main keyboard's MIDI port (green if present)
+keyboard_warn = []                    # fallback keyboards (yellow if only these)
+live_output   = ["Piano"]            # Ableton must output here on stage
+require_amphetamine = true
+breath_severity = "fail"
+interface_severity = "fail"
+mac_power_severity = "fail"
+iphone_power_severity = "fail"
+# (Mac plugged but battery still draining = always FAIL, both modes.)
+
+[modes.studio]
+keyboard_ok   = ["Piano"]
+keyboard_warn = ["microKey"]
+live_output   = ["MacBook", "USB Audio"]
+require_amphetamine = false
+breath_severity = "warn"
+interface_severity = "warn"
+mac_power_severity = "warn"
+iphone_power_severity = "warn"
+
+[monitor]
+interval    = 5
+audio_every = 6
+alerts      = ["macos", "push", "streamdeck"]
+recovery_alerts = true
+
+[alerts.push]
+# ntfy.sh: pick a PRIVATE, unguessable topic and subscribe to it in the ntfy app.
+server   = "https://ntfy.sh"
+topic    = ""            # e.g. "my-rig-9d3f2a" — leave empty to disable push
+priority = "high"
+insecure = false         # set true only if your LAN does SSL interception (self-signed)
+
+[alerts.streamdeck]
+# Emits a note on a dead-end IAC port. Create it once: Audio MIDI Setup → IAC Driver
+# → "+" → rename "rig-alert". Map a Stream Deck key to MIDI feedback (note 60, ch 15).
+port    = "rig-alert"
+channel = 15
+note    = 60

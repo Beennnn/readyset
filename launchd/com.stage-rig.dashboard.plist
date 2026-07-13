@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stage-rig.dashboard</string>
+    <!-- bash -lc so the shebang's `env python3` resolves to the interpreter that has mido -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>exec '__RIG_DIR__/rig' serve --no-open</string>
+    </array>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__RIG_DIR__/logs/dashboard.log</string>
+    <key>StandardErrorPath</key>
+    <string>__RIG_DIR__/logs/dashboard.log</string>
+</dict>
+</plist>

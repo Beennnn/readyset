@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.stage-rig.menubar</string>
+    <!-- bash -lc wrapper: launchd refuses to bootstrap the bare GUI Mach-O directly
+         (I/O error 5), but the same binary launched through a login shell works. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>exec '__RIG_DIR__/menubar/RigMenuBar.app/Contents/MacOS/RigMenuBar'</string>
+    </array>
+    <key>KeepAlive</key>
+    <true/>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>__RIG_DIR__/logs/menubar.log</string>
+    <key>StandardErrorPath</key>
+    <string>__RIG_DIR__/logs/menubar.log</string>
+</dict>
+</plist>
