@@ -84,32 +84,31 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                           lambda dry: _launch_app(bome, dry))
         return None
 
-    # Bome Network ↔ iPhone: can't force the phone to connect, but relaunching
-    # Bome Network makes it re-advertise and reconnect known remotes.
-    if key == "net:iphone":
-        net = _app_path_for(cfg, "Bome Network")
-        if net:
-            return Remedy("Relancer Bome Network",
-                          lambda dry: _launch_app(net, dry))
+    # Command checks: run the configured fix_cmd (generic, config-driven).
+    if key.startswith("cmd:"):
+        name = key.split(":", 1)[1]
+        for c in cfg["checks"].get("commands", []):
+            if c.get("name") == name and c.get("fix_cmd"):
+                return Remedy(c.get("fix_label", "Réparer"),
+                              lambda dry, cmd=c["fix_cmd"]: _run_cmd(cmd, dry))
         return None
 
-    # Amphetamine: launch it if needed, then start an anti-sleep session.
-    if key == "sys:amphetamine":
-        return Remedy("Démarrer session Amphetamine", _amphetamine_session)
+    # Keep-awake: run its configured start command (e.g. start an anti-sleep session).
+    if key == "sys:keepawake":
+        ka = cfg["checks"].get("keepawake", {})
+        if ka.get("start_cmd"):
+            return Remedy(ka.get("start_label", "Démarrer la session"),
+                          lambda dry, cmd=ka["start_cmd"]: _run_cmd(cmd, dry))
+        return None
 
-    # Audio interface = hardware, and Live's output device is set inside Ableton —
-    # nothing to relaunch here.
+    # Audio interface = hardware, output device set inside the app — nothing to relaunch.
     return None
 
 
-def _amphetamine_session(dry: bool) -> tuple[bool, str]:
+def _run_cmd(cmd: str, dry: bool) -> tuple[bool, str]:
     if dry:
-        return True, "[dry-run] démarrerait une session Amphetamine"
-    subprocess.run(["open", "-a", "/Applications/Amphetamine.app"], capture_output=True)
-    r = subprocess.run(
-        ["osascript", "-e", 'tell application "Amphetamine" to start new session'],
-        capture_output=True, text=True,
-    )
+        return True, f"[dry-run] exécuterait : {cmd}"
+    r = subprocess.run(["/bin/bash", "-lc", cmd], capture_output=True, text=True)
     if r.returncode == 0:
-        return True, "session Amphetamine démarrée"
-    return False, r.stderr.strip() or "échec (autorisation Automation ?)"
+        return True, "ok"
+    return False, (r.stderr.strip() or f"exit {r.returncode}")[:200]

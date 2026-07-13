@@ -202,13 +202,42 @@ def _ping(host: str, timeout_s: int = 1) -> bool:
         return False
 
 
+def _criterion_holds(rule: dict) -> bool:
+    """One environment-detection criterion. Generic: reachable host (ping), the Mac
+    holding an IP on a subnet (interface), or an arbitrary command exiting 0 (cmd)."""
+    if rule.get("ping"):
+        return _ping(rule["ping"])
+    if rule.get("interface"):
+        try:
+            out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
+            return f"inet {rule['interface']}." in out
+        except Exception:
+            return False
+    if rule.get("cmd"):
+        try:
+            return subprocess.run(["/bin/bash", "-lc", rule["cmd"]],
+                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                  timeout=rule.get("timeout", 6)).returncode == 0
+        except Exception:
+            return False
+    return False
+
+
 def resolve_mode(cfg: dict, requested: str = "auto") -> str:
-    """live | studio | auto → concrete mode. Auto = studio when the studio router
-    (192.168.1.1) answers, else live. So the tool boots live and flips to studio
-    only once it sees the home network."""
-    if requested in ("live", "studio"):
+    """Pick the active profile. An explicit request wins. Otherwise the environment is
+    detected: config [mode].detect is an ordered list of {profile, <criterion>}; the
+    first rule whose criterion holds wins, else [mode].fallback (else the first mode).
+    Fully config-driven — no hardcoded network or profile names."""
+    modes = cfg.get("modes", {})
+    if requested in modes:
         return requested
-    return "studio" if _ping(cfg["checks"].get("studio_router", "192.168.1.1")) else "live"
+    md = cfg.get("mode", {})
+    for rule in md.get("detect", []):
+        prof = rule.get("profile")
+        if prof in modes and _criterion_holds(rule):
+            return prof
+    fb = md.get("fallback")
+    return fb if fb in modes else next(iter(modes), "live")
 
 
 def check_stage_network(cfg: dict) -> Result:
@@ -284,6 +313,33 @@ def check_hosts(cfg: dict) -> list[Result]:
         else:
             res.append(Result(key, name, sev,
                               "pas de réponse" if by_ip else "introuvable (ARP)", glyph))
+    return res
+
+
+def check_commands(cfg: dict) -> list[Result]:
+    """Arbitrary user-defined checks — run a command, pass if it exits 0 (or if its
+    stdout matches `expect_match`). This is what makes the engine domain-open: any
+    condition becomes a config entry, no code. Config `commands` = list of
+    {name, cmd, expect_exit?=0, expect_match?, severity?, icon?, timeout?}."""
+    import re as _re
+    res = []
+    for c in cfg["checks"].get("commands", []):
+        name = c.get("name", "?")
+        icon = c.get("icon", "")
+        sev = c.get("severity", FAIL)
+        try:
+            p = subprocess.run(["/bin/bash", "-lc", c.get("cmd", "")],
+                               capture_output=True, text=True, timeout=c.get("timeout", 10))
+        except Exception as exc:
+            res.append(Result(f"cmd:{name}", name, WARN, f"erreur: {exc}", icon))
+            continue
+        if "expect_match" in c:
+            ok = bool(_re.search(c["expect_match"], p.stdout))
+            detail = "" if ok else "sortie inattendue"
+        else:
+            ok = p.returncode == c.get("expect_exit", 0)
+            detail = "" if ok else f"exit {p.returncode}"
+        res.append(Result(f"cmd:{name}", name, OK if ok else sev, detail, icon))
     return res
 
 
@@ -448,6 +504,7 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += [check_stage_network(cfg)]
     results += check_hosts(cfg)
     results += check_links(cfg)
+    results += check_commands(cfg)
     results += [check_vpn(cfg)]
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]

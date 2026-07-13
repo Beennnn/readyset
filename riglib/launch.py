@@ -98,25 +98,26 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         log("  ⚠️  Ableton pas encore prêt après 45s (gros set / plugins qui chargent)")
 
 
-def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> None:
-    if not cfg["launch"].get("amphetamine_session", True):
-        return
-    if dry_run:
-        log("  [dry-run] démarrerait une session Amphetamine (anti-veille)")
-        return
-    # Amphetamine exposes an AppleScript command; a bare session runs indefinitely.
-    r = subprocess.run(
-        ["osascript", "-e", 'tell application "Amphetamine" to start new session'],
-        capture_output=True, text=True,
-    )
-    if r.returncode == 0:
-        log("  ☕ session Amphetamine démarrée")
-    else:
-        log(f"  ⚠️  Amphetamine : {r.stderr.strip() or 'session non démarrée (autorisation ?)'}")
+def run_post_cmds(cfg: dict, log=print, dry_run: bool = False) -> None:
+    """Generic post-launch shell commands (config launch.post_cmds), e.g. starting an
+    anti-sleep session. Each entry: a string, or {cmd, label}."""
+    for entry in cfg["launch"].get("post_cmds", []):
+        cmd = entry.get("cmd") if isinstance(entry, dict) else entry
+        label = entry.get("label", cmd) if isinstance(entry, dict) else cmd
+        if not cmd:
+            continue
+        if dry_run:
+            log(f"  [dry-run] exécuterait : {label}")
+            continue
+        r = subprocess.run(["/bin/bash", "-lc", cmd], capture_output=True, text=True)
+        if r.returncode == 0:
+            log(f"  ▶ {label}")
+        else:
+            log(f"  ⚠️  {label} : {r.stderr.strip() or f'exit {r.returncode}'}")
 
 
 def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     log("Lancement des apps du rig…" if not dry_run else "Séquence de mise en place (dry-run) :")
     launch_apps(cfg, log=log, dry_run=dry_run)
-    ensure_amphetamine_session(cfg, log=log, dry_run=dry_run)
+    run_post_cmds(cfg, log=log, dry_run=dry_run)
     open_set(cfg, log=log, dry_run=dry_run)

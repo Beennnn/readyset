@@ -20,7 +20,10 @@ apps = [
   "/Applications/Amphetamine.app",
 ]
 settle_seconds = 2
-amphetamine_session = true   # start an anti-sleep session during bring-up
+# Shell commands run after launching apps (generic). Here: start an anti-sleep session.
+post_cmds = [
+  { cmd = "osascript -e 'tell application \"Amphetamine\" to start new session'", label = "Amphetamine session" },
+]
 
 [checks]
 # label -> regex matched against the full process command line (pgrep -f).
@@ -30,7 +33,6 @@ breath_port   = "Breath Controller"        # breath controller's MIDI input name
 audio_interface = "RME Fireface UCX"       # your audio interface's CoreAudio name
 default_output_match = "MacBook"           # macOS default output should be the Mac
 stage_network = "192.168.1"                # subnet the Mac must be on
-studio_router = "192.168.1.1"              # reachable → "auto" mode = studio
 # USB devices that must be plugged: {label = product-name substring} (via ioreg).
 usb_devices = { "Stream Deck XL" = "Stream Deck XL", "Stream Deck Plus" = "Stream Deck Plus" }
 
@@ -41,6 +43,8 @@ process = "Amphetamine.app/Contents/MacOS/Amphetamine"
 owner   = "Amphetamine"
 label   = "Amphetamine (anti-veille)"
 icon    = "☕"
+start_cmd   = "osascript -e 'tell application \"Amphetamine\" to start new session'"
+start_label = "Start Amphetamine session"
 
 # A value read from an app's log, compared to the mode's `live_output`. Here: the audio
 # output device Ableton logs on startup. `pattern` needs one capture group.
@@ -73,8 +77,30 @@ name = "Lamp L2"
 mac  = "aa:bb:cc:00:00:02"
 icon = "💡"
 
+# Arbitrary command checks — the escape hatch: any condition, no code. Pass = exit 0
+# (or stdout matches expect_match). Optional fix_cmd powers a "réparer" button.
+# [[checks.commands]]
+# name = "Disk space"
+# cmd  = "[ $(df -g / | tail -1 | awk '{print $4}') -gt 10 ]"
+# severity = "warn"
+# icon = "💽"
+# [[checks.commands]]
+# name = "Postgres"
+# cmd  = "pg_isready -q"
+# fix_cmd = "brew services start postgresql"
+# fix_label = "Start Postgres"
+# icon = "🗄️"
+
 [mode]
-default = "auto"    # boots live; flips to studio when studio_router answers
+default = "auto"
+fallback = "live"          # no rule matches → this profile
+# Environment detection: first rule whose criterion holds wins. Criteria: ping (host
+# reachable), interface (Mac holds an IP on a subnet), cmd (command exits 0).
+detect = [
+  { profile = "studio", ping = "192.168.1.1" },
+  # { profile = "studio", interface = "192.168.1" },
+  # { profile = "rehearsal", cmd = "test -f ~/.rig-rehearsal" },
+]
 
 [modes.live]
 keyboard_ok   = ["P-225"]              # main stage keyboard (green if present)
