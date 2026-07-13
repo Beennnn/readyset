@@ -87,3 +87,10 @@ insecure = false         # set true only if your LAN does SSL interception (self
 port    = "rig-alert"
 channel = 15
 note    = 60
+
+# Dashboard icons are config data (defaults in riglib/config.py). Override any here —
+# keyed by check key or prefix (exact wins, else longest prefix). A host's own `icon`
+# always wins for that host.
+# [icons]
+# "app:Ableton" = "🎹"
+# "sys:vpn" = "🛡️"
