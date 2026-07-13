@@ -56,13 +56,13 @@ DEFAULTS: dict = {
         "iphone_host": "",
         # --- network (examples — set your own in rig.toml) ---
         "stage_network": "192.168.1",     # subnet the Mac must hold an IP on
-        "modem_host": "192.168.1.1",      # stage router/modem to ping
         "studio_router": "192.168.1.1",   # if reachable → "auto" resolves to studio
         # Stream Decks by ioreg USB product name.
         "streamdecks": {"XL": "Stream Deck XL", "Plus": "Stream Deck Plus"},
-        # Stage lamps (Tuya) — [{name="L1", mac="aa:bb:cc:dd:ee:ff"}, …] in rig.toml.
-        "lamps": [],
-        "lamp_severity": "warn",          # ambiance, not sound-critical
+        # Named network hosts that must respond — the engine is domain-agnostic (a host
+        # is just something that answers). Each: name + `ip` OR `mac`, optional
+        # `severity` ("warn"/"fail") and `icon`. Examples (lamps, modem) go in rig.toml.
+        "hosts": [],
     },
     # Two rigs, one tool. Start "live"; when the studio router is reachable, "auto"
     # resolves to "studio". The dashboard tirette forces it; CLI: --mode live|studio|auto.
