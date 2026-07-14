@@ -97,6 +97,15 @@ DEFAULTS: dict = {
         "alerts": ["macos"],  # active backends: macos, push, midi
         "recovery_alerts": True,
     },
+    # Optional automatic audio-level probe. A separate helper (see audiolevel/) that holds
+    # the OS audio permission publishes "<rms> <epoch>" to `file`; the engine only READS it
+    # — no platform-specific code here, any meter that writes that format works. When `file`
+    # is empty or stale, the soundcheck falls back to the manual "I hear sound" confirm.
+    "audiolevel": {
+        "file": "",           # path the probe writes to (set in rig.toml to enable); empty = disabled
+        "threshold": 0.003,   # RMS above this = sound is flowing
+        "max_age": 6,         # seconds; a reading older than this is considered stale (probe down)
+    },
     "alerts": {
         "push": {
             "server": "https://ntfy.sh",

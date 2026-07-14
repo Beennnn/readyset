@@ -134,6 +134,27 @@ audio_every = 6
 alerts      = ["macos", "push", "midi"]
 recovery_alerts = true
 
+# Optional automatic audio-level probe (macOS). Instead of the soundcheck asking you
+# "do you hear the sound?", a separate helper measures the real output level and confirms
+# it. Set `file` to enable, then install the helper:
+#   audiolevel/audiolevel 1.5 <bundle>          # run once → grant the audio permission
+#   audiolevel/install-daemon.sh <bundle>       # then install it as a login service
+# The helper publishes "<rms> <epoch>" to `file`; the engine only READS that file, so any
+# meter that writes the same format works. Empty `file` (default) = disabled → manual
+# confirm. `<bundle>` is an app-name substring to tap (e.g. your DAW); omit for global mix.
+[audiolevel]
+file      = ""       # e.g. "~/.cache/readyset/audiolevel" — empty disables the probe
+threshold = 0.003    # RMS above this = sound is flowing
+max_age   = 6        # seconds; a reading older than this = probe down → treated as "no signal"
+
+# You CAN also gate a check on it, but note: audio is silent between songs, so a continuous
+# monitor check would false-alarm. Prefer the soundcheck (a deliberate play-test) for audio.
+# [[checks.commands]]
+# label       = "Niveau audio en sortie"
+# icon        = "🎚️"
+# cmd         = "test $(( $(date +%s) - $(stat -f %m ~/.cache/readyset/audiolevel) )) -lt 6 && awk '{exit !($1+0>0.003)}' ~/.cache/readyset/audiolevel"
+# expect_exit = 0
+
 [alerts.push]
 # ntfy.sh: pick a PRIVATE, unguessable topic and subscribe to it in the ntfy app.
 server   = "https://ntfy.sh"

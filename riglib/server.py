@@ -106,7 +106,11 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"requested": _MODE["requested"] or self.cfg.get("mode", {}).get("default", "auto"),
                         "resolved": checks.resolve_mode(self.cfg, _MODE["requested"] or self.cfg.get("mode", {}).get("default", "auto"))})
         elif self.path.startswith("/api/midi"):
-            self._json(_MON.snapshot())
+            snap = _MON.snapshot()
+            # Merge the optional automatic audio-level probe (None when not configured, so
+            # the soundcheck keeps its manual "I hear sound" fallback).
+            snap["audio_auto"] = checks.read_audiolevel(self.cfg)
+            self._json(snap)
         else:
             self._send(404, b"not found", "text/plain")
 
@@ -401,8 +405,12 @@ SOUNDCHECK = r"""<!doctype html>
   <h2>Flux brut</h2>
   <div id="log">—</div>
   <div class="audio" id="audiobox">
-    <b>🔊 Son en sortie ?</b> — le logiciel ne peut pas l'entendre, confirme toi-même :
-    <div style="margin-top:8px;display:flex;gap:10px">
+    <b>🔊 Son en sortie ?</b> <span id="audiohint">— le logiciel ne peut pas l'entendre, confirme toi-même :</span>
+    <div id="audiometer" style="display:none;margin-top:10px">
+      <span class="ccbar" style="height:14px;display:block"><span class="ccfill" id="audiofill" style="width:0%"></span></span>
+      <span class="sub" id="audiolvl" style="display:block;margin-top:4px"></span>
+    </div>
+    <div style="margin-top:8px;display:flex;gap:10px" id="audiobtns">
       <button onclick="audio(true)">✅ J'entends le son</button>
       <button onclick="audio(false)">❌ Pas de son</button>
       <span class="sub" id="audiostate" style="align-self:center"></span>
@@ -449,7 +457,9 @@ function wizSteps(s){
     {id:"notes",txt:"Joue quelques notes au clavier",ok:x=>x.flags&&x.flags.notes>0,info:x=>x.flags&&x.flags.notes>0?`✔ ${x.flags.notes} notes`:""},
     {id:"breath",txt:"Souffle dans le breath controller"+(scMode==="studio"?" (optionnel)":""),skippable:true,ok:x=>!!(x.flags&&x.flags.breath),info:x=>x.flags&&x.flags.breath?"✔ souffle reçu":""},
     {id:"ctrls",txt:"Actionne chacun de tes contrôleurs",skippable:true,ok:_=>watched.length>0&&watched.every(w=>active.has(w)),info:_=>`${[...active].filter(a=>watched.includes(a)).length}/${watched.length} contrôleurs actifs`},
-    {id:"audio",txt:"Entends-tu le son en sortie ?",manual:true,ok:x=>x.audio_ok===true,info:x=>x.audio_ok===true?"✔ confirmé":""},
+    {id:"audio",txt:"Son en sortie ?",manual:true,
+     ok:x=>x.audio_auto&&x.audio_auto.enabled?x.audio_auto.ok===true:x.audio_ok===true,
+     info:x=>x.audio_auto&&x.audio_auto.enabled?(x.audio_auto.ok?`✔ auto — RMS ${x.audio_auto.rms.toFixed(3)}`:(x.audio_auto.fresh?`niveau ${x.audio_auto.rms.toFixed(3)} < seuil`:"sonde muette")):(x.audio_ok===true?"✔ confirmé":"")},
   ];
 }
 function renderWiz(s){
@@ -463,7 +473,7 @@ function renderWiz(s){
     const ic=done?"✅":sk?"⏭":isCur?"👉":"⚪";
     html+=`<div class="wstep ${done?"wdone":isCur?"wcur":""}"><span class="wic">${ic}</span>
       <span class="wtxt">${st.txt}<span class="winfo">${s?(st.info(s)||""):""}</span></span>`;
-    if(isCur&&st.manual)html+=`<span><button onclick="wizAudio(true)">✅ Oui</button> <button onclick="wizAudio(false)">❌ Non</button></span>`;
+    if(isCur&&st.manual&&!(s&&s.audio_auto&&s.audio_auto.enabled))html+=`<span><button onclick="wizAudio(true)">✅ Oui</button> <button onclick="wizAudio(false)">❌ Non</button></span>`;
     else if(isCur&&st.skippable)html+=`<button class="fix" onclick="wizSkip('${st.id}')">Passer</button>`;
     html+=`</div>`;
   });
@@ -496,9 +506,22 @@ async function poll(){
     d.innerHTML=`<div class="n">${p.name}</div><div class="l">${p.last||""}</div><div class="c">${p.count} msg</div>`;host.appendChild(d);}}
   renderShowMidi(s.channels);
   document.getElementById("log").textContent=(s.events||[]).map(e=>`${e.port.padEnd(22).slice(0,22)}  ${e.msg}`).join("\n")||"—";
-  const ab=document.getElementById("audiobox"),as=document.getElementById("audiostate");
-  ab.className="audio"+(s.audio_ok===true?" y":s.audio_ok===false?" n":"");
-  as.textContent=s.audio_ok===true?"✅ confirmé":s.audio_ok===false?"❌ pas de son":"";
+  const ab=document.getElementById("audiobox"),as=document.getElementById("audiostate"),aa=s.audio_auto;
+  if(aa&&aa.enabled){
+    // Automatic probe configured → live meter, no manual buttons.
+    document.getElementById("audiohint").textContent="— mesure automatique (sonde audio) :";
+    document.getElementById("audiometer").style.display="";
+    document.getElementById("audiobtns").style.display="none";
+    document.getElementById("audiofill").style.width=Math.min(100,Math.round(aa.rms/(aa.threshold*4)*100))+"%";
+    document.getElementById("audiolvl").textContent=aa.ok?`✅ son détecté (RMS ${aa.rms.toFixed(3)})`:(aa.fresh?`silence (RMS ${aa.rms.toFixed(3)} < seuil ${aa.threshold})`:"⚠️ sonde muette/absente — jouez, ou vérifiez le service audiolevel");
+    ab.className="audio"+(aa.ok?" y":aa.fresh?"":" n");
+  }else{
+    // No probe → manual "I hear sound" fallback (unchanged).
+    document.getElementById("audiometer").style.display="none";
+    document.getElementById("audiobtns").style.display="";
+    ab.className="audio"+(s.audio_ok===true?" y":s.audio_ok===false?" n":"");
+    as.textContent=s.audio_ok===true?"✅ confirmé":s.audio_ok===false?"❌ pas de son":"";
+  }
 }
 fetchMode();setInterval(fetchMode,5000);
 poll();setInterval(poll,300);

@@ -1,33 +1,49 @@
-# audiolevel — EXPERIMENTAL, not wired into the tool
+# audiolevel — automatic audio-signal probe
 
-A Swift CoreAudio process-tap helper that measures whether audio **signal** is
-flowing on a target process's output (mean RMS), without hearing it. It **works** from
-a clean state (silence → RMS 0.000, real audio → ~0.08) and correctly taps the
-target process.
+A Swift CoreAudio process-tap helper that measures whether audio **signal** is flowing
+(mean RMS) without hearing it. Feeds the soundcheck so it can auto-confirm "sound is
+out" instead of asking you the manual "J'entends le son" question.
 
-## Why it's NOT integrated
+## The design (why a separate long-lived process)
 
-Two macOS hurdles make it unsafe to call from the dashboard/monitor:
+macOS gates audio taps behind **TCC** (the per-app audio permission). A subprocess spawned
+by the dashboard does **not** inherit that grant, so a one-shot call from the server comes
+back silent. The fix: run the probe as its **own** long-lived process (a LaunchAgent you
+authorise once) that publishes the level to a file. The engine only **reads** that file —
+no macOS-specific code in the engine, and any meter writing the same format works.
 
-1. **TCC audio permission** — run directly from a terminal it works, but invoked as
-   a subprocess from Python / the launchd server it hangs (the tap blocks on an
-   audio-recording permission that a background process can't obtain).
-2. **Killing a hung run wedges CoreAudio** — a timed-out run gets SIGKILLed before
-   its cleanup (`AudioHardwareDestroyProcessTap` / `…AggregateDevice`) runs, leaking
-   taps that jam further tap creation until the leaked processes die. A failed
-   measure could disturb audio mid-preflight — unacceptable for a gig tool.
-
-So the rig keeps the **manual "J'entends le son"** confirm in the soundcheck.
-
-## Running it yourself (at your own risk)
-
-```bash
-./build.sh
-./audiolevel 1.5 ableton     # window seconds, process bundle-id substring (or "global")
-# → RMS <mean> TARGET <tapped> FRAMES <n>
+```
+audiolevel --daemon ──writes──►  <file>  ──reads──►  readyset [audiolevel]  ──►  soundcheck
+ (holds the TCC grant)     "<rms> <epoch>"          (generic file read)      (live meter / auto-confirm)
 ```
 
-Run it **directly in a terminal** (not through another process), and don't kill it
-mid-run. If tap creation starts hanging, the leaked taps clear once the stuck
-processes are killed (`pkill -9 -f audiolevel/audiolevel`); a `sudo killall
-coreaudiod` fully resets the HAL but interrupts all audio.
+## Install (opt-in)
+
+```bash
+# 1. Enable in rig.toml:
+#      [audiolevel]
+#      file = "~/.cache/readyset/audiolevel"
+# 2. Grant the audio permission ONCE, while you can see the prompt:
+./audiolevel 1.5 ableton          # run by hand → macOS asks for audio access → Allow
+# 3. Install as a login service (bundle substring optional; omit for global mix):
+./install-daemon.sh ableton
+```
+
+If the level stays 0, the permission isn't granted yet — repeat step 2, then
+`launchctl kickstart -k gui/$(id -u)/com.readyset.audiolevel`.
+
+When `[audiolevel].file` is empty or the reading is stale, the soundcheck automatically
+falls back to the manual confirm — the probe is a pure enhancement, never a requirement.
+
+## Modes
+
+```bash
+./audiolevel 1.5 ableton                 # ONE-SHOT: measure 1.5s, print "RMS <n> TARGET <t> FRAMES <n>"
+./audiolevel --daemon 1 <file> ableton   # DAEMON: keep the tap open, write "<rms> <epoch>" to <file> every 1s
+```
+
+## Troubleshooting
+
+- Level always 0 → TCC not granted (see install step 2), or nothing is playing.
+- Tap creation starts hanging → leaked taps from a killed run; `pkill -9 -f audiolevel/audiolevel`
+  clears them, or `sudo killall coreaudiod` fully resets the HAL (interrupts all audio).

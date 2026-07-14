@@ -3,17 +3,15 @@
 Items ouverts uniquement. Supprimer une ligne quand c'est shippé ; supprimer le fichier
 quand tout est fait.
 
-## À faire
+## À faire (gestes manuels, sur la machine de Benoît)
 
-- ☐ **Brancher le mètre audio (`audiolevel/`) dans le soundcheck** → aujourd'hui le
-  soundcheck repose sur la confirmation manuelle « J'entends le son » ; un vrai niveau
-  RMS live rendrait l'étape audio automatique. Bloqué par TCC (permission audio refusée
-  au subprocess). Décider l'approche : (a) tourner `audiolevel` en service permanent
-  pré-autorisé et le lire via socket/fichier, ou (b) intégrer la capture dans le binaire
-  menubar déjà autorisé.
+- ☐ **Installer la sonde audio** → le mécanisme est codé + branché dans le soundcheck
+  (mesure auto au lieu du « J'entends le son »). Reste le geste une fois : accorder la
+  permission audio (`audiolevel/audiolevel 1.5 ableton` → Autoriser) puis
+  `audiolevel/install-daemon.sh ableton`. Voir [audiolevel/README.md](audiolevel/README.md).
 
 ## 🤔 À valider en conditions réelles
 
-- ☐ **Vrai `rig preflight --mode live` de bout en bout, rig branché** → jamais exécuté en
-  vrai ; valider que tous les checks passent au vert dans les conditions du set ET que la
-  bascule live/studio se déclenche bien sur le critère ping (`[mode].detect`).
+- ☐ **Vrai `rig preflight --mode live`, rig branché** → jamais exécuté en vrai ; valider que
+  tous les checks passent au vert dans les conditions du set ET que la bascule live/studio
+  se déclenche bien sur le critère ping (`[mode].detect`).
