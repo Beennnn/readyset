@@ -69,3 +69,19 @@ All of it lives in **`rig.toml`** (git-ignored; copy `rig.example.toml`, which i
 complete, realistic, anonymised example). `riglib/config.py` holds only a neutral,
 non-personal skeleton. Requires Python 3.11 + `mido` (`pip install mido python-rtmidi`);
 two optional Swift helpers (`audiolevel/`, `menubar/`) build with `build.sh`.
+
+### Note on the menu-bar app (code signing)
+
+`menubar/RigMenuBar.app` is a **locally-built helper, not a notarized/Developer-ID
+app**. `build.sh` gives it only an *ad-hoc* signature. In practice:
+
+- **On the Mac that built it** it just runs — no Gatekeeper prompt (the bundle was
+  never downloaded, so it carries no quarantine attribute), and the login agent
+  starts it silently.
+- **If you copy the `.app` to another Mac** (AirDrop, zip, download), macOS quarantines
+  it and blocks the first launch as "unidentified developer" / "damaged". Fix there:
+  right-click the app → **Open** once, or `xattr -dr com.apple.quarantine RigMenuBar.app`.
+
+The intended path is to **rebuild from source** (`menubar/build.sh`) on each machine
+rather than ship the binary. Real signing would need a paid Apple Developer ID +
+notarization — deliberately out of scope for a personal login helper.
