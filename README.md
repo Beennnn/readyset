@@ -9,6 +9,12 @@ domain-agnostic: it knows only generic concepts. Everything specific — which a
 devices, hosts, commands, profiles, icons, topology — lives in **`rig.toml`**. The code
 names nothing proprietary.
 
+> **See it in context →** [**A live keyboardist with a laptop on stage**](docs/example-live-keyboardist.md)
+> walks through the shipped example config as a real gig rig — the silent-keyboard /
+> dead-audio / sleeping-laptop failures it catches, the DAW → router → audio-out signal
+> chain, and how one command brings it all up and watches it. Read that if you play with a
+> computer on stage; it's the concrete version of everything below.
+
 ```bash
 cd readyset
 cp rig.example.toml rig.toml     # then edit for your setup
@@ -66,9 +72,12 @@ first match wins, else `fallback`. The dashboard also has a manual toggle.
 ## Config
 
 All of it lives in **`rig.toml`** (git-ignored; copy `rig.example.toml`, which is a
-complete, realistic, anonymised example). `riglib/config.py` holds only a neutral,
-non-personal skeleton. Requires Python 3.11 + `mido` (`pip install mido python-rtmidi`);
-two optional Swift helpers (`audiolevel/`, `menubar/`) build with `build.sh`.
+complete, realistic, anonymised example — annotated line by line as a live keyboard rig).
+For the same example told as a story, see
+[A live keyboardist with a laptop on stage](docs/example-live-keyboardist.md).
+`riglib/config.py` holds only a neutral, non-personal skeleton. Requires Python 3.11 +
+`mido` (`pip install mido python-rtmidi`); two optional Swift helpers (`audiolevel/`,
+`menubar/`) build with `build.sh`.
 
 ### Note on the menu-bar app (code signing)
 
