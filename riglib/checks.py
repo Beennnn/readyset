@@ -485,6 +485,31 @@ def check_default_output(cfg: dict) -> Result:
     )
 
 
+def read_audiolevel(cfg: dict) -> dict | None:
+    """Read the optional audio-level probe file (see the `[audiolevel]` config + the
+    audiolevel/ helper). The file holds one line "<rms> <epoch>". Returns None when the
+    probe is not configured; otherwise {enabled, rms, age, fresh, ok, threshold}. `ok` is
+    True only when the reading is fresh AND above threshold — i.e. sound is really flowing
+    right now. The soundcheck uses this to auto-confirm audio instead of asking the human."""
+    al = cfg.get("audiolevel", {})
+    path = os.path.expanduser(al.get("file", "") or "")
+    if not path:
+        return None
+    thr = float(al.get("threshold", 0.003))
+    max_age = float(al.get("max_age", 6))
+    try:
+        raw = open(path).read().split()
+        rms = float(raw[0])
+        ts = float(raw[1]) if len(raw) > 1 else 0.0
+    except Exception:
+        # Configured but unreadable (probe never started / file missing) → enabled but not ok.
+        return {"enabled": True, "rms": 0.0, "age": None, "fresh": False, "ok": False, "threshold": thr}
+    age = max(0.0, time.time() - ts)
+    fresh = age <= max_age
+    return {"enabled": True, "rms": rms, "age": round(age, 1),
+            "fresh": fresh, "ok": bool(fresh and rms > thr), "threshold": thr}
+
+
 # PPP:Modem entries here are serial gadgets (ToneX pedal, Seeed boards), not VPNs —
 # a VPN is a *connected* service that isn't one of those serial modems.
 def check_vpn(cfg: dict) -> Result:
