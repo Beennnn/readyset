@@ -29,6 +29,11 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <!-- Allow the plain-HTTP poll to the local dashboard (127.0.0.1:8765). ATS blocks
+       cleartext by default; NSAllowsLocalNetworking whitelists loopback/.local/private IPs. -->
+  <key>NSAppTransportSecurity</key><dict>
+    <key>NSAllowsLocalNetworking</key><true/>
+  </dict>
 </dict></plist>
 PLIST
 # Ad-hoc signature ("-" = no identity): makes the bundle self-consistent so recent
