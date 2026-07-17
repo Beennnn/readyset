@@ -62,6 +62,7 @@ enum Pref {
     static let pill = "pref.floatingPill", expanded = "pref.expandedPanel"
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
+    static let popnew = "pref.popOnNewProblem"
     static func on(_ key: String, default def: Bool) -> Bool {
         let d = UserDefaults.standard
         return d.object(forKey: key) == nil ? def : d.bool(forKey: key)
@@ -140,6 +141,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var curWarns = 0, curFails = 0
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
+    var seenProblemKeys: Set<String> = []        // to detect a NEWLY appeared problem
 
     let url = "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
@@ -331,6 +333,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func apply(_ status: RigStatus, warns: Int, fails: Int, problems: [Problem]) {
         let old = current
         current = status; curWarns = warns; curFails = fails; self.problems = problems
+
+        // Pop on new problem: if a check that wasn't a problem before just became one, unfold
+        // the panel so it can't be missed — unless the user turned that behaviour off.
+        let curKeys = Set(problems.map { $0.key })
+        let newlyAppeared = curKeys.subtracting(seenProblemKeys)
+        seenProblemKeys = curKeys
+        if !newlyAppeared.isEmpty, Pref.on(Pref.popnew, default: true) { panelFolded = false }
+
         if !status.showsOverlay { panelFolded = false }        // reset fold when we return to normal
         applyGlyph(); applyOverlay()
         if status.rank > old.rank, status.showsOverlay { maybeNotify() }
@@ -473,6 +483,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle(menu, "Liseré au bord de l'écran", Pref.border, true, #selector(toggleBorder))
         toggle(menu, "Pastille flottante", Pref.pill, true, #selector(togglePill))
         toggle(menu, "Menu déplié sous la pastille", Pref.expanded, true, #selector(toggleExpanded))
+        toggle(menu, "Déplier sur un nouveau problème", Pref.popnew, true, #selector(togglePopnew))
         toggle(menu, "Afficher les warnings dans la popup", Pref.warnings, true, #selector(toggleWarnings))
         toggle(menu, "1 notification au changement d'état", Pref.notify, false, #selector(toggleNotify))
         toggle(menu, "⚠️ Corriger automatiquement (peut perturber)", Pref.autofix, false, #selector(toggleAutofix))
@@ -488,6 +499,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleBorder()   { flip(Pref.border, true); applyOverlay() }
     @objc func togglePill()     { flip(Pref.pill, true);   applyOverlay() }
     @objc func toggleExpanded() { flip(Pref.expanded, true); panelFolded = false; applyOverlay() }
+    @objc func togglePopnew()   { flip(Pref.popnew, true) }
     @objc func toggleWarnings() { flip(Pref.warnings, true); applyOverlay() }
     @objc func toggleNotify()   { flip(Pref.notify, false) }
     @objc func toggleAutofix()  { flip(Pref.autofix, false); maybeAutoFix() }

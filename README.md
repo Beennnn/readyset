@@ -104,6 +104,9 @@ and the rest of the screen stay click-through, so nothing is blocked mid-gig):
 - **Double click** → opens the web dashboard.
 - **🔧 fix button** (panel or menu) → `POST`s the check's key to `/api/fix` and refreshes.
   A check with no remedy (`remedy: null`) is shown greyed / informational only.
+- **Pop on new problem** *(toggle, default on)* → if a check that wasn't a problem before
+  just became one, the panel auto-unfolds so it can't be missed. Turn it off to keep a
+  folded panel folded.
 
 "Unreachable" (dashboard stopped, often on purpose) stays quiet — just the grey glyph,
 no border/pill — so stopping the server doesn't paint a permanent frame everywhere.
