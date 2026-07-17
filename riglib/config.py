@@ -41,7 +41,6 @@ DEFAULTS: dict = {
         # MIDI input ports that MUST be present (substring match).
         "midi_required": [],
         "breath_port": "Breath Controller",     # breath controller's MIDI input name
-        "audio_interface": "USB Audio",         # your interface's name — set in rig.toml
         "default_output_match": "MacBook",      # macOS default output should be the Mac
         # Subnet the Mac must hold an IP on (example — set your own in rig.toml).
         "stage_network": "192.168.1",
@@ -76,9 +75,9 @@ DEFAULTS: dict = {
             "keyboard_ok": ["Piano"],              # your main keyboard's MIDI port name
             "keyboard_warn": [],
             "live_output": ["Piano"],              # the DAW's audio output device on stage
+            "audio_interface": "Piano",            # macOS default OUTPUT must be this on stage (else error); omit → not checked
             "require_awake": True,
             "breath_severity": "fail",
-            "interface_severity": "fail",
             "mac_power_severity": "fail",
         },
         "studio": {
@@ -87,7 +86,6 @@ DEFAULTS: dict = {
             "live_output": ["MacBook", "USB Audio"],
             "require_awake": False,
             "breath_severity": "warn",
-            "interface_severity": "warn",
             "mac_power_severity": "warn",
         },
     },
