@@ -67,7 +67,8 @@ DEFAULTS: dict = {
     # Two rigs, one tool. Start "live"; when the studio router is reachable, "auto"
     # resolves to "studio". The dashboard tirette forces it; CLI: --mode live|studio|auto.
     # Profile auto-detection. `detect` = ordered [{profile, <criterion>}]; first whose
-    # criterion holds wins (criteria: ping / interface / cmd), else `fallback`.
+    # criterion holds wins, else `fallback`. Criteria: ping / interface / gateway_mac
+    # (router's MAC — stable & unique, best for "am I home") / cmd.
     "mode": {"default": "auto", "fallback": "live", "detect": []},
     "modes": {
         "live": {

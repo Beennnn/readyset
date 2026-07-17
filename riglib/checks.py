@@ -208,11 +208,38 @@ def _ping(host: str, timeout_s: int = 1) -> bool:
         return False
 
 
+def _norm_mac(mac: str) -> str:
+    return ":".join(p.zfill(2) for p in mac.lower().replace("-", ":").split(":"))
+
+
+def _gateway_mac() -> str | None:
+    """MAC of the current default gateway (router). Stable AND unique per router — unlike
+    its IP (192.168.1.1 is a near-universal default), so it identifies THIS specific network
+    even where another venue reuses the same subnet. Pings the gateway first to warm the
+    ARP cache."""
+    import re as _re
+    try:
+        gw = subprocess.run(["route", "-n", "get", "default"],
+                            capture_output=True, text=True, timeout=4).stdout
+        ip = next((ln.split(":", 1)[1].strip() for ln in gw.splitlines() if "gateway:" in ln), None)
+        if not ip:
+            return None
+        _ping(ip)   # ensure the router is in the ARP table
+        out = subprocess.run(["arp", "-n", ip], capture_output=True, text=True, timeout=4).stdout
+        m = _re.search(r"([0-9a-fA-F]{1,2}(?::[0-9a-fA-F]{1,2}){5})", out)
+        return _norm_mac(m.group(1)) if m else None
+    except Exception:
+        return None
+
+
 def _criterion_holds(rule: dict) -> bool:
-    """One environment-detection criterion. Generic: reachable host (ping), the Mac
-    holding an IP on a subnet (interface), or an arbitrary command exiting 0 (cmd)."""
+    """One environment-detection criterion. Generic: reachable host (ping), the Mac holding
+    an IP on a subnet (interface), the default gateway's MAC (gateway_mac — stable/unique per
+    router), or an arbitrary command exiting 0 (cmd)."""
     if rule.get("ping"):
         return _ping(rule["ping"])
+    if rule.get("gateway_mac"):
+        return _gateway_mac() == _norm_mac(rule["gateway_mac"])
     if rule.get("interface"):
         try:
             out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
