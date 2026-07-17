@@ -94,21 +94,29 @@ final class BorderView: NSView {
 // it via populatePill(). Height is fixed; its window width is sized to the content.
 final class PillBar: NSView {
     let stack = NSStackView()
+    private let grad = CAGradientLayer()
     override init(frame: NSRect) {
         super.init(frame: frame)
         wantsLayer = true
         layer?.cornerRadius = 17
         layer?.masksToBounds = true
+        layer?.borderWidth = 1
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor   // subtle rim = less flat
+        grad.startPoint = CGPoint(x: 0.5, y: 0); grad.endPoint = CGPoint(x: 0.5, y: 1)
+        layer?.insertSublayer(grad, at: 0)
         stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
         stack.translatesAutoresizingMaskIntoConstraints = false
         addSubview(stack)
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             stack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
     }
     required init?(coder: NSCoder) { fatalError("no coder") }
+    override func layout() { super.layout(); grad.frame = bounds }
+    // A soft vertical gradient (top lighter → bottom deeper) instead of one flat aggressive red.
+    func setGradient(_ top: NSColor, _ bottom: NSColor) { grad.colors = [top.cgColor, bottom.cgColor] }
 }
 
 // ---------------------------------------------------------------------------
@@ -281,19 +289,29 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return c
     }
 
-    // Coloured SF Symbol for a check's status (cleaner than an emoji).
+    // Status glyph inside a soft tinted circle — a modern "chip" look, calmer than a
+    // full-bleed coloured icon.
     private func statusIcon(_ status: String) -> NSView {
-        let iv = NSImageView()
-        let name = status == "fail" ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
         let color: NSColor = status == "fail" ? .systemRed : .systemOrange
+        let name = status == "fail" ? "xmark" : "exclamationmark"
+        let chip = NSView(); chip.wantsLayer = true
+        chip.layer?.backgroundColor = color.withAlphaComponent(0.22).cgColor
+        chip.layer?.cornerRadius = 11
+        chip.translatesAutoresizingMaskIntoConstraints = false
+        let iv = NSImageView()
+        iv.translatesAutoresizingMaskIntoConstraints = false
         if let img = NSImage(systemSymbolName: name, accessibilityDescription: status) {
-            // hierarchicalColor (not paletteColors) keeps the inner glyph (the ✕ / !) visible
-            // as a lighter shade instead of flooding the whole symbol one flat colour.
-            let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
-                .applying(.init(hierarchicalColor: color))
+            let cfg = NSImage.SymbolConfiguration(pointSize: 11, weight: .heavy).applying(.init(hierarchicalColor: color))
             iv.image = img.withSymbolConfiguration(cfg)
         }
-        return iv
+        chip.addSubview(iv)
+        NSLayoutConstraint.activate([
+            chip.widthAnchor.constraint(equalToConstant: 22),
+            chip.heightAnchor.constraint(equalToConstant: 22),
+            iv.centerXAnchor.constraint(equalTo: chip.centerXAnchor),
+            iv.centerYAnchor.constraint(equalTo: chip.centerYAnchor),
+        ])
+        return chip
     }
 
     // Paint a button as the shared "fix action" colour with white text. bezelColor is
@@ -420,9 +438,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyDetailPanel()
     }
 
-    // Fill the status bar: coloured background + summary + fix-all / fold / web buttons.
+    // Fill the status bar: soft gradient + summary + fix-all / web, then the fold chevron
+    // at the far right (disclosure convention). Keeps red, but richer than one flat aggressive tone.
     private func populatePill(_ bar: PillBar) {
-        bar.layer?.backgroundColor = current.overlayColor.cgColor
+        if current == .fail {
+            bar.setGradient(NSColor(srgbRed: 0.87, green: 0.25, blue: 0.23, alpha: 1),
+                            NSColor(srgbRed: 0.69, green: 0.11, blue: 0.12, alpha: 1))
+        } else {
+            bar.setGradient(NSColor(srgbRed: 0.97, green: 0.62, blue: 0.17, alpha: 1),
+                            NSColor(srgbRed: 0.82, green: 0.44, blue: 0.05, alpha: 1))
+        }
         bar.stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
         let n = curFails + curWarns
@@ -434,12 +459,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             bar.stack.addArrangedSubview(barButton("bolt.fill", "Tout corriger",
                                                    "Lancer tous les correctifs", #selector(fixAll)))
         }
+        bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
+                                               "Ouvrir le dashboard web (détail)", #selector(open)))
+        // Disclosure chevron LAST (far right), per platform convention.
         let folded = panelFolded || !Pref.on(Pref.expanded, default: true)
         bar.stack.addArrangedSubview(barButton(folded ? "chevron.down" : "chevron.up", nil,
                                                folded ? "Déplier le détail" : "Replier le détail",
                                                #selector(toggleFold)))
-        bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
-                                               "Ouvrir le dashboard web (détail)", #selector(open)))
     }
 
     // A pill-bar button: white SF symbol (+ optional white text) on a translucent-white chip.
