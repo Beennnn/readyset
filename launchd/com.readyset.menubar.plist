@@ -10,7 +10,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>exec '__RIG_DIR__/menubar/RigMenuBar.app/Contents/MacOS/RigMenuBar'</string>
+        <string>exec '/Applications/RigMenuBar.app/Contents/MacOS/RigMenuBar'</string>
     </array>
     <key>KeepAlive</key>
     <true/>
