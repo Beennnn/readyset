@@ -61,6 +61,7 @@ enum Pref {
     static let glyph = "pref.glyphColor", border = "pref.edgeBorder"
     static let pill = "pref.floatingPill", expanded = "pref.expandedPanel"
     static let notify = "pref.notifyOnChange"
+    static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
     static func on(_ key: String, default def: Bool) -> Bool {
         let d = UserDefaults.standard
         return d.object(forKey: key) == nil ? def : d.bool(forKey: key)
@@ -138,6 +139,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var current: RigStatus = .ok
     var curWarns = 0, curFails = 0
     var problems: [Problem] = []
+    var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
 
     let url = "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
@@ -211,7 +213,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // (it would report the constrained height, not the natural content height).
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: fx.leadingAnchor, constant: 14),
-            stack.trailingAnchor.constraint(equalTo: fx.trailingAnchor, constant: -14),
             stack.topAnchor.constraint(equalTo: fx.topAnchor, constant: 12),
         ])
         pw.contentView = fx
@@ -227,26 +228,59 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return t
     }
 
-    private func populate(_ stack: NSStackView) {
-        stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        stack.addArrangedSubview(label("🎹 Rig — \(curFails) bloquant(s), \(curWarns) avertissement(s)", bold: true))
-        if problems.isEmpty { stack.addArrangedSubview(label("Tout est ok 🎉", bold: false)) }
-        for p in problems {
-            let row = NSStackView(); row.orientation = .horizontal; row.spacing = 10
-            row.alignment = .centerY; row.translatesAutoresizingMaskIntoConstraints = false
-            let lbl = label("\(p.glyph) \(p.label) — \(p.detail)", bold: false)
-            row.addArrangedSubview(lbl)
-            if let rem = p.remedy {
-                let btn = KeyButton(title: "🔧 \(rem)", target: self, action: #selector(fixTapped(_:)))
-                btn.key = p.key; btn.bezelStyle = .rounded; btn.controlSize = .small
-                btn.setContentHuggingPriority(.required, for: .horizontal)
-                btn.setContentCompressionResistancePriority(.required, for: .horizontal)
-                row.addArrangedSubview(btn)
+    // Build the columnar detail view: header, a grid (status | item | problem | fix),
+    // then a footer with "fix all" + "config" buttons. Rebuilt on each poll.
+    private func populate(_ outer: NSStackView) {
+        outer.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let showWarn = Pref.on(Pref.warnings, default: true)
+        let probs = showWarn ? problems : problems.filter { $0.status == "fail" }
+
+        outer.addArrangedSubview(label("🎹 Rig — \(curFails) bloquant(s), \(curWarns) avertissement(s)", bold: true))
+
+        if probs.isEmpty {
+            outer.addArrangedSubview(label(problems.isEmpty ? "Tout est ok 🎉"
+                                           : "Aucun bloquant (warnings masqués)", bold: false))
+        } else {
+            let grid = NSGridView()
+            grid.translatesAutoresizingMaskIntoConstraints = false
+            grid.rowSpacing = 6; grid.columnSpacing = 12
+            for p in probs {
+                let icon = label(p.status == "fail" ? "❌" : "⚠️", bold: false)
+                let item = label(shortItem(p), bold: true); item.toolTip = p.label
+                let prob = label(shortProblem(p), bold: false); prob.toolTip = p.detail
+                let action: NSView
+                if let rem = p.remedy {
+                    let b = KeyButton(title: shorten(rem, 24), target: self, action: #selector(fixTapped(_:)))
+                    b.key = p.key; b.bezelStyle = .rounded; b.controlSize = .small; b.toolTip = rem
+                    action = b
+                } else { action = label("—", bold: false) }
+                grid.addRow(with: [icon, item, prob, action])
             }
-            row.widthAnchor.constraint(equalToConstant: 532).isActive = true
-            stack.addArrangedSubview(row)
+            grid.column(at: 0).xPlacement = .center
+            grid.column(at: 3).xPlacement = .trailing
+            outer.addArrangedSubview(grid)
         }
+
+        let footer = NSStackView(); footer.orientation = .horizontal; footer.spacing = 10
+        let fixAll = NSButton(title: "⚡ Lancer tous les correctifs", target: self, action: #selector(fixAll))
+        fixAll.bezelStyle = .rounded; fixAll.controlSize = .small
+        fixAll.isEnabled = probs.contains { $0.remedy != nil }
+        let cfgBtn = NSButton(title: "⚙️ Config", target: self, action: #selector(open))
+        cfgBtn.bezelStyle = .rounded; cfgBtn.controlSize = .small
+        footer.addArrangedSubview(fixAll); footer.addArrangedSubview(cfgBtn)
+        outer.addArrangedSubview(footer)
     }
+
+    private func shorten(_ s: String, _ n: Int) -> String {
+        let t = s.trimmingCharacters(in: .whitespaces)
+        return t.count <= n ? t : String(t.prefix(n - 1)) + "…"
+    }
+    private func shortItem(_ p: Problem) -> String {   // strip parentheticals/quotes, cap length
+        var s = p.label
+        for sep in [" (", " «", " —", " :"] { if let r = s.range(of: sep) { s = String(s[..<r.lowerBound]) } }
+        return shorten(s, 26)
+    }
+    private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 34) }
 
     // ---- Poll --------------------------------------------------------------
     func refresh() {
@@ -281,7 +315,22 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if !status.showsOverlay { panelFolded = false }        // reset fold when we return to normal
         applyGlyph(); applyOverlay()
         if status.rank > old.rank, status.showsOverlay { maybeNotify() }
+        maybeAutoFix()
     }
+
+    // Auto-fix mode (off by default): fire each problem's remedy as it appears, throttled
+    // to once per key per 60 s so a fix that doesn't clear the problem doesn't spam.
+    private func maybeAutoFix() {
+        guard Pref.on(Pref.autofix, default: false) else { return }
+        let now = Date()
+        for p in problems where p.remedy != nil {
+            if let last = lastFixAttempt[p.key], now.timeIntervalSince(last) < 60 { continue }
+            lastFixAttempt[p.key] = now
+            runFix(p.key)
+        }
+    }
+
+    @objc func fixAll() { for p in problems where p.remedy != nil { runFix(p.key) } }
 
     // ---- Menu-bar glyph ----------------------------------------------------
     private func applyGlyph() {
@@ -331,12 +380,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyDetailPanel() {
         let show = Pref.on(Pref.pill, default: true) && Pref.on(Pref.expanded, default: true)
                    && current.showsOverlay && !panelFolded
-        let w: CGFloat = 560
         for (i, d) in details.enumerated() where i < NSScreen.screens.count {
             guard show else { d.win.orderOut(nil); continue }
             populate(d.stack)
             d.stack.layoutSubtreeIfNeeded()
-            let h = d.stack.fittingSize.height + 24
+            let sz = d.stack.fittingSize                        // content-driven size (columns)
+            let w = min(760, max(320, sz.width + 28))
+            let h = sz.height + 24
             let screen = NSScreen.screens[i]
             let pillBottom = screen.frame.maxY - 34 - 34       // matches the pill placement above
             let x = screen.frame.minX + (screen.frame.width - w) / 2
@@ -404,8 +454,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         toggle(menu, "Liseré au bord de l'écran", Pref.border, true, #selector(toggleBorder))
         toggle(menu, "Pastille flottante", Pref.pill, true, #selector(togglePill))
         toggle(menu, "Menu déplié sous la pastille", Pref.expanded, true, #selector(toggleExpanded))
+        toggle(menu, "Afficher les warnings dans la popup", Pref.warnings, true, #selector(toggleWarnings))
         toggle(menu, "1 notification au changement d'état", Pref.notify, false, #selector(toggleNotify))
+        toggle(menu, "⚠️ Corriger automatiquement (peut perturber)", Pref.autofix, false, #selector(toggleAutofix))
         menu.addItem(.separator())
+        add(menu, "⚡ Lancer tous les correctifs", #selector(fixAll))
         add(menu, "🔍 Voir le détail des problèmes…", #selector(showDetailMenu))
         add(menu, "🌐 Ouvrir le dashboard", #selector(open))
         add(menu, "↻ Rafraîchir maintenant", #selector(refreshNow))
@@ -416,7 +469,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleBorder()   { flip(Pref.border, true); applyOverlay() }
     @objc func togglePill()     { flip(Pref.pill, true);   applyOverlay() }
     @objc func toggleExpanded() { flip(Pref.expanded, true); panelFolded = false; applyOverlay() }
+    @objc func toggleWarnings() { flip(Pref.warnings, true); applyOverlay() }
     @objc func toggleNotify()   { flip(Pref.notify, false) }
+    @objc func toggleAutofix()  { flip(Pref.autofix, false); maybeAutoFix() }
     private func flip(_ key: String, _ def: Bool) { Pref.set(key, !Pref.on(key, default: def)) }
 
     @objc func refreshNow() { refresh() }
