@@ -326,7 +326,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func colorize(_ b: NSButton) {
         b.isBordered = false
         b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.systemOrange.cgColor
+        b.layer?.backgroundColor = NSColor.systemGreen.cgColor    // fix actions = green
         b.layer?.cornerRadius = 6
         b.attributedTitle = NSAttributedString(string: "  " + b.title + "  ", attributes: [
             .foregroundColor: NSColor.white,
@@ -464,7 +464,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         if problems.contains(where: { $0.remedy != nil }) {
             bar.stack.addArrangedSubview(barButton("bolt.fill", "Tout corriger",
-                                                   "Lancer tous les correctifs", #selector(fixAll)))
+                                                   "Lancer tous les correctifs", #selector(fixAll), green: true))
         }
         bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
                                                "Ouvrir le dashboard web (détail)", #selector(open)))
@@ -475,11 +475,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                #selector(toggleFold)))
     }
 
-    // A pill-bar button: white SF symbol (+ optional white text) on a translucent-white chip.
-    private func barButton(_ symbol: String, _ text: String?, _ tip: String, _ action: Selector) -> NSButton {
+    // A pill-bar button: white SF symbol (+ optional white text). Neutral chips are
+    // translucent white; the fix action ("tout corriger") is green like the panel's fixes.
+    private func barButton(_ symbol: String, _ text: String?, _ tip: String, _ action: Selector,
+                           green: Bool = false) -> NSButton {
         let b = NSButton(); b.target = self; b.action = action; b.toolTip = tip
         b.isBordered = false; b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.26).cgColor
+        b.layer?.backgroundColor = (green ? NSColor.systemGreen : NSColor.white.withAlphaComponent(0.26)).cgColor
         b.layer?.cornerRadius = 11
         b.imagePosition = text == nil ? .imageOnly : .imageLeading
         if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: tip) {
