@@ -284,7 +284,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func colorize(_ b: NSButton) {
         b.isBordered = false
         b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.systemGreen.cgColor
+        b.layer?.backgroundColor = NSColor.systemOrange.cgColor
         b.layer?.cornerRadius = 6
         b.attributedTitle = NSAttributedString(string: "  " + b.title + "  ", attributes: [
             .foregroundColor: NSColor.white,
