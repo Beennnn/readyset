@@ -370,12 +370,14 @@ def check_commands(cfg: dict) -> list[Result]:
         except Exception as exc:
             res.append(Result(f"cmd:{name}", name, WARN, f"erreur: {exc}", icon))
             continue
+        # Optional `fail_detail` = a friendly message shown when the check fails (instead of
+        # the raw "exit N" / "sortie inattendue").
         if "expect_match" in c:
             ok = bool(_re.search(c["expect_match"], p.stdout))
-            detail = "" if ok else "sortie inattendue"
+            detail = "" if ok else c.get("fail_detail", "sortie inattendue")
         else:
             ok = p.returncode == c.get("expect_exit", 0)
-            detail = "" if ok else f"exit {p.returncode}"
+            detail = "" if ok else c.get("fail_detail", f"exit {p.returncode}")
         res.append(Result(f"cmd:{name}", name, OK if ok else sev, detail, icon))
     return res
 
