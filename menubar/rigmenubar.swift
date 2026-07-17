@@ -200,6 +200,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 80),
                          styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
         configureFloatingPanel(pw)
+        // Force dark appearance: in Light mode the .hudWindow material renders light-grey,
+        // which makes the white text unreadable. Dark appearance = dark material + our white
+        // text keeps high contrast on any wallpaper / system appearance.
+        pw.appearance = NSAppearance(named: .darkAqua)
         let fx = NSVisualEffectView(frame: pw.contentView!.bounds)
         fx.material = .hudWindow; fx.blendingMode = .behindWindow; fx.state = .active
         fx.wantsLayer = true; fx.layer?.cornerRadius = 12; fx.layer?.masksToBounds = true
