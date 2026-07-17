@@ -91,7 +91,9 @@ toggleable from the glyph's **options menu** and the choice persists (UserDefaul
 | **Menu-bar glyph** | Recoloured by status: ok → discreet template, warn → orange, fail → red, dashboard unreachable → grey. |
 | **Edge border** | A coloured frame around every screen (click-through, all Spaces, over full-screen apps). Warn/fail only. |
 | **Floating pill** | A top-centre badge with the counts (`❌ N  ⚠ M  Rig`), one per screen. Warn/fail only. **Clickable** (see below). |
-| **Expanded panel** | *(default ON)* The problem list ALWAYS unfolded in a HUD panel right under the pill — one row per failing/warning check (`glyph  label — detail`) plus a one-click **🔧 fix** when the dashboard offers a remedy. One panel per screen. |
+| **Expanded panel** | *(default ON)* The problem list ALWAYS unfolded in a HUD panel under the pill, laid out in **columns**: status icon (❌/⚠️) · short item name · short problem · a **fix button** per available remedy. A footer has **⚡ Lancer tous les correctifs** (runs every available fix) and **⚙️ Config** (opens the dashboard). One panel per screen. |
+| **Hide warnings in the popup** | *(config toggle)* When off, the panel lists only blockers (`fail`) — warnings still count in the pill/glyph but don't clutter the list. |
+| **Auto-fix on the fly** | *(off by default, ⚠️ labelled as potentially disruptive)* When on, each problem's remedy fires automatically as it appears, throttled to once per check per 60 s. |
 | **One notification on change** | A single silent banner the moment the status *worsens* into a problem — never repeats, stays in Notification Center until dismissed. Off by default. |
 
 **Pill interactions** (only the small pill + panel windows catch clicks — the border
