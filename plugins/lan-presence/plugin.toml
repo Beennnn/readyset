@@ -1,0 +1,5 @@
+name = "lan-presence"
+summary = "Is a device (by MAC) present on the local network right now?"
+macos_gap = "takes an ARP-warm ping + arp parse; no single command answers 'is MAC X here?'"
+requires = []
+usage = "run.sh <mac>   # exit 0 iff the device answers on the LAN"

@@ -1,0 +1,5 @@
+name = "gateway-mac"
+summary = "Print the default gateway's MAC — or exit 0 if it matches an expected one"
+macos_gap = "identifying the network by its router MAC (unique) takes route+ping+arp; the IP (192.168.1.1) is a universal default"
+requires = []
+usage = "run.sh              # prints the gateway MAC\n       run.sh <expected>   # exit 0 iff gateway MAC == expected"

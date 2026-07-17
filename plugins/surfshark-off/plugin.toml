@@ -1,0 +1,5 @@
+name = "surfshark-off"
+summary = "Turn OFF the currently-connected VPN(s) and keep them off"
+macos_gap = "scutil --nc stop doesn't hold against on-demand VPNs; must disable the network service"
+requires = ["scoped NOPASSWD sudoers rule for networksetup -setnetworkserviceenabled (see Beennnn/surfshark-toggle)"]
+usage = "run.sh          # cuts every currently-connected VPN service"

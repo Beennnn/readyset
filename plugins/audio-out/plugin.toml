@@ -1,0 +1,5 @@
+name = "audio-out"
+summary = "Set the macOS default sound OUTPUT device by name substring"
+macos_gap = "macOS ships no CLI to change the default output device"
+requires = ["switchaudio-osx (brew install switchaudio-osx)"]
+usage = "run.sh <name-substring>   # e.g. run.sh mac  → first output device matching 'mac'"
