@@ -458,15 +458,28 @@ def _audio_items() -> list[dict]:
     return [it for top in data.get("SPAudioDataType", []) for it in top.get("_items", [])]
 
 
-def check_audio(cfg: dict, mode: str = "live") -> Result:
-    want = cfg["checks"]["audio_interface"]
-    sev = cfg["modes"].get(mode, {}).get("interface_severity", "fail")
-    names = [it.get("_name", "") for it in _audio_items()]
-    hit = any(want.lower() in n.lower() for n in names)
+def _default_output_name() -> str | None:
+    """Name of the macOS default sound OUTPUT device right now, or None if undetermined."""
+    for it in _audio_items():
+        if it.get("coreaudio_default_audio_output_device") == "spaudio_yes":
+            return it.get("_name", "")
+    return None
+
+
+def check_audio(cfg: dict, mode: str = "live") -> Result | None:
+    """Verify the audio OUTPUT is on the mode's expected device. Per-mode:
+    modes.<mode>.audio_interface = the device the sound must go out on (e.g. the P-225 in
+    live). Absent for a mode → nothing to verify (returns None; e.g. studio). Mismatch is a
+    hard error — on stage, sound on the wrong device means silence to the PA."""
+    want = cfg["modes"].get(mode, {}).get("audio_interface")
+    if not want:
+        return None
+    name = _default_output_name()
+    ok = bool(name) and want.lower() in name.lower()
     return Result(
-        key="audio", label=f"Interface audio « {want} »",
-        status=OK if hit else sev,
-        detail="" if hit else ("non détectée" if sev == FAIL else "non détectée (OK en studio)"),
+        key="audio", label=f"Sortie audio sur {want}",
+        status=OK if ok else FAIL,
+        detail="" if ok else f"sortie actuelle : {name or 'indéterminée'} (attendu : {want})",
     )
 
 
@@ -474,11 +487,7 @@ def check_default_output(cfg: dict) -> Result:
     """The macOS default sound output must be the Mac itself (built-in), not an
     external / AirPlay / conferencing device."""
     want = cfg["checks"].get("default_output_match", "MacBook")
-    name = None
-    for it in _audio_items():
-        if it.get("coreaudio_default_audio_output_device") == "spaudio_yes":
-            name = it.get("_name", "")
-            break
+    name = _default_output_name()
     if name is None:
         return Result("sys:output", "Sortie son par défaut (Mac)", WARN, "indéterminée")
     ok = want.lower() in name.lower()
@@ -551,7 +560,10 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
         if r:
             results.append(r)
     if with_audio:
-        results += [check_default_output(cfg), check_audio(cfg, mode)]
+        results.append(check_default_output(cfg))
+        a = check_audio(cfg, mode)       # None when the mode has nothing to verify (e.g. studio)
+        if a:
+            results.append(a)
         op = check_output_probe(cfg, mode)
         if op:
             results.append(op)
