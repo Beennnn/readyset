@@ -81,8 +81,9 @@ DEFAULTS: dict = {
             "mac_power_severity": "fail",
         },
         "studio": {
-            "keyboard_ok": ["Piano"],
-            "keyboard_warn": ["microKey"],
+            "keyboard_ok": ["Piano", "microKey"],
+            "keyboard_warn": [],
+            "keyboard_none_severity": "warn",   # no keyboard at all: "warn" here vs default "fail" (live)
             "live_output": ["MacBook", "USB Audio"],
             "require_awake": False,
             "breath_severity": "warn",
