@@ -63,6 +63,8 @@ enum Pref {
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
     static let popnew = "pref.popOnNewProblem"
+    static let screenMode = "pref.screenMode"      // "main" (default) | "all" | "custom"
+    static let screenIDs = "pref.screenIDs"        // display IDs for "custom"
     static func on(_ key: String, default def: Bool) -> Bool {
         let d = UserDefaults.standard
         return d.object(forKey: key) == nil ? def : d.bool(forKey: key)
@@ -418,12 +420,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyOverlay() {
         let showBorder = Pref.on(Pref.border, default: true) && current.showsOverlay
         let showPill = Pref.on(Pref.pill, default: true) && current.showsOverlay
-        for b in borders {
+        for (i, b) in borders.enumerated() {
             b.view.status = current
-            if showBorder { b.win.orderFrontRegardless() } else { b.win.orderOut(nil) }
+            if showBorder && allowedScreen(i) { b.win.orderFrontRegardless() } else { b.win.orderOut(nil) }
         }
         for (i, p) in pills.enumerated() where i < NSScreen.screens.count {
-            if showPill {
+            if showPill && allowedScreen(i) {
                 populatePill(p.bar)
                 p.bar.layoutSubtreeIfNeeded()
                 let screen = NSScreen.screens[i]
@@ -503,7 +505,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let show = Pref.on(Pref.pill, default: true) && Pref.on(Pref.expanded, default: true)
                    && current.showsOverlay && !panelFolded
         for (i, d) in details.enumerated() where i < NSScreen.screens.count {
-            guard show else { d.win.orderOut(nil); continue }
+            guard show && allowedScreen(i) else { d.win.orderOut(nil); continue }
             populate(d.stack)
             d.stack.layoutSubtreeIfNeeded()
             let sz = d.stack.fittingSize                        // content-driven size (columns)
@@ -586,6 +588,33 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, "🔍 Voir le détail des problèmes…", #selector(showDetailMenu))
         add(menu, "🌐 Ouvrir le dashboard", #selector(open))
         add(menu, "↻ Rafraîchir maintenant", #selector(refreshNow))
+        menu.addItem(.separator())
+        menu.addItem(screensSubmenu())
+        add(menu, "⏻ Quitter iRig", #selector(quit))
+    }
+
+    // "Afficher sur" submenu: main screen (default) / all / per-screen custom picks.
+    private func screensSubmenu() -> NSMenuItem {
+        let item = NSMenuItem(title: "🖥️ Afficher sur", action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        let mode = UserDefaults.standard.string(forKey: Pref.screenMode) ?? "main"
+        let main = NSMenuItem(title: "Écran principal", action: #selector(setScreenMain), keyEquivalent: "")
+        main.target = self; main.state = mode == "main" ? .on : .off; sub.addItem(main)
+        let all = NSMenuItem(title: "Tous les écrans", action: #selector(setScreenAll), keyEquivalent: "")
+        all.target = self; all.state = mode == "all" ? .on : .off; sub.addItem(all)
+        if NSScreen.screens.count > 1 {
+            sub.addItem(.separator())
+            let ids = (UserDefaults.standard.array(forKey: Pref.screenIDs) as? [Int]) ?? []
+            for (idx, s) in NSScreen.screens.enumerated() {
+                let it = NSMenuItem(title: "Écran \(idx + 1) — \(Int(s.frame.width))×\(Int(s.frame.height))",
+                                    action: #selector(toggleScreen(_:)), keyEquivalent: "")
+                it.target = self; it.tag = displayID(s)
+                it.state = (mode == "custom" && ids.contains(displayID(s))) ? .on : .off
+                sub.addItem(it)
+            }
+        }
+        item.submenu = sub
+        return item
     }
 
     // ---- Toggle actions ----------------------------------------------------
@@ -598,6 +627,40 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func toggleNotify()   { flip(Pref.notify, false) }
     @objc func toggleAutofix()  { flip(Pref.autofix, false); maybeAutoFix() }
     private func flip(_ key: String, _ def: Bool) { Pref.set(key, !Pref.on(key, default: def)) }
+
+    // ---- Screen selection --------------------------------------------------
+    private func displayID(_ s: NSScreen) -> Int {
+        (s.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber)?.intValue ?? -1
+    }
+    private func allowedScreen(_ i: Int) -> Bool {
+        let screens = NSScreen.screens
+        guard i < screens.count else { return false }
+        switch UserDefaults.standard.string(forKey: Pref.screenMode) ?? "main" {
+        case "all": return true
+        case "custom":
+            let ids = (UserDefaults.standard.array(forKey: Pref.screenIDs) as? [Int]) ?? []
+            return ids.contains(displayID(screens[i]))
+        default:                                    // "main" = the primary display (origin 0,0)
+            let primary = screens.firstIndex(where: { $0.frame.origin == .zero }) ?? 0
+            return i == primary
+        }
+    }
+    @objc func setScreenMain() { UserDefaults.standard.set("main", forKey: Pref.screenMode); applyOverlay() }
+    @objc func setScreenAll()  { UserDefaults.standard.set("all", forKey: Pref.screenMode); applyOverlay() }
+    @objc func toggleScreen(_ sender: NSMenuItem) {
+        UserDefaults.standard.set("custom", forKey: Pref.screenMode)
+        var ids = (UserDefaults.standard.array(forKey: Pref.screenIDs) as? [Int]) ?? []
+        if ids.contains(sender.tag) { ids.removeAll { $0 == sender.tag } } else { ids.append(sender.tag) }
+        UserDefaults.standard.set(ids, forKey: Pref.screenIDs); applyOverlay()
+    }
+
+    // KeepAlive=true would respawn a plain terminate, so bootout the LaunchAgent (stays quit
+    // until next login, where RunAtLoad brings it back).
+    @objc func quit() {
+        let p = Process(); p.launchPath = "/bin/launchctl"
+        p.arguments = ["bootout", "gui/\(getuid())/com.readyset.menubar"]
+        try? p.run()
+    }
 
     @objc func refreshNow() { refresh() }
     @objc func open() { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
