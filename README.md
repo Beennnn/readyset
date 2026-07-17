@@ -79,6 +79,35 @@ For the same example told as a story, see
 `mido` (`pip install mido python-rtmidi`); two optional Swift helpers (`audiolevel/`,
 `menubar/`) build with `build.sh`.
 
+### Menu-bar alerts (RigMenuBar)
+
+`menubar/RigMenuBar.app` puts a keyboard glyph in the menu bar and polls
+`/api/state` every 5 s. It makes a non-ok rig **visible on the Mac without a Stream
+Deck**, using only passive, silent signals (no repeating sound). Every mechanism is
+toggleable from the glyph's **options menu** and the choice persists (UserDefaults):
+
+| Mechanism | What it does |
+|---|---|
+| **Menu-bar glyph** | Recoloured by status: ok → discreet template, warn → orange, fail → red, dashboard unreachable → grey. |
+| **Edge border** | A coloured frame around every screen (click-through, all Spaces, over full-screen apps). Warn/fail only. |
+| **Floating pill** | A top-centre badge with the counts (`❌ N  ⚠ M  Rig`). Warn/fail only. **Clickable** (see below). |
+| **One notification on change** | A single silent banner the moment the status *worsens* into a problem — never repeats, stays in Notification Center until dismissed. Off by default. |
+
+**Pill interactions** (only the small top-centre pill window catches clicks — the
+border and the rest of the screen stay click-through, so nothing is blocked mid-gig):
+
+- **Single click** → a menu listing every failing/warning check with its `detail`, and
+  for each one that the dashboard exposes a remedy for, a one-click **🔧 fix** that
+  `POST`s to `/api/fix` and refreshes.
+- **Double click** → opens the web dashboard.
+
+"Unreachable" (dashboard stopped, often on purpose) stays quiet — just the grey glyph,
+no border/pill — so stopping the server doesn't paint a permanent frame everywhere.
+The one HTTP dependency (the loopback poll) needs `NSAllowsLocalNetworking` in the app's
+`Info.plist`; `build.sh` sets it. Note: colouring the menu-bar glyph rebuilds the SF
+Symbol image with a palette colour rather than setting `contentTintColor` — the menu bar
+renders *template* glyphs in its own vibrant colour and ignores the tint.
+
 ### Note on the menu-bar app (code signing)
 
 `menubar/RigMenuBar.app` is a **locally-built helper, not a notarized/Developer-ID
