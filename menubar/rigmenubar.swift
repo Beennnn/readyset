@@ -256,6 +256,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 if let rem = p.remedy {
                     let b = KeyButton(title: shorten(rem, 24), target: self, action: #selector(fixTapped(_:)))
                     b.key = p.key; b.bezelStyle = .rounded; b.controlSize = .small; b.toolTip = rem
+                    colorize(b)                          // fix actions share one accent colour
                     action = b
                 } else { action = label("—", bold: false) }
                 grid.addRow(with: [icon, item, prob, action])
@@ -269,10 +270,24 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let fixAll = NSButton(title: "⚡ Lancer tous les correctifs", target: self, action: #selector(fixAll))
         fixAll.bezelStyle = .rounded; fixAll.controlSize = .small
         fixAll.isEnabled = probs.contains { $0.remedy != nil }
+        if fixAll.isEnabled { colorize(fixAll) }         // same accent colour as the per-fix buttons
         let cfgBtn = NSButton(title: "⚙️ Config", target: self, action: #selector(open))
-        cfgBtn.bezelStyle = .rounded; cfgBtn.controlSize = .small
+        cfgBtn.bezelStyle = .rounded; cfgBtn.controlSize = .small   // stays default grey
         footer.addArrangedSubview(fixAll); footer.addArrangedSubview(cfgBtn)
         outer.addArrangedSubview(footer)
+    }
+
+    // Paint a button as the shared "fix action" colour with white text. bezelColor is
+    // ignored under the forced-dark appearance, so we fill the layer ourselves.
+    private func colorize(_ b: NSButton) {
+        b.isBordered = false
+        b.wantsLayer = true
+        b.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
+        b.layer?.cornerRadius = 6
+        b.attributedTitle = NSAttributedString(string: "  " + b.title + "  ", attributes: [
+            .foregroundColor: NSColor.white,
+            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)])
+        b.heightAnchor.constraint(equalToConstant: 22).isActive = true
     }
 
     private func shorten(_ s: String, _ n: Int) -> String {
