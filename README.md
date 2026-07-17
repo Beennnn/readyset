@@ -90,16 +90,18 @@ toggleable from the glyph's **options menu** and the choice persists (UserDefaul
 |---|---|
 | **Menu-bar glyph** | Recoloured by status: ok → discreet template, warn → orange, fail → red, dashboard unreachable → grey. |
 | **Edge border** | A coloured frame around every screen (click-through, all Spaces, over full-screen apps). Warn/fail only. |
-| **Floating pill** | A top-centre badge with the counts (`❌ N  ⚠ M  Rig`). Warn/fail only. **Clickable** (see below). |
+| **Floating pill** | A top-centre badge with the counts (`❌ N  ⚠ M  Rig`), one per screen. Warn/fail only. **Clickable** (see below). |
+| **Expanded panel** | *(default ON)* The problem list ALWAYS unfolded in a HUD panel right under the pill — one row per failing/warning check (`glyph  label — detail`) plus a one-click **🔧 fix** when the dashboard offers a remedy. One panel per screen. |
 | **One notification on change** | A single silent banner the moment the status *worsens* into a problem — never repeats, stays in Notification Center until dismissed. Off by default. |
 
-**Pill interactions** (only the small top-centre pill window catches clicks — the
-border and the rest of the screen stay click-through, so nothing is blocked mid-gig):
+**Pill interactions** (only the small pill + panel windows catch clicks — the border
+and the rest of the screen stay click-through, so nothing is blocked mid-gig):
 
-- **Single click** → a menu listing every failing/warning check with its `detail`, and
-  for each one that the dashboard exposes a remedy for, a one-click **🔧 fix** that
-  `POST`s to `/api/fix` and refreshes.
+- **Single click** → with the expanded panel ON (default), folds/unfolds the panel. With
+  it OFF, pops the same problem list as a menu.
 - **Double click** → opens the web dashboard.
+- **🔧 fix button** (panel or menu) → `POST`s the check's key to `/api/fix` and refreshes.
+  A check with no remedy (`remedy: null`) is shown greyed / informational only.
 
 "Unreachable" (dashboard stopped, often on purpose) stays quiet — just the grey glyph,
 no border/pill — so stopping the server doesn't paint a permanent frame everywhere.
