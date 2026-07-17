@@ -136,6 +136,12 @@ final class ClickableEffectView: NSVisualEffectView {
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }
 
+// A macOS toggle switch bound to a preference key (used by the Settings window).
+final class PrefSwitch: NSSwitch {
+	var key = ""
+	var onChange: (() -> Void)?
+}
+
 // ---------------------------------------------------------------------------
 // App delegate
 // ---------------------------------------------------------------------------
@@ -153,6 +159,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var seenProblemKeys: Set<String> = []        // to detect a NEWLY appeared problem
     var barWidths: [CGFloat] = []                 // last bar width per screen (panel matches it)
+    var settingsWin: NSWindow?                    // the classic Settings window
 
     let url = "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
@@ -172,6 +179,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh()
         let t = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
         RunLoop.main.add(t, forMode: .common); timer = t
+
+        // Test/debug hook: RIG_SETTINGS=1 opens the Settings window at launch (for screenshots).
+        if ProcessInfo.processInfo.environment["RIG_SETTINGS"] != nil { showSettings() }
     }
 
     // ---- Overlay windows (border + pill per screen) ------------------------
@@ -573,60 +583,109 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let head = NSMenuItem(title: "🎹 Rig — \(current.label)", action: nil, keyEquivalent: "")
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
-        let sec = NSMenuItem(title: "Mécanismes d'alerte", action: nil, keyEquivalent: ""); sec.isEnabled = false
-        menu.addItem(sec)
-        toggle(menu, "Glyphe menubar coloré", Pref.glyph, true, #selector(toggleGlyph))
-        toggle(menu, "Liseré au bord de l'écran", Pref.border, true, #selector(toggleBorder))
-        toggle(menu, "Pastille flottante", Pref.pill, true, #selector(togglePill))
-        toggle(menu, "Menu déplié sous la pastille", Pref.expanded, true, #selector(toggleExpanded))
-        toggle(menu, "Déplier sur un nouveau problème", Pref.popnew, true, #selector(togglePopnew))
-        toggle(menu, "Afficher les warnings dans la popup", Pref.warnings, true, #selector(toggleWarnings))
-        toggle(menu, "1 notification au changement d'état", Pref.notify, false, #selector(toggleNotify))
-        toggle(menu, "⚠️ Corriger automatiquement (peut perturber)", Pref.autofix, false, #selector(toggleAutofix))
+        let settings = NSMenuItem(title: "⚙︎ Réglages…", action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; menu.addItem(settings)
         menu.addItem(.separator())
         add(menu, "⚡ Lancer tous les correctifs", #selector(fixAll))
         add(menu, "🔍 Voir le détail des problèmes…", #selector(showDetailMenu))
         add(menu, "🌐 Ouvrir le dashboard", #selector(open))
         add(menu, "↻ Rafraîchir maintenant", #selector(refreshNow))
         menu.addItem(.separator())
-        menu.addItem(screensSubmenu())
         add(menu, "⏻ Quitter iRig", #selector(quit))
     }
 
-    // "Afficher sur" submenu: main screen (default) / all / per-screen custom picks.
-    private func screensSubmenu() -> NSMenuItem {
-        let item = NSMenuItem(title: "🖥️ Afficher sur", action: nil, keyEquivalent: "")
-        let sub = NSMenu()
-        let mode = UserDefaults.standard.string(forKey: Pref.screenMode) ?? "main"
-        let main = NSMenuItem(title: "Écran principal", action: #selector(setScreenMain), keyEquivalent: "")
-        main.target = self; main.state = mode == "main" ? .on : .off; sub.addItem(main)
-        let all = NSMenuItem(title: "Tous les écrans", action: #selector(setScreenAll), keyEquivalent: "")
-        all.target = self; all.state = mode == "all" ? .on : .off; sub.addItem(all)
-        if NSScreen.screens.count > 1 {
-            sub.addItem(.separator())
-            let ids = (UserDefaults.standard.array(forKey: Pref.screenIDs) as? [Int]) ?? []
-            for (idx, s) in NSScreen.screens.enumerated() {
-                let it = NSMenuItem(title: "Écran \(idx + 1) — \(Int(s.frame.width))×\(Int(s.frame.height))",
-                                    action: #selector(toggleScreen(_:)), keyEquivalent: "")
-                it.target = self; it.tag = displayID(s)
-                it.state = (mode == "custom" && ids.contains(displayID(s))) ? .on : .off
-                sub.addItem(it)
-            }
-        }
-        item.submenu = sub
-        return item
+    // ---- Settings window (classic macOS look) ------------------------------
+    @objc func showSettings() {
+        if settingsWin == nil { settingsWin = makeSettingsWindow() }
+        settingsWin?.center()
+        settingsWin?.makeKeyAndOrderFront(nil)
+        NSApp.activate(ignoringOtherApps: true)
     }
 
-    // ---- Toggle actions ----------------------------------------------------
-    @objc func toggleGlyph()    { flip(Pref.glyph, true);  applyGlyph() }
-    @objc func toggleBorder()   { flip(Pref.border, true); applyOverlay() }
-    @objc func togglePill()     { flip(Pref.pill, true);   applyOverlay() }
-    @objc func toggleExpanded() { flip(Pref.expanded, true); panelFolded = false; applyOverlay() }
-    @objc func togglePopnew()   { flip(Pref.popnew, true) }
-    @objc func toggleWarnings() { flip(Pref.warnings, true); applyOverlay() }
-    @objc func toggleNotify()   { flip(Pref.notify, false) }
-    @objc func toggleAutofix()  { flip(Pref.autofix, false); maybeAutoFix() }
-    private func flip(_ key: String, _ def: Bool) { Pref.set(key, !Pref.on(key, default: def)) }
+    private func makeSettingsWindow() -> NSWindow {
+        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 200),
+                         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
+        w.title = "Réglages iRig"
+        w.isReleasedWhenClosed = false
+        let stack = NSStackView()
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
+        stack.translatesAutoresizingMaskIntoConstraints = false
+
+        stack.addArrangedSubview(settingsSection("Affichage", [
+            ("Glyphe menu-barre coloré", Pref.glyph, true, { self.applyGlyph() }),
+            ("Liseré au bord de l'écran", Pref.border, true, { self.applyOverlay() }),
+            ("Pastille flottante", Pref.pill, true, { self.applyOverlay() }),
+            ("Panneau déplié sous la pastille", Pref.expanded, true, { self.panelFolded = false; self.applyOverlay() }),
+        ]))
+        stack.addArrangedSubview(settingsSection("Alertes", [
+            ("Afficher les warnings dans la popup", Pref.warnings, true, { self.applyOverlay() }),
+            ("Déplier sur un nouveau problème", Pref.popnew, true, {}),
+            ("Une notification au changement d'état", Pref.notify, false, {}),
+            ("Corriger automatiquement (peut perturber)", Pref.autofix, false, { self.maybeAutoFix() }),
+        ]))
+        stack.addArrangedSubview(settingsScreenSection())
+
+        let footer = NSStackView(); footer.orientation = .horizontal; footer.spacing = 12
+        footer.translatesAutoresizingMaskIntoConstraints = false
+        let ver = NSTextField(labelWithString: "iRig · readyset")
+        ver.font = .systemFont(ofSize: 11); ver.textColor = .secondaryLabelColor
+        let quit = NSButton(title: "Quitter iRig", target: self, action: #selector(quit))
+        quit.bezelStyle = .rounded
+        footer.addArrangedSubview(ver)
+        footer.addArrangedSubview(NSView())                       // flexible spacer
+        footer.addArrangedSubview(quit)
+        stack.addArrangedSubview(footer)
+        footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
+
+        w.contentView = stack
+        w.setContentSize(stack.fittingSize)
+        return w
+    }
+
+    private func settingsSection(_ title: String, _ rows: [(String, String, Bool, () -> Void)]) -> NSView {
+        let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
+        let h = NSTextField(labelWithString: title.uppercased())
+        h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
+        box.addArrangedSubview(h)
+        let grid = NSGridView(); grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 12; grid.columnSpacing = 24
+        for (label, key, def, onChange) in rows {
+            let l = NSTextField(labelWithString: label)
+            let sw = PrefSwitch(); sw.key = key; sw.onChange = onChange
+            sw.state = Pref.on(key, default: def) ? .on : .off
+            sw.target = self; sw.action = #selector(switchToggled(_:))
+            grid.addRow(with: [l, sw])
+        }
+        grid.column(at: 1).xPlacement = .trailing
+        box.addArrangedSubview(grid)
+        return box
+    }
+
+    private func settingsScreenSection() -> NSView {
+        let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
+        let h = NSTextField(labelWithString: "ÉCRANS")
+        h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
+        box.addArrangedSubview(h)
+        let grid = NSGridView(); grid.rowSpacing = 12; grid.columnSpacing = 24
+        let l = NSTextField(labelWithString: "Afficher sur")
+        let pop = NSPopUpButton()
+        pop.addItems(withTitles: ["Écran principal", "Tous les écrans"])
+        pop.selectItem(at: (UserDefaults.standard.string(forKey: Pref.screenMode) ?? "main") == "all" ? 1 : 0)
+        pop.target = self; pop.action = #selector(screenPopup(_:))
+        grid.addRow(with: [l, pop])
+        box.addArrangedSubview(grid)
+        return box
+    }
+
+    @objc func switchToggled(_ sw: PrefSwitch) {
+        Pref.set(sw.key, sw.state == .on)
+        sw.onChange?()
+    }
+    @objc func screenPopup(_ p: NSPopUpButton) {
+        UserDefaults.standard.set(p.indexOfSelectedItem == 1 ? "all" : "main", forKey: Pref.screenMode)
+        applyOverlay()
+    }
 
     // ---- Screen selection --------------------------------------------------
     private func displayID(_ s: NSScreen) -> Int {
@@ -645,15 +704,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             return i == primary
         }
     }
-    @objc func setScreenMain() { UserDefaults.standard.set("main", forKey: Pref.screenMode); applyOverlay() }
-    @objc func setScreenAll()  { UserDefaults.standard.set("all", forKey: Pref.screenMode); applyOverlay() }
-    @objc func toggleScreen(_ sender: NSMenuItem) {
-        UserDefaults.standard.set("custom", forKey: Pref.screenMode)
-        var ids = (UserDefaults.standard.array(forKey: Pref.screenIDs) as? [Int]) ?? []
-        if ids.contains(sender.tag) { ids.removeAll { $0 == sender.tag } } else { ids.append(sender.tag) }
-        UserDefaults.standard.set(ids, forKey: Pref.screenIDs); applyOverlay()
-    }
-
     // KeepAlive=true would respawn a plain terminate, so bootout the LaunchAgent (stays quit
     // until next login, where RunAtLoad brings it back).
     @objc func quit() {
@@ -675,13 +725,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UNNotificationRequest(identifier: "rig-change-\(current.rank)", content: c, trigger: nil))
     }
 
-    // ---- Menu helpers ------------------------------------------------------
+    // ---- Menu helper -------------------------------------------------------
     private func add(_ menu: NSMenu, _ title: String, _ sel: Selector) {
         let mi = NSMenuItem(title: title, action: sel, keyEquivalent: ""); mi.target = self; menu.addItem(mi)
-    }
-    private func toggle(_ menu: NSMenu, _ title: String, _ key: String, _ def: Bool, _ sel: Selector) {
-        let mi = NSMenuItem(title: title, action: sel, keyEquivalent: ""); mi.target = self
-        mi.state = Pref.on(key, default: def) ? .on : .off; menu.addItem(mi)
     }
 }
 
