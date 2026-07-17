@@ -119,6 +119,21 @@ final class PillBar: NSView {
     func setGradient(_ top: NSColor, _ bottom: NSColor) { grad.colors = [top.cgColor, bottom.cgColor] }
 }
 
+// The detail panel's body: a visual-effect surface that folds the panel when clicked on any
+// empty area, while still letting its buttons handle their own clicks (hitTest lets a button
+// or a button's subview through, and claims everything else for itself).
+final class ClickableEffectView: NSVisualEffectView {
+    var onClick: (() -> Void)?
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        var v = hit
+        while let cur = v { if cur is NSButton { return hit }; v = cur.superview }
+        return self
+    }
+    override func mouseUp(with event: NSEvent) { onClick?() }
+    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+}
+
 // ---------------------------------------------------------------------------
 // App delegate
 // ---------------------------------------------------------------------------
@@ -197,7 +212,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // which makes the white text unreadable. Dark appearance = dark material + our white
         // text keeps high contrast on any wallpaper / system appearance.
         pw.appearance = NSAppearance(named: .darkAqua)
-        let fx = NSVisualEffectView(frame: pw.contentView!.bounds)
+        let fx = ClickableEffectView(frame: pw.contentView!.bounds)
+        fx.onClick = { [weak self] in self?.toggleFold() }     // click empty panel area = fold/unfold
         fx.material = .hudWindow; fx.blendingMode = .behindWindow; fx.state = .active
         fx.wantsLayer = true; fx.layer?.cornerRadius = 14; fx.layer?.masksToBounds = true
         fx.layer?.borderWidth = 1
@@ -448,15 +464,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // Fill the status bar: soft gradient + summary + fix-all / web, then the fold chevron
     // at the far right (disclosure convention). Keeps red, but richer than one flat aggressive tone.
     private func populatePill(_ bar: PillBar) {
-        if current == .fail {
-            bar.setGradient(NSColor(srgbRed: 0.87, green: 0.25, blue: 0.23, alpha: 1),
-                            NSColor(srgbRed: 0.69, green: 0.11, blue: 0.12, alpha: 1))
-        } else {
-            bar.setGradient(NSColor(srgbRed: 0.97, green: 0.62, blue: 0.17, alpha: 1),
-                            NSColor(srgbRed: 0.82, green: 0.44, blue: 0.05, alpha: 1))
-        }
+        // Neutral dark bar (was full red). Severity shows only as a small coloured dot now.
+        bar.setGradient(NSColor(white: 0.19, alpha: 0.96), NSColor(white: 0.11, alpha: 0.96))
         bar.stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
+        bar.stack.addArrangedSubview(dot(current.overlayColor))     // red/orange accent
         let n = curFails + curWarns
         let summary = NSTextField(labelWithString: "Rig — \(n) à vérifier")
         summary.font = .systemFont(ofSize: 14, weight: .bold); summary.textColor = .white
@@ -473,6 +485,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         bar.stack.addArrangedSubview(barButton(folded ? "chevron.down" : "chevron.up", nil,
                                                folded ? "Déplier le détail" : "Replier le détail",
                                                #selector(toggleFold)))
+    }
+
+    // A small coloured status dot (red for blockers, orange for warnings).
+    private func dot(_ color: NSColor) -> NSView {
+        let v = NSView(); v.wantsLayer = true
+        v.layer?.backgroundColor = color.cgColor; v.layer?.cornerRadius = 5
+        v.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([v.widthAnchor.constraint(equalToConstant: 10),
+                                     v.heightAnchor.constraint(equalToConstant: 10)])
+        return v
     }
 
     // A pill-bar button: white SF symbol (+ optional white text). Neutral chips are
