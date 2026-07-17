@@ -203,8 +203,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fx.layer?.borderWidth = 1
         fx.layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
         fx.autoresizingMask = [.width, .height]
+        // Dark tint over the blur so the panel reads as a stable near-black surface instead of
+        // picking up whatever colour the wallpaper is behind it (it was going green on a forest).
+        let tint = NSView(frame: fx.bounds)
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = NSColor(white: 0.06, alpha: 0.55).cgColor
+        tint.autoresizingMask = [.width, .height]
+        fx.addSubview(tint)
         let stack = NSStackView()
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 9
         stack.translatesAutoresizingMaskIntoConstraints = false
         fx.addSubview(stack)
         // Pin top/leading/trailing only — NOT bottom. Pinning both top and bottom would
@@ -233,6 +240,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if curFails > 0 { header.addArrangedSubview(badge("\(curFails)", .systemRed)) }
         if showWarn, curWarns > 0 { header.addArrangedSubview(badge("\(curWarns)", .systemOrange)) }
         outer.addArrangedSubview(header)
+        outer.setCustomSpacing(14, after: header)          // breathing room under the header
 
         if probs.isEmpty {
             let msg = NSTextField(labelWithString: problems.isEmpty ? "Tout est ok 🎉"
@@ -257,8 +265,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     colorize(b)
                     action = b
                 } else {
-                    let dash = NSTextField(labelWithString: "—"); dash.textColor = .tertiaryLabelColor
-                    action = dash
+                    action = NSView()            // no remedy → empty cell (no orphaned "—")
                 }
                 let row = grid.addRow(with: [statusIcon(p.status), item, prob, action])
                 row.yPlacement = .center
