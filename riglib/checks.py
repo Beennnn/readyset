@@ -240,8 +240,11 @@ def resolve_mode(cfg: dict, requested: str = "auto") -> str:
     return fb if fb in modes else next(iter(modes), "live")
 
 
-def check_stage_network(cfg: dict) -> Result:
-    prefix = cfg["checks"].get("stage_network", "192.168.1")
+def check_stage_network(cfg: dict, mode: str = "") -> Result:
+    # Per-mode override: modes.<mode>.stage_network wins over the global checks.stage_network.
+    # Lets "live" test the stage subnet (192.168.8.x) and "studio" the home one (192.168.1.x).
+    m = cfg.get("modes", {}).get(mode, {})
+    prefix = m.get("stage_network") or cfg["checks"].get("stage_network", "192.168.1")
     try:
         out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
@@ -292,14 +295,15 @@ def _ip_for_mac(mac: str) -> str | None:
     return None
 
 
-def check_hosts(cfg: dict) -> list[Result]:
+def check_hosts(hosts: list) -> list[Result]:
     """Named network hosts that must respond. The engine is domain-agnostic — a host
     is just a thing that answers on the network; whether it's a lamp, a modem or a
     mixer lives only in the name. Each host has an `ip` (pinged directly) OR a `mac`
     (resolved via ARP then pinged), an optional `severity` (default warn) and an
-    optional `icon` (emoji shown in the dashboard)."""
+    optional `icon` (emoji shown in the dashboard). `hosts` is passed explicitly so the
+    caller can mix global hosts (checks.hosts) with per-mode ones (modes.<mode>.hosts)."""
     res = []
-    for h in cfg["checks"].get("hosts", []):
+    for h in hosts:
         name = h.get("name", "?")
         sev = h.get("severity", WARN)
         glyph = h.get("icon", "")
@@ -534,8 +538,9 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     m = cfg["modes"][mode]
     results = check_apps(cfg) + check_usb(cfg) + check_midi(cfg)
     results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
-    results += [check_stage_network(cfg)]
-    results += check_hosts(cfg)
+    results += [check_stage_network(cfg, mode)]
+    results += check_hosts(cfg["checks"].get("hosts", []))   # global hosts (e.g. lamps)
+    results += check_hosts(m.get("hosts", []))               # per-mode hosts (e.g. the modem)
     results += check_links(cfg)
     results += check_commands(cfg)
     results += [check_vpn(cfg)]
