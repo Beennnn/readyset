@@ -208,30 +208,23 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pw.appearance = NSAppearance(named: .darkAqua)
         let fx = NSVisualEffectView(frame: pw.contentView!.bounds)
         fx.material = .hudWindow; fx.blendingMode = .behindWindow; fx.state = .active
-        fx.wantsLayer = true; fx.layer?.cornerRadius = 12; fx.layer?.masksToBounds = true
+        fx.wantsLayer = true; fx.layer?.cornerRadius = 14; fx.layer?.masksToBounds = true
+        fx.layer?.borderWidth = 1
+        fx.layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
         fx.autoresizingMask = [.width, .height]
         let stack = NSStackView()
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 6
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 10
         stack.translatesAutoresizingMaskIntoConstraints = false
         fx.addSubview(stack)
         // Pin top/leading/trailing only — NOT bottom. Pinning both top and bottom would
         // stretch the stack to the content view's height and make its fittingSize circular
         // (it would report the constrained height, not the natural content height).
         NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: fx.leadingAnchor, constant: 14),
-            stack.topAnchor.constraint(equalTo: fx.topAnchor, constant: 12),
+            stack.leadingAnchor.constraint(equalTo: fx.leadingAnchor, constant: 16),
+            stack.topAnchor.constraint(equalTo: fx.topAnchor, constant: 14),
         ])
         pw.contentView = fx
         return (pw, stack)
-    }
-
-    private func label(_ s: String, bold: Bool) -> NSTextField {
-        let t = NSTextField(labelWithString: s)
-        t.textColor = .white
-        t.font = bold ? .systemFont(ofSize: 13, weight: .bold) : .systemFont(ofSize: 13)
-        t.lineBreakMode = .byTruncatingTail
-        t.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        return t
     }
 
     // Build the columnar detail view: header, a grid (status | item | problem | fix),
@@ -241,27 +234,43 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let showWarn = Pref.on(Pref.warnings, default: true)
         let probs = showWarn ? problems : problems.filter { $0.status == "fail" }
 
-        outer.addArrangedSubview(label("🎹 Rig — \(curFails) bloquant(s), \(curWarns) avertissement(s)", bold: true))
+        // Header: "🎹 Rig" + red/orange count badges.
+        let header = NSStackView(); header.orientation = .horizontal; header.spacing = 8; header.alignment = .centerY
+        let title = NSTextField(labelWithString: "🎹 Rig")
+        title.font = .systemFont(ofSize: 15, weight: .bold); title.textColor = .white
+        header.addArrangedSubview(title)
+        if curFails > 0 { header.addArrangedSubview(badge("\(curFails)", .systemRed)) }
+        if showWarn, curWarns > 0 { header.addArrangedSubview(badge("\(curWarns)", .systemOrange)) }
+        outer.addArrangedSubview(header)
 
         if probs.isEmpty {
-            outer.addArrangedSubview(label(problems.isEmpty ? "Tout est ok 🎉"
-                                           : "Aucun bloquant (warnings masqués)", bold: false))
+            let msg = NSTextField(labelWithString: problems.isEmpty ? "Tout est ok 🎉"
+                                                   : "Aucun bloquant (warnings masqués)")
+            msg.font = .systemFont(ofSize: 12); msg.textColor = .secondaryLabelColor
+            outer.addArrangedSubview(msg)
         } else {
             let grid = NSGridView()
             grid.translatesAutoresizingMaskIntoConstraints = false
-            grid.rowSpacing = 6; grid.columnSpacing = 12
+            grid.rowSpacing = 9; grid.columnSpacing = 12
             for p in probs {
-                let icon = label(p.status == "fail" ? "❌" : "⚠️", bold: false)
-                let item = label(shortItem(p), bold: true); item.toolTip = p.label
-                let prob = label(shortProblem(p), bold: false); prob.toolTip = p.detail
+                let item = NSTextField(labelWithString: shortItem(p))
+                item.font = .systemFont(ofSize: 13, weight: .semibold); item.textColor = .white
+                item.toolTip = p.label; item.lineBreakMode = .byTruncatingTail
+                let prob = NSTextField(labelWithString: shortProblem(p))
+                prob.font = .systemFont(ofSize: 12); prob.textColor = .secondaryLabelColor
+                prob.toolTip = p.detail; prob.lineBreakMode = .byTruncatingTail
                 let action: NSView
                 if let rem = p.remedy {
                     let b = KeyButton(title: shorten(rem, 24), target: self, action: #selector(fixTapped(_:)))
-                    b.key = p.key; b.bezelStyle = .rounded; b.controlSize = .small; b.toolTip = rem
-                    colorize(b)                          // fix actions share one accent colour
+                    b.key = p.key; b.toolTip = rem
+                    colorize(b)
                     action = b
-                } else { action = label("—", bold: false) }
-                grid.addRow(with: [icon, item, prob, action])
+                } else {
+                    let dash = NSTextField(labelWithString: "—"); dash.textColor = .tertiaryLabelColor
+                    action = dash
+                }
+                let row = grid.addRow(with: [statusIcon(p.status), item, prob, action])
+                row.yPlacement = .center
             }
             grid.column(at: 0).xPlacement = .center
             grid.column(at: 3).xPlacement = .trailing
@@ -277,6 +286,38 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         cfgBtn.bezelStyle = .rounded; cfgBtn.controlSize = .small   // stays default grey
         footer.addArrangedSubview(fixAll); footer.addArrangedSubview(cfgBtn)
         outer.addArrangedSubview(footer)
+    }
+
+    // A small rounded count pill (e.g. red "3" blockers, orange "1" warnings).
+    private func badge(_ text: String, _ color: NSColor) -> NSView {
+        let c = NSView(); c.wantsLayer = true
+        c.layer?.backgroundColor = color.cgColor; c.layer?.cornerRadius = 9
+        let l = NSTextField(labelWithString: text)
+        l.font = .systemFont(ofSize: 11, weight: .bold); l.textColor = .white
+        l.translatesAutoresizingMaskIntoConstraints = false
+        c.addSubview(l)
+        NSLayoutConstraint.activate([
+            l.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 8),
+            l.trailingAnchor.constraint(equalTo: c.trailingAnchor, constant: -8),
+            l.centerYAnchor.constraint(equalTo: c.centerYAnchor),
+            c.heightAnchor.constraint(equalToConstant: 18),
+        ])
+        return c
+    }
+
+    // Coloured SF Symbol for a check's status (cleaner than an emoji).
+    private func statusIcon(_ status: String) -> NSView {
+        let iv = NSImageView()
+        let name = status == "fail" ? "xmark.octagon.fill" : "exclamationmark.triangle.fill"
+        let color: NSColor = status == "fail" ? .systemRed : .systemOrange
+        if let img = NSImage(systemSymbolName: name, accessibilityDescription: status) {
+            // hierarchicalColor (not paletteColors) keeps the inner glyph (the ✕ / !) visible
+            // as a lighter shade instead of flooding the whole symbol one flat colour.
+            let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .semibold)
+                .applying(.init(hierarchicalColor: color))
+            iv.image = img.withSymbolConfiguration(cfg)
+        }
+        return iv
     }
 
     // Paint a button as the shared "fix action" colour with white text. bezelColor is
