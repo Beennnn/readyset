@@ -1,0 +1,5 @@
+name = "wifi-rejoin"
+summary = "Get the Mac back onto its remembered WiFi (stage network)"
+macos_gap = "no simple 'rejoin my saved network' CLI; setairportnetwork wants the password in clear"
+requires = []
+usage = "run.sh                 # cycle WiFi power → auto-join strongest remembered net\n       run.sh <ssid> <pw>     # force-join a specific network (needs its password)"

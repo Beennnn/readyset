@@ -1,0 +1,5 @@
+name = "phone-state"
+summary = "Read a state an iPhone pushed to an ntfy topic (charging, app-open…)"
+macos_gap = "iOS exposes no battery/app state over the LAN; the phone must push, and this pulls it"
+requires = ["curl", "an ntfy topic the phone POSTs to (see docs/phone-shortcuts.md)"]
+usage = "run.sh <topic> <key> [max_age_s]   # exit 0 iff latest '<key>=1' is fresher than max_age"
