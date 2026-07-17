@@ -150,6 +150,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var seenProblemKeys: Set<String> = []        // to detect a NEWLY appeared problem
+    var barWidths: [CGFloat] = []                 // last bar width per screen (panel matches it)
 
     let url = "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
@@ -248,16 +249,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let showWarn = Pref.on(Pref.warnings, default: true)
         let probs = showWarn ? problems : problems.filter { $0.status == "fail" }
 
-        // Header: "🎹 Rig" + red/orange count badges.
-        let header = NSStackView(); header.orientation = .horizontal; header.spacing = 8; header.alignment = .centerY
-        let title = NSTextField(labelWithString: "🎹 Rig")
-        title.font = .systemFont(ofSize: 15, weight: .bold); title.textColor = .white
-        header.addArrangedSubview(title)
-        if curFails > 0 { header.addArrangedSubview(badge("\(curFails)", .systemRed)) }
-        if showWarn, curWarns > 0 { header.addArrangedSubview(badge("\(curWarns)", .systemOrange)) }
-        outer.addArrangedSubview(header)
-        outer.setCustomSpacing(14, after: header)          // breathing room under the header
-
+        // No header here: the bar above already shows "Rig — N à vérifier" + the counts.
+        // The panel is the header's unfolded body → straight to the problem list.
         if probs.isEmpty {
             let msg = NSTextField(labelWithString: problems.isEmpty ? "Tout est ok 🎉"
                                                    : "Aucun bloquant (warnings masqués)")
@@ -293,23 +286,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         // No footer: the global actions ("tout corriger", open web) live in the status bar
         // (the pill) now — the panel is just the per-problem list with each row's own fix.
-    }
-
-    // A small rounded count pill (e.g. red "3" blockers, orange "1" warnings).
-    private func badge(_ text: String, _ color: NSColor) -> NSView {
-        let c = NSView(); c.wantsLayer = true
-        c.layer?.backgroundColor = color.cgColor; c.layer?.cornerRadius = 9
-        let l = NSTextField(labelWithString: text)
-        l.font = .systemFont(ofSize: 11, weight: .bold); l.textColor = .white
-        l.translatesAutoresizingMaskIntoConstraints = false
-        c.addSubview(l)
-        NSLayoutConstraint.activate([
-            l.leadingAnchor.constraint(equalTo: c.leadingAnchor, constant: 8),
-            l.trailingAnchor.constraint(equalTo: c.trailingAnchor, constant: -8),
-            l.centerYAnchor.constraint(equalTo: c.centerYAnchor),
-            c.heightAnchor.constraint(equalToConstant: 18),
-        ])
-        return c
     }
 
     // Status glyph inside a soft tinted circle — a modern "chip" look, calmer than a
@@ -452,6 +428,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 p.bar.layoutSubtreeIfNeeded()
                 let screen = NSScreen.screens[i]
                 let w = p.bar.stack.fittingSize.width + 24, h: CGFloat = 34
+                while barWidths.count <= i { barWidths.append(0) }
+                barWidths[i] = w                                   // panel below will match this
                 let x = screen.frame.minX + (screen.frame.width - w) / 2
                 let y = screen.frame.maxY - h - 34
                 p.win.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
@@ -529,12 +507,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             populate(d.stack)
             d.stack.layoutSubtreeIfNeeded()
             let sz = d.stack.fittingSize                        // content-driven size (columns)
-            let w = min(760, max(320, sz.width + 28))
+            let barW = i < barWidths.count ? barWidths[i] : 0   // never narrower than the bar → one card
+            let w = min(760, max(320, barW, sz.width + 28))
             let h = sz.height + 24
             let screen = NSScreen.screens[i]
             let pillBottom = screen.frame.maxY - 34 - 34       // matches the pill placement above
             let x = screen.frame.minX + (screen.frame.width - w) / 2
-            let y = pillBottom - 8 - h
+            let y = pillBottom - 4 - h                          // tight gap → connected to the bar
             d.win.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
             d.win.orderFrontRegardless()
         }
