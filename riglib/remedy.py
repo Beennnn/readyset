@@ -42,6 +42,20 @@ def _app_path_for(cfg: dict, label: str) -> str | None:
     return None
 
 
+def _launch_app_doc(app: str, doc: str, dry: bool) -> tuple[bool, str]:
+    """Open a document IN an app (e.g. the DAW on the set's project file)."""
+    if not Path(app).exists():
+        return False, f"app introuvable : {app}"
+    if not Path(doc).exists():
+        return False, f"fichier introuvable : {doc}"
+    if dry:
+        return True, f"[dry-run] ouvrirait {Path(doc).name} dans {Path(app).stem}"
+    r = subprocess.run(["open", "-a", app, doc], capture_output=True, text=True)
+    if r.returncode != 0:
+        return False, f"{Path(app).stem} : {r.stderr.strip() or 'open a échoué'}"
+    return True, f"{Path(doc).name} ouvert dans {Path(app).stem}"
+
+
 def resolve(cfg: dict, result) -> Remedy | None:
     """Return the remedy for a failed/warned check, or None if not actionable."""
     return resolve_key(cfg, result.key)
@@ -49,11 +63,27 @@ def resolve(cfg: dict, result) -> Remedy | None:
 
 def resolve_key(cfg: dict, key: str) -> Remedy | None:
     """Same as resolve() but keyed by string — used by the dashboard fix endpoint.
-    Remedies are generic: relaunch a configured app, run a command check's fix_cmd, or
-    a keep-awake start command. Everything specific lives in config."""
-    # A launched app that's down → relaunch it (path from launch.apps).
+    Remedies are generic: a config-driven fix map, relaunch a configured app, open the
+    set on its project, run a command check's fix_cmd, or a keep-awake start command.
+    Everything specific lives in config."""
+    # Config-driven fix map wins for ANY key: [checks.fixes] maps key -> {label, cmd}.
+    # This is how built-in checks (sys:vpn, sys:output, …) get a one-click fix without
+    # hardcoding domain specifics in the engine.
+    fixes = cfg["checks"].get("fixes", {})
+    if key in fixes and fixes[key].get("cmd"):
+        f = fixes[key]
+        return Remedy(f.get("label", "Réparer"), lambda dry, cmd=f["cmd"]: _run_cmd(cmd, dry))
+
+    # A launched app that's down → relaunch it. If it's the set's DAW, open it ON the
+    # configured project file ([set].project = the file to launch, editable in config).
     if key.startswith("app:"):
-        path = _app_path_for(cfg, key.split(":", 1)[1])
+        appname = key.split(":", 1)[1]
+        st = cfg.get("set", {})
+        app, proj = st.get("app"), st.get("project")
+        if app and proj and appname.lower() in Path(app).stem.lower():
+            return Remedy(st.get("fix_label", f"Ouvrir le projet ({Path(proj).stem})"),
+                          lambda dry, a=app, p=proj: _launch_app_doc(a, p, dry))
+        path = _app_path_for(cfg, appname)
         if path:
             return Remedy(f"Relancer {Path(path).stem}", lambda dry: _launch_app(path, dry))
         return None
