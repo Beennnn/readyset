@@ -116,7 +116,10 @@ def check_keyboard(cfg: dict, mode: str) -> Result:
     if found_warn:
         return Result("kbd:keyboard", "Clavier", WARN,
                       f"{found_warn} (clavier principal absent)")
-    return Result("kbd:keyboard", "Clavier", FAIL, "aucun clavier branché")
+    # No keyboard at all. Severity is per-mode (default fail): on stage that's blocking,
+    # but in studio a missing keyboard is only a warning (keyboard_none_severity = "warn").
+    return Result("kbd:keyboard", "Clavier",
+                  m.get("keyboard_none_severity", "fail"), "aucun clavier branché")
 
 
 def check_breath(cfg: dict, mode: str) -> Result:
@@ -174,8 +177,11 @@ def check_output_probe(cfg: dict, mode: str) -> Result | None:
     icon = op.get("icon", "")
     logs = sorted(glob.glob(os.path.expanduser(op.get("log_glob", ""))),
                   key=lambda p: os.path.getmtime(p), reverse=True)
+    # Not verifiable (no log, unreadable, or no value in it) → drop the item entirely
+    # rather than show an indeterminate warning. The probe only surfaces when it can
+    # actually read a value AND compare it.
     if not logs:
-        return Result("audio:probe", label, WARN, "log introuvable", icon)
+        return None
     pat = _re.compile(op.get("pattern", "(.+)"))
     val = None
     try:
@@ -183,10 +189,10 @@ def check_output_probe(cfg: dict, mode: str) -> Result | None:
             m = pat.search(line)
             if m:
                 val = m.group(1).strip()
-    except Exception as exc:
-        return Result("audio:probe", label, WARN, f"lecture log: {exc}", icon)
+    except Exception:
+        return None
     if val is None:
-        return Result("audio:probe", label, WARN, "indéterminée", icon)
+        return None
     short = val.split(" (")[0]
     ok = any(a.lower() in val.lower() for a in allowed)
     return Result("audio:probe", label, OK if ok else FAIL,
