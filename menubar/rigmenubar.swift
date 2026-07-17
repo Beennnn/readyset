@@ -89,41 +89,26 @@ final class BorderView: NSView {
 // ---------------------------------------------------------------------------
 // Floating pill view (clickable window). Single click → fold/menu; double → web.
 // ---------------------------------------------------------------------------
-final class PillView: NSView {
-    var status: RigStatus = .ok
-    var warns = 0, fails = 0
-    var onSingle: (() -> Void)?
-    var onDouble: (() -> Void)?
-    private var pending: DispatchWorkItem?
-
-    func text() -> String {
-        var parts: [String] = []
-        if fails > 0 { parts.append("❌ \(fails)") }
-        if warns > 0 { parts.append("⚠ \(warns)") }
-        let c = parts.isEmpty ? "" : parts.joined(separator: "   ") + "   "
-        return "\(c)Rig — à vérifier"
+// The floating status BAR: a rounded, status-coloured pill holding a summary label plus
+// distinct clickable buttons (fix-all, fold/unfold chevron, open-web) — the delegate fills
+// it via populatePill(). Height is fixed; its window width is sized to the content.
+final class PillBar: NSView {
+    let stack = NSStackView()
+    override init(frame: NSRect) {
+        super.init(frame: frame)
+        wantsLayer = true
+        layer?.cornerRadius = 17
+        layer?.masksToBounds = true
+        stack.orientation = .horizontal; stack.spacing = 8; stack.alignment = .centerY
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 14),
+            stack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            stack.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
     }
-    static let font = NSFont.systemFont(ofSize: 15, weight: .bold)
-
-    override func draw(_ dirty: NSRect) {
-        guard status.showsOverlay else { return }
-        let attrs: [NSAttributedString.Key: Any] = [.font: PillView.font, .foregroundColor: NSColor.white]
-        status.overlayColor.withAlphaComponent(0.95).setFill()
-        NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
-        let s = (text() as NSString).size(withAttributes: attrs)
-        (text() as NSString).draw(at: NSPoint(x: (bounds.width - s.width) / 2,
-                                              y: (bounds.height - s.height) / 2), withAttributes: attrs)
-    }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
-
-    override func mouseUp(with e: NSEvent) {
-        if e.clickCount >= 2 { pending?.cancel(); pending = nil; onDouble?() }
-        else if e.clickCount == 1 {
-            let w = DispatchWorkItem { [weak self] in self?.onSingle?(); self?.pending = nil }
-            pending = w
-            DispatchQueue.main.asyncAfter(deadline: .now() + NSEvent.doubleClickInterval, execute: w)
-        }
-    }
+    required init?(coder: NSCoder) { fatalError("no coder") }
 }
 
 // ---------------------------------------------------------------------------
@@ -134,7 +119,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var timer: Timer?
     var baseSymbol: NSImage?
     var borders: [(win: NSWindow, view: BorderView)] = []
-    var pills: [(win: NSPanel, view: PillView)] = []
+    var pills: [(win: NSPanel, bar: PillBar)] = []
     var details: [(win: NSPanel, stack: NSStackView)] = []   // one expanded panel per screen
     var panelFolded = false                 // user folded it via a pill click this session
     var current: RigStatus = .ok
@@ -176,14 +161,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let bv = BorderView(frame: NSRect(origin: .zero, size: screen.frame.size))
             bw.contentView = bv; borders.append((bw, bv))
 
-            let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 200, height: 34),
+            let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
                              styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
             configureFloatingPanel(pw)
-            let pv = PillView(frame: NSRect(x: 0, y: 0, width: 200, height: 34))
-            pv.onSingle = { [weak self] in self?.pillClicked() }
-            pv.onDouble = { [weak self] in self?.open() }
-            pw.contentView = pv
-            pills.append((pw, pv))
+            let bar = PillBar(frame: NSRect(x: 0, y: 0, width: 260, height: 34))
+            pw.contentView = bar
+            pills.append((pw, bar))
 
             details.append(makeDetailPanel())          // matching expanded panel for this screen
         }
@@ -277,15 +260,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             outer.addArrangedSubview(grid)
         }
 
-        let footer = NSStackView(); footer.orientation = .horizontal; footer.spacing = 10
-        let fixAll = NSButton(title: "⚡ Lancer tous les correctifs", target: self, action: #selector(fixAll))
-        fixAll.bezelStyle = .rounded; fixAll.controlSize = .small
-        fixAll.isEnabled = probs.contains { $0.remedy != nil }
-        if fixAll.isEnabled { colorize(fixAll) }         // same accent colour as the per-fix buttons
-        let cfgBtn = NSButton(title: "⚙️ Config", target: self, action: #selector(open))
-        cfgBtn.bezelStyle = .rounded; cfgBtn.controlSize = .small   // stays default grey
-        footer.addArrangedSubview(fixAll); footer.addArrangedSubview(cfgBtn)
-        outer.addArrangedSubview(footer)
+        // No footer: the global actions ("tout corriger", open web) live in the status bar
+        // (the pill) now — the panel is just the per-problem list with each row's own fix.
     }
 
     // A small rounded count pill (e.g. red "3" blockers, orange "1" warnings).
@@ -430,20 +406,61 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if showBorder { b.win.orderFrontRegardless() } else { b.win.orderOut(nil) }
         }
         for (i, p) in pills.enumerated() where i < NSScreen.screens.count {
-            p.view.status = current; p.view.warns = curWarns; p.view.fails = curFails; p.view.needsDisplay = true
             if showPill {
+                populatePill(p.bar)
+                p.bar.layoutSubtreeIfNeeded()
                 let screen = NSScreen.screens[i]
-                let s = (p.view.text() as NSString).size(withAttributes: [.font: PillView.font])
-                let w = s.width + 32, h: CGFloat = 34
+                let w = p.bar.stack.fittingSize.width + 24, h: CGFloat = 34
                 let x = screen.frame.minX + (screen.frame.width - w) / 2
                 let y = screen.frame.maxY - h - 34
                 p.win.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
-                p.view.frame = NSRect(x: 0, y: 0, width: w, height: h)
-                p.view.window?.invalidateCursorRects(for: p.view)
                 p.win.orderFrontRegardless()
             } else { p.win.orderOut(nil) }
         }
         applyDetailPanel()
+    }
+
+    // Fill the status bar: coloured background + summary + fix-all / fold / web buttons.
+    private func populatePill(_ bar: PillBar) {
+        bar.layer?.backgroundColor = current.overlayColor.cgColor
+        bar.stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
+
+        let n = curFails + curWarns
+        let summary = NSTextField(labelWithString: "Rig — \(n) à vérifier")
+        summary.font = .systemFont(ofSize: 14, weight: .bold); summary.textColor = .white
+        bar.stack.addArrangedSubview(summary)
+
+        if problems.contains(where: { $0.remedy != nil }) {
+            bar.stack.addArrangedSubview(barButton("bolt.fill", "Tout corriger",
+                                                   "Lancer tous les correctifs", #selector(fixAll)))
+        }
+        let folded = panelFolded || !Pref.on(Pref.expanded, default: true)
+        bar.stack.addArrangedSubview(barButton(folded ? "chevron.down" : "chevron.up", nil,
+                                               folded ? "Déplier le détail" : "Replier le détail",
+                                               #selector(toggleFold)))
+        bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
+                                               "Ouvrir le dashboard web (détail)", #selector(open)))
+    }
+
+    // A pill-bar button: white SF symbol (+ optional white text) on a translucent-white chip.
+    private func barButton(_ symbol: String, _ text: String?, _ tip: String, _ action: Selector) -> NSButton {
+        let b = NSButton(); b.target = self; b.action = action; b.toolTip = tip
+        b.isBordered = false; b.wantsLayer = true
+        b.layer?.backgroundColor = NSColor.white.withAlphaComponent(0.26).cgColor
+        b.layer?.cornerRadius = 11
+        b.imagePosition = text == nil ? .imageOnly : .imageLeading
+        if let img = NSImage(systemSymbolName: symbol, accessibilityDescription: tip) {
+            let cfg = NSImage.SymbolConfiguration(pointSize: 12, weight: .bold)
+                .applying(.init(hierarchicalColor: .white))
+            b.image = img.withSymbolConfiguration(cfg)
+        }
+        if let text = text {
+            b.attributedTitle = NSAttributedString(string: text + "  ", attributes: [
+                .foregroundColor: NSColor.white, .font: NSFont.systemFont(ofSize: 12, weight: .semibold)])
+        }
+        b.heightAnchor.constraint(equalToConstant: 22).isActive = true
+        if text == nil { b.widthAnchor.constraint(equalToConstant: 28).isActive = true }
+        return b
     }
 
     // The always-unfolded panel, shown under the pill on every screen.
@@ -467,8 +484,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Interactions ------------------------------------------------------
-    // Single click on the pill: in expanded mode, fold/unfold the panel; otherwise pop the menu.
-    private func pillClicked() {
+    // The bar's chevron: in expanded mode, fold/unfold the detail panel; otherwise pop the menu.
+    @objc func toggleFold() {
         if Pref.on(Pref.expanded, default: true) { panelFolded.toggle(); applyOverlay() }
         else { showDetailMenu() }
     }
