@@ -13,11 +13,10 @@
 "status.fail"        = "bloquant(s)";
 "status.unreachable" = "injoignable";
 
-/* --- Pastille flottante et panneau de détail --- */
+/* --- Pastille flottante --- */
 "pill.summary"     = "Rig — %d à vérifier";
 "pill.openWeb"     = "Ouvrir le dashboard web (détail)";
-"pill.unfold"      = "Déplier le détail";
-"pill.fold"        = "Replier le détail";
+"pill.details"     = "Voir le détail";
 "panel.noBlockers" = "Aucun bloquant (avertissements masqués)";
 "detail.noFix"     = "Pas de résolution automatique — à corriger à la main.";
 
@@ -43,14 +42,10 @@
 "display.border.hint"  = "Encadre l'écran d'un trait de couleur tant qu'un problème dure. Lisible de loin, depuis la scène.";
 "display.pill.title"   = "Pastille flottante";
 "display.pill.hint"    = "Petite barre posée sur l'écran qui résume l'état, en plus de l'icône du menu.";
-"display.panel.title"  = "Détails dans un panneau sous la pastille";
-"display.panel.hint"   = "Liste les problèmes sous la pastille, chacun avec son bouton de correction. Désactivé, le détail arrive sous forme de menu classique au clic sur la pastille.";
 
 /* --- Onglet Alertes --- */
 "alerts.warnings.title" = "Afficher les avertissements, pas que les erreurs";
 "alerts.warnings.hint"  = "Sinon seules les erreurs bloquantes (rouge) sont listées ; les avertissements orange restent masqués.";
-"alerts.popnew.title"   = "Ouvrir le panneau à chaque nouveau problème";
-"alerts.popnew.hint"    = "Dès qu'un check bascule en avertissement OU en erreur, le panneau se déplie tout seul pour que ça ne passe pas inaperçu.";
 "alerts.notify.title"   = "Une notification au changement d'état";
 "alerts.notify.hint"    = "Notification macOS quand la gravité empire (vert → orange → rouge), pas à chaque check.";
 "alerts.autofix.title"  = "Corriger automatiquement";

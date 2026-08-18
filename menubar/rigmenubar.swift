@@ -9,15 +9,16 @@
 //     dashboard unreachable → grey).
 //   • Edge border — a coloured frame around every screen (click-through). Warn/fail only.
 //   • Floating pill — a top-centre badge with the counts ("❌ N  ⚠ M  Rig"). Warn/fail only.
-//   • Expanded panel (default ON) — the problem list ALWAYS unfolded right under the pill:
-//     one row per failing/warning check + a one-click 🔧 fix (POST /api/fix) when the
-//     dashboard offers a remedy. Single-click the pill to fold/unfold; double-click opens
-//     the web dashboard. With this mode OFF, a single click pops the same list as a menu.
+//     Its buttons: fix-all, open the dashboard, and the details — which pop THE menu, the
+//     same one the menu-bar icon carries (problem list + per-problem 🔧 fix via POST
+//     /api/fix, then the actions). Un panneau translucide tenait ce rôle jusqu'au
+//     2026-08-19 : illisible sur fond clair, et une seconde surface à tenir à jour en
+//     parallèle du menu. Un menu natif est opaque partout et n'existe qu'en un exemplaire.
 //   • One notification on change — a single silent banner the moment the status worsens
 //     into a problem (never repeats; stays in Notification Center until dismissed).
 //
-// Only the small pill + panel windows catch clicks; the border and the rest of the screen
-// stay click-through, so nothing is ever blocked mid-gig.
+// Only the small pill catches clicks; the border and the rest of the screen stay
+// click-through, so nothing is ever blocked mid-gig.
 
 import Cocoa
 import UserNotifications
@@ -81,10 +82,9 @@ struct Problem { let key, label, status, detail, glyph: String; let remedy: Stri
 // ---------------------------------------------------------------------------
 enum Pref {
     static let glyph = "pref.glyphColor", border = "pref.edgeBorder"
-    static let pill = "pref.floatingPill", expanded = "pref.expandedPanel"
+    static let pill = "pref.floatingPill"
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
-    static let popnew = "pref.popOnNewProblem"
     static let screenMode = "pref.screenMode"      // "main" (default) | "all" | "custom"
     static let screenIDs = "pref.screenIDs"        // display IDs for "custom"
     static func on(_ key: String, default def: Bool) -> Bool {
@@ -93,9 +93,6 @@ enum Pref {
     }
     static func set(_ key: String, _ v: Bool) { UserDefaults.standard.set(v, forKey: key) }
 }
-
-// A button that carries the check key it fixes.
-final class KeyButton: NSButton { var key = "" }
 
 // ---------------------------------------------------------------------------
 // Edge-border view (click-through window)
@@ -111,10 +108,10 @@ final class BorderView: NSView {
 }
 
 // ---------------------------------------------------------------------------
-// Floating pill view (clickable window). Single click → fold/menu; double → web.
+// Floating pill view (clickable window): summary + fix-all, dashboard, details buttons.
 // ---------------------------------------------------------------------------
 // The floating status BAR: a rounded, status-coloured pill holding a summary label plus
-// distinct clickable buttons (fix-all, fold/unfold chevron, open-web) — the delegate fills
+// distinct clickable buttons (fix-all, open-web, details → the menu) — the delegate fills
 // it via populatePill(). Height is fixed; its window width is sized to the content.
 final class PillBar: NSView {
     let stack = NSStackView()
@@ -141,21 +138,6 @@ final class PillBar: NSView {
     override func layout() { super.layout(); grad.frame = bounds }
     // A soft vertical gradient (top lighter → bottom deeper) instead of one flat aggressive red.
     func setGradient(_ top: NSColor, _ bottom: NSColor) { grad.colors = [top.cgColor, bottom.cgColor] }
-}
-
-// The detail panel's body: a visual-effect surface that folds the panel when clicked on any
-// empty area, while still letting its buttons handle their own clicks (hitTest lets a button
-// or a button's subview through, and claims everything else for itself).
-final class ClickableEffectView: NSVisualEffectView {
-    var onClick: (() -> Void)?
-    override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        var v = hit
-        while let cur = v { if cur is NSButton { return hit }; v = cur.superview }
-        return self
-    }
-    override func mouseUp(with event: NSEvent) { onClick?() }
-    override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
 }
 
 /// NSTabViewController repose le titre de la fenêtre sur le libellé de l'onglet courant
@@ -213,8 +195,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var baseSymbol: NSImage?
     var borders: [(win: NSWindow, view: BorderView)] = []
     var pills: [(win: NSPanel, bar: PillBar)] = []
-    var details: [(win: NSPanel, stack: NSStackView)] = []   // one expanded panel per screen
-    var panelFolded = false                 // user folded it via a pill click this session
     var current: RigStatus = .ok
     var curWarns = 0, curFails = 0
     /// Le mode DEMANDÉ (auto | live | studio) — c'est bien le demandé et non le résolu :
@@ -223,8 +203,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var requestedMode = "auto"
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
-    var seenProblemKeys: Set<String> = []        // to detect a NEWLY appeared problem
-    var barWidths: [CGFloat] = []                 // last bar width per screen (panel matches it)
     var settingsWin: NSWindow?                    // the classic Settings window
 
     let url = "http://127.0.0.1:8765"
@@ -254,7 +232,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     @objc func rebuildOverlays() {
         borders.forEach { $0.win.orderOut(nil) }; borders.removeAll()
         pills.forEach { $0.win.orderOut(nil) }; pills.removeAll()
-        details.forEach { $0.win.orderOut(nil) }; details.removeAll()
         for screen in NSScreen.screens {
             let bw = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
             bw.isOpaque = false; bw.backgroundColor = .clear; bw.hasShadow = false
@@ -269,8 +246,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let bar = PillBar(frame: NSRect(x: 0, y: 0, width: 260, height: 34))
             pw.contentView = bar
             pills.append((pw, bar))
-
-            details.append(makeDetailPanel())          // matching expanded panel for this screen
         }
         applyOverlay()
     }
@@ -282,128 +257,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         pw.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
     }
 
-    // ---- Expanded detail panel (one per screen; repopulated on each poll) ---
-    private func makeDetailPanel() -> (win: NSPanel, stack: NSStackView) {
-        let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 560, height: 80),
-                         styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
-        configureFloatingPanel(pw)
-        // Force dark appearance: in Light mode the .hudWindow material renders light-grey,
-        // which makes the white text unreadable. Dark appearance = dark material + our white
-        // text keeps high contrast on any wallpaper / system appearance.
-        pw.appearance = NSAppearance(named: .darkAqua)
-        let fx = ClickableEffectView(frame: pw.contentView!.bounds)
-        fx.onClick = { [weak self] in self?.toggleFold() }     // click empty panel area = fold/unfold
-        fx.material = .hudWindow; fx.blendingMode = .behindWindow; fx.state = .active
-        fx.wantsLayer = true; fx.layer?.cornerRadius = 14; fx.layer?.masksToBounds = true
-        fx.layer?.borderWidth = 1
-        fx.layer?.borderColor = NSColor.white.withAlphaComponent(0.09).cgColor
-        fx.autoresizingMask = [.width, .height]
-        // Dark tint over the blur so the panel reads as a stable near-black surface instead of
-        // picking up whatever colour the wallpaper is behind it (it was going green on a forest).
-        let tint = NSView(frame: fx.bounds)
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor(white: 0.06, alpha: 0.55).cgColor
-        tint.autoresizingMask = [.width, .height]
-        fx.addSubview(tint)
-        let stack = NSStackView()
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 9
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        fx.addSubview(stack)
-        // Pin top/leading/trailing only — NOT bottom. Pinning both top and bottom would
-        // stretch the stack to the content view's height and make its fittingSize circular
-        // (it would report the constrained height, not the natural content height).
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: fx.leadingAnchor, constant: 16),
-            stack.topAnchor.constraint(equalTo: fx.topAnchor, constant: 14),
-        ])
-        pw.contentView = fx
-        return (pw, stack)
-    }
-
-    // Build the columnar detail view: header, a grid (status | item | problem | fix),
-    // then a footer with "fix all" + "config" buttons. Rebuilt on each poll.
-    private func populate(_ outer: NSStackView) {
-        outer.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        let showWarn = Pref.on(Pref.warnings, default: true)
-        let probs = showWarn ? problems : problems.filter { $0.status == "fail" }
-
-        // No header here: the bar above already shows "Rig — N à vérifier" + the counts.
-        // The panel is the header's unfolded body → straight to the problem list.
-        if probs.isEmpty {
-            let msg = NSTextField(labelWithString: problems.isEmpty ? "Tout est ok 🎉"
-                                                   : T("panel.noBlockers", "No blockers (warnings hidden)"))
-            msg.font = .systemFont(ofSize: 12); msg.textColor = .secondaryLabelColor
-            outer.addArrangedSubview(msg)
-        } else {
-            let grid = NSGridView()
-            grid.translatesAutoresizingMaskIntoConstraints = false
-            grid.rowSpacing = 9; grid.columnSpacing = 12
-            for p in probs {
-                let item = NSTextField(labelWithString: shortItem(p))
-                item.font = .systemFont(ofSize: 13, weight: .semibold); item.textColor = .white
-                item.toolTip = p.label; item.lineBreakMode = .byTruncatingTail
-                let prob = NSTextField(labelWithString: shortProblem(p))
-                prob.font = .systemFont(ofSize: 12); prob.textColor = .secondaryLabelColor
-                prob.toolTip = p.detail; prob.lineBreakMode = .byTruncatingTail
-                let action: NSView
-                if let rem = p.remedy {
-                    let b = KeyButton(title: shorten(rem, 24), target: self, action: #selector(fixTapped(_:)))
-                    b.key = p.key; b.toolTip = rem
-                    colorize(b)
-                    action = b
-                } else {
-                    action = NSView()            // no remedy → empty cell (no orphaned "—")
-                }
-                let row = grid.addRow(with: [statusIcon(p.status), item, prob, action])
-                row.yPlacement = .center
-            }
-            grid.column(at: 0).xPlacement = .center
-            grid.column(at: 3).xPlacement = .trailing
-            outer.addArrangedSubview(grid)
-        }
-
-        // No footer: the global actions ("tout corriger", open web) live in the status bar
-        // (the pill) now — the panel is just the per-problem list with each row's own fix.
-    }
-
-    // Status glyph inside a soft tinted circle — a modern "chip" look, calmer than a
-    // full-bleed coloured icon.
-    private func statusIcon(_ status: String) -> NSView {
-        let color: NSColor = status == "fail" ? .systemRed : .systemOrange
-        let name = status == "fail" ? "xmark" : "exclamationmark"
-        let chip = NSView(); chip.wantsLayer = true
-        chip.layer?.backgroundColor = color.withAlphaComponent(0.22).cgColor
-        chip.layer?.cornerRadius = 11
-        chip.translatesAutoresizingMaskIntoConstraints = false
-        let iv = NSImageView()
-        iv.translatesAutoresizingMaskIntoConstraints = false
-        if let img = NSImage(systemSymbolName: name, accessibilityDescription: status) {
-            let cfg = NSImage.SymbolConfiguration(pointSize: 11, weight: .heavy).applying(.init(hierarchicalColor: color))
-            iv.image = img.withSymbolConfiguration(cfg)
-        }
-        chip.addSubview(iv)
-        NSLayoutConstraint.activate([
-            chip.widthAnchor.constraint(equalToConstant: 22),
-            chip.heightAnchor.constraint(equalToConstant: 22),
-            iv.centerXAnchor.constraint(equalTo: chip.centerXAnchor),
-            iv.centerYAnchor.constraint(equalTo: chip.centerYAnchor),
-        ])
-        return chip
-    }
-
-    // Paint a button as the shared "fix action" colour with white text. bezelColor is
-    // ignored under the forced-dark appearance, so we fill the layer ourselves.
-    private func colorize(_ b: NSButton) {
-        b.isBordered = false
-        b.wantsLayer = true
-        b.layer?.backgroundColor = NSColor.systemGreen.cgColor    // fix actions = green
-        b.layer?.cornerRadius = 6
-        b.attributedTitle = NSAttributedString(string: "  " + b.title + "  ", attributes: [
-            .foregroundColor: NSColor.white,
-            .font: NSFont.systemFont(ofSize: NSFont.smallSystemFontSize, weight: .semibold)])
-        b.heightAnchor.constraint(equalToConstant: 22).isActive = true
-    }
-
     private func shorten(_ s: String, _ n: Int) -> String {
         let t = s.trimmingCharacters(in: .whitespaces)
         return t.count <= n ? t : String(t.prefix(n - 1)) + "…"
@@ -411,9 +264,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func shortItem(_ p: Problem) -> String {   // strip parentheticals/quotes, cap length
         var s = p.label
         for sep in [" (", " «", " —", " :"] { if let r = s.range(of: sep) { s = String(s[..<r.lowerBound]) } }
-        return shorten(s, 26)
+        return shorten(s, 34)
     }
-    private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 34) }
+    private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 52) }
 
     // ---- Poll --------------------------------------------------------------
     func refresh() {
@@ -451,14 +304,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let old = current
         current = status; curWarns = warns; curFails = fails; self.problems = problems
 
-        // Pop on new problem: if a check that wasn't a problem before just became one, unfold
-        // the panel so it can't be missed — unless the user turned that behaviour off.
-        let curKeys = Set(problems.map { $0.key })
-        let newlyAppeared = curKeys.subtracting(seenProblemKeys)
-        seenProblemKeys = curKeys
-        if !newlyAppeared.isEmpty, Pref.on(Pref.popnew, default: true) { panelFolded = false }
-
-        if !status.showsOverlay { panelFolded = false }        // reset fold when we return to normal
         applyGlyph(); applyOverlay()
         if status.rank > old.rank, status.showsOverlay { maybeNotify() }
         maybeAutoFix()
@@ -511,19 +356,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 p.bar.layoutSubtreeIfNeeded()
                 let screen = NSScreen.screens[i]
                 let w = p.bar.stack.fittingSize.width + 24, h: CGFloat = 34
-                while barWidths.count <= i { barWidths.append(0) }
-                barWidths[i] = w                                   // panel below will match this
                 let x = screen.frame.minX + (screen.frame.width - w) / 2
                 let y = screen.frame.maxY - h - 34
                 p.win.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
                 p.win.orderFrontRegardless()
             } else { p.win.orderOut(nil) }
         }
-        applyDetailPanel()
     }
 
-    // Fill the status bar: soft gradient + summary + fix-all / web, then the fold chevron
-    // at the far right (disclosure convention). Keeps red, but richer than one flat aggressive tone.
+    // Fill the status bar: soft gradient + summary + fix-all / web, then the details button
+    // at the far right (it pops the menu). Keeps red, but richer than one flat aggressive tone.
     private func populatePill(_ bar: PillBar) {
         // Neutral dark bar (was full red). Severity shows only as a small coloured dot now.
         bar.setGradient(NSColor(white: 0.19, alpha: 0.96), NSColor(white: 0.11, alpha: 0.96))
@@ -541,11 +383,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
                                                T("pill.openWeb", "Open the web dashboard (details)"), #selector(open)))
-        // Disclosure chevron LAST (far right), per platform convention.
-        let folded = panelFolded || !Pref.on(Pref.expanded, default: true)
-        bar.stack.addArrangedSubview(barButton(folded ? "chevron.down" : "chevron.up", nil,
-                                               folded ? T("pill.unfold", "Unfold the details") : T("pill.fold", "Fold the details"),
-                                               #selector(toggleFold)))
+        bar.stack.addArrangedSubview(barButton("list.bullet", nil,
+                                               T("pill.details", "Show the details"),
+                                               #selector(showDetails(_:))))
     }
 
     // A small coloured status dot (red for blockers, orange for warnings).
@@ -581,35 +421,23 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return b
     }
 
-    // The always-unfolded panel, shown under the pill on every screen.
-    private func applyDetailPanel() {
-        let show = Pref.on(Pref.pill, default: true) && Pref.on(Pref.expanded, default: true)
-                   && current.showsOverlay && !panelFolded
-        for (i, d) in details.enumerated() where i < NSScreen.screens.count {
-            guard show && allowedScreen(i) else { d.win.orderOut(nil); continue }
-            populate(d.stack)
-            d.stack.layoutSubtreeIfNeeded()
-            let sz = d.stack.fittingSize                        // content-driven size (columns)
-            let barW = i < barWidths.count ? barWidths[i] : 0   // never narrower than the bar → one card
-            let w = min(760, max(320, barW, sz.width + 28))
-            let h = sz.height + 24
-            let screen = NSScreen.screens[i]
-            let pillBottom = screen.frame.maxY - 34 - 34       // matches the pill placement above
-            let x = screen.frame.minX + (screen.frame.width - w) / 2
-            let y = pillBottom - 4 - h                          // tight gap → connected to the bar
-            d.win.setFrame(NSRect(x: x, y: y, width: w, height: h), display: true)
-            d.win.orderFrontRegardless()
-        }
-    }
-
     // ---- Interactions ------------------------------------------------------
-    // The bar's chevron: in expanded mode, fold/unfold the detail panel; otherwise pop the menu.
-    @objc func toggleFold() {
-        if Pref.on(Pref.expanded, default: true) { panelFolded.toggle(); applyOverlay() }
-        else { open() }   // panneau déplié désactivé → le dashboard, pas un pop-up moche
+    /// Le détail, au clic sur la barre flottante : le MÊME menu que l'icône de la barre
+    /// de menus. Avant, c'était un panneau translucide posé sous la barre — illisible sur
+    /// un fond clair, et une surface de plus à maintenir en parallèle du menu. Un menu
+    /// natif est opaque, lisible partout, et porte déjà chaque correctif ; le dashboard
+    /// reste à un cran, en tête de liste.
+    @objc func showDetails(_ sender: NSButton) {
+        let menu = NSMenu()
+        fill(menu)
+        // Point en coordonnées ÉCRAN (`in: nil`) : passer la vue laisse macOS caler la
+        // liste sur le point et déborder l'en-tête au-dessus du bord haut — la barre est
+        // collée en haut de l'écran — d'où une flèche de défilement et un titre invisible.
+        guard let win = sender.window else { return }
+        let r = win.convertToScreen(sender.convert(sender.bounds, to: nil))
+        menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: r.minY - 6), in: nil)
     }
 
-    @objc func fixTapped(_ sender: KeyButton) { runFix(sender.key) }
     @objc func applyFix(_ sender: NSMenuItem) { if let k = sender.representedObject as? String { runFix(k) } }
     /// POSTe une action du moteur, puis rafraîchit.
     ///
@@ -675,16 +503,55 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }.resume()
     }
 
-    // ---- Options menu (menu-bar item) — rebuilt each open ------------------
+    // ---- The menu — rebuilt each open, shared by both surfaces --------------
     func menuNeedsUpdate(_ menu: NSMenu) {
         guard menu === item.menu else { return }
+        fill(menu)
+    }
+
+    /// Le contenu du menu, construit une seule fois pour l'icône de la barre de menus ET
+    /// pour la barre flottante : deux listes séparées finiraient par diverger, et il
+    /// faudrait se rappeler laquelle des deux sait faire quoi — exactement ce qu'on veut
+    /// éviter un soir de concert.
+    private func fill(_ menu: NSMenu) {
         menu.removeAllItems()
+        // Validation explicite : ouvert depuis la barre flottante (une fenêtre qui ne
+        // devient jamais active), l'auto-activation de macOS grise des entrées pourtant
+        // valides — le sous-menu Mode, entre autres. Nos cibles sont toutes posées à la
+        // main, donc on décide nous-mêmes : seuls l'en-tête et le « tout est ok » sont
+        // désactivés, plus bas.
+        menu.autoenablesItems = false
         let head = NSMenuItem(title: "🎹 Rig — \(current.label)", action: nil, keyEquivalent: "")
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
-        // L'ouverture du dashboard passe en tête : c'est l'action de loin la plus
-        // fréquente. Les réglages descendent en bas, avec Quitter — on y touche une
-        // fois puis plus jamais, ils n'ont rien à faire au-dessus des actions du soir.
+
+        // Le détail d'abord : c'est ce qu'on vient chercher quand quelque chose cloche.
+        // Une ligne par problème, son correctif dans le titre — cliquer la ligne le lance.
+        let probs = Pref.on(Pref.warnings, default: true) ? problems : problems.filter { $0.status == "fail" }
+        if probs.isEmpty {
+            let none = NSMenuItem(title: problems.isEmpty ? "Tout est ok 🎉"
+                                        : T("panel.noBlockers", "No blockers (warnings hidden)"),
+                                  action: nil, keyEquivalent: "")
+            none.isEnabled = false; menu.addItem(none)
+        }
+        for p in probs {
+            var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shortItem(p)) — \(shortProblem(p))"
+            if let rem = p.remedy { title += "   🔧 \(shorten(rem, 24))" }
+            // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : une
+            // ligne sans action, macOS la grise — or c'est la lisibilité qu'on vient chercher.
+            let mi = NSMenuItem(title: title,
+                                action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
+                                keyEquivalent: "")
+            mi.target = self; mi.representedObject = p.key
+            mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label) — \(p.detail)"
+            menu.addItem(mi)
+        }
+        if probs.contains(where: { $0.remedy != nil }) {
+            add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
+        }
+        menu.addItem(.separator())
+        // Puis les actions. Les réglages descendent en bas, avec Quitter — on y touche
+        // une fois puis plus jamais, ils n'ont rien à faire au-dessus des actions du soir.
         // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
         // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
         // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
@@ -698,7 +565,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             mi.target = self; mi.state = (requestedMode == key) ? .on : .off
             sub.addItem(mi)
         }
-        mode.submenu = sub; menu.addItem(mode)
+        // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
+        // action resterait grisé — et macOS masque alors sa flèche.
+        mode.submenu = sub; mode.isEnabled = true; menu.addItem(mode)
         menu.addItem(.separator())
 
         add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
@@ -747,11 +616,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 T("display.pill.hint",
                   "A small bar on screen summarising the state, on top of the menu-bar icon."),
                 Pref.pill, true, { self.applyOverlay() }),
-            Row("list.bullet.rectangle", T("display.panel.title", "Details in a panel under the pill"),
-                T("display.panel.hint",
-                  "Lists the problems under the pill, each with its own fix button. Turned off, the "
-                  + "details come up as a plain menu when you click the pill."),
-                Pref.expanded, true, { self.panelFolded = false; self.applyOverlay() }),
         ]))
 
         tabs.addTabViewItem(settingsTab(T("tab.alerts", "Alerts"), "bell", [
@@ -759,11 +623,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 T("alerts.warnings.hint",
                   "Otherwise only blocking errors (red) are listed; orange warnings stay hidden."),
                 Pref.warnings, true, { self.applyOverlay() }),
-            Row("rectangle.expand.vertical", T("alerts.popnew.title", "Open the panel on every new problem"),
-                T("alerts.popnew.hint",
-                  "The moment a check turns to a warning OR an error, the panel unfolds by itself so it "
-                  + "can't go unnoticed."),
-                Pref.popnew, true, {}),
             Row("bell", T("alerts.notify.title", "One notification when the state changes"),
                 T("alerts.notify.hint",
                   "A macOS notification when severity gets worse (green → orange → red), not on every check."),
