@@ -217,6 +217,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var panelFolded = false                 // user folded it via a pill click this session
     var current: RigStatus = .ok
     var curWarns = 0, curFails = 0
+    /// Le mode DEMANDÉ (auto | live | studio) — c'est bien le demandé et non le résolu :
+    /// « Auto » doit rester coché quand il choisit studio tout seul, sinon le menu laisse
+    /// croire qu'on a figé le mode à la main.
+    var requestedMode = "auto"
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var seenProblemKeys: Set<String> = []        // to detect a NEWLY appeared problem
@@ -417,9 +421,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         var req = URLRequest(url: u); req.timeoutInterval = 4; req.cachePolicy = .reloadIgnoringLocalCacheData
         URLSession.shared.dataTask(with: req) { [weak self] data, _, err in
             var status = RigStatus.unreachable; var warns = 0, fails = 0; var probs: [Problem] = []
+            var wantedMode = "auto"
             if err == nil, let data = data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let s = obj["status"] as? String { status = RigStatus.parse(s) }
+                wantedMode = (obj["requested"] as? String) ?? "auto"
                 warns = (obj["warns"] as? NSNumber)?.intValue ?? 0
                 fails = (obj["fails"] as? NSNumber)?.intValue ?? 0
                 if let items = obj["items"] as? [[String: Any]] {
@@ -434,7 +440,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     probs.sort { (($0.status == "fail" ? 0 : 1), $0.label) < (($1.status == "fail" ? 0 : 1), $1.label) }
                 }
             }
-            DispatchQueue.main.async { self?.apply(status, warns: warns, fails: fails, problems: probs) }
+            DispatchQueue.main.async {
+                self?.requestedMode = wantedMode
+                self?.apply(status, warns: warns, fails: fails, problems: probs)
+            }
         }.resume()
     }
 
@@ -597,11 +606,65 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // The bar's chevron: in expanded mode, fold/unfold the detail panel; otherwise pop the menu.
     @objc func toggleFold() {
         if Pref.on(Pref.expanded, default: true) { panelFolded.toggle(); applyOverlay() }
-        else { showDetailMenu() }
+        else { open() }   // panneau déplié désactivé → le dashboard, pas un pop-up moche
     }
 
     @objc func fixTapped(_ sender: KeyButton) { runFix(sender.key) }
     @objc func applyFix(_ sender: NSMenuItem) { if let k = sender.representedObject as? String { runFix(k) } }
+    /// POSTe une action du moteur, puis rafraîchit.
+    ///
+    /// Le menu et les boutons du dashboard tapent EXACTEMENT les mêmes endpoints : c'est
+    /// la seule façon d'avoir les mêmes actions des deux côtés sans qu'une liste dérive
+    /// de l'autre. Sur scène on n'ouvre pas une page web pour ranger des fenêtres, et
+    /// devoir se rappeler laquelle des deux surfaces sait faire quoi est exactement ce
+    /// qu'on veut éviter.
+    private func act(_ path: String, _ body: [String: Any] = [:]) {
+        guard let u = URL(string: url + path) else { return }
+        var rq = URLRequest(url: u); rq.httpMethod = "POST"; rq.timeoutInterval = 120
+        rq.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        rq.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        URLSession.shared.dataTask(with: rq) { [weak self] _, _, _ in
+            DispatchQueue.main.async { self?.refresh() }
+        }.resume()
+    }
+
+    /// L'action unique : lance tout, répare, range, re-vérifie. Voir /api/preflight.
+    @objc func prepareAll() { act("/api/preflight", ["dry": false]) }
+    @objc func setModeAuto() { act("/api/mode", ["mode": "auto"]) }
+    @objc func setModeLive() { act("/api/mode", ["mode": "live"]) }
+    @objc func setModeStudio() { act("/api/mode", ["mode": "studio"]) }
+    /// Le seul check que le Mac ne peut pas mesurer : on le déclare.
+    @objc func confirmCharge() { act("/api/manual", ["key": "iphone_charge", "value": true]) }
+
+    /// Ferme les applis dont le rig n'a pas besoin — APRÈS confirmation nommant chacune.
+    /// Une app peut tenir un document non enregistré ; c'est la seule action du menu qui
+    /// puisse faire perdre du travail, donc la seule qui pose une question.
+    @objc func quitOthers() {
+        guard let u = URL(string: stateURL) else { return }
+        URLSession.shared.dataTask(with: u) { [weak self] data, _, _ in
+            guard let d = data,
+                  let o = (try? JSONSerialization.jsonObject(with: d)) as? [String: Any],
+                  let extra = o["unexpected"] as? [[String: Any]] else { return }
+            let names = extra.compactMap { $0["name"] as? String }
+            let paths = extra.compactMap { $0["path"] as? String }
+            DispatchQueue.main.async {
+                guard !paths.isEmpty else { return }
+                let a = NSAlert()
+                a.messageText = T("quit.title", "Quit these apps?")
+                a.informativeText = names.joined(separator: ", ")
+                    + "\n\n" + T("quit.warn", "An app holding an unsaved document will ask for itself.")
+                a.addButton(withTitle: T("quit.ok", "Quit them"))
+                a.addButton(withTitle: T("quit.cancel", "Cancel"))
+                NSApp.activate(ignoringOtherApps: true)
+                if a.runModal() == .alertFirstButtonReturn {
+                    self?.act("/api/quit-apps", ["paths": paths, "dry": false])
+                }
+            }
+        }.resume()
+    }
+
+    @objc func openJournal() { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
+
     private func runFix(_ key: String) {
         guard !key.isEmpty, let u = URL(string: fixURL) else { return }
         var req = URLRequest(url: u); req.httpMethod = "POST"
@@ -610,32 +673,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         URLSession.shared.dataTask(with: req) { [weak self] _, _, _ in
             DispatchQueue.main.async { self?.refresh() }
         }.resume()
-    }
-
-    // Fallback pop-up menu (used when the expanded-panel mode is OFF).
-    @objc func showDetailMenu() {
-        let menu = NSMenu()
-        let head = NSMenuItem(title: "🎹 Rig — \(curFails) bloquant(s), \(curWarns) avertissement(s)",
-                              action: nil, keyEquivalent: ""); head.isEnabled = false
-        menu.addItem(head); menu.addItem(.separator())
-        if problems.isEmpty {
-            let ok = NSMenuItem(title: "Tout est ok 🎉", action: nil, keyEquivalent: ""); ok.isEnabled = false
-            menu.addItem(ok)
-        }
-        for p in problems {
-            let mi = NSMenuItem(title: "\(p.glyph) \(p.label) — \(p.detail)", action: nil, keyEquivalent: "")
-            if let rem = p.remedy {
-                let sub = NSMenu()
-                let fix = NSMenuItem(title: "🔧 \(rem)", action: #selector(applyFix(_:)), keyEquivalent: "")
-                fix.target = self; fix.representedObject = p.key; sub.addItem(fix)
-                mi.submenu = sub
-            } else { mi.isEnabled = false; mi.toolTip = T("detail.noFix", "No automatic fix — needs a hand.") }
-            menu.addItem(mi)
-        }
-        menu.addItem(.separator())
-        add(menu, "🌐 Ouvrir le dashboard", #selector(open))
-        add(menu, T("menu.refreshShort", "↻ Refresh"), #selector(refreshNow))
-        menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
     // ---- Options menu (menu-bar item) — rebuilt each open ------------------
@@ -648,10 +685,31 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // L'ouverture du dashboard passe en tête : c'est l'action de loin la plus
         // fréquente. Les réglages descendent en bas, avec Quitter — on y touche une
         // fois puis plus jamais, ils n'ont rien à faire au-dessus des actions du soir.
+        // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
+        // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
+        // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
+        // surfaces ; c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
+        let mode = NSMenuItem(title: T("menu.mode", "Mode"), action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for (title, sel, key) in [(T("mode.auto", "🅰 Auto"), #selector(setModeAuto), "auto"),
+                                  (T("mode.live", "🎤 Live"), #selector(setModeLive), "live"),
+                                  (T("mode.studio", "🎧 Studio"), #selector(setModeStudio), "studio")] {
+            let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
+            mi.target = self; mi.state = (requestedMode == key) ? .on : .off
+            sub.addItem(mi)
+        }
+        mode.submenu = sub; menu.addItem(mode)
+        menu.addItem(.separator())
+
+        add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
+        menu.addItem(.separator())
+
+        add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
+        add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
+        menu.addItem(.separator())
+
         add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
-        add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
-        add(menu, T("menu.detail", "🔍 Show problem details…"), #selector(showDetailMenu))
-        add(menu, T("menu.refresh", "↻ Refresh now"), #selector(refreshNow))
+        add(menu, T("menu.journal", "📜 Action journal"), #selector(openJournal))
         menu.addItem(.separator())
         let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
                                   action: #selector(showSettings), keyEquivalent: ",")

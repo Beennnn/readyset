@@ -60,3 +60,20 @@
 "screens.showOn" = "Afficher sur";
 "screens.main"   = "Écran principal";
 "screens.all"    = "Tous les écrans";
+
+/* --- Menu de l'icône : les mêmes actions que la barre du dashboard --- */
+"menu.mode"        = "Mode";
+"mode.auto"        = "🅰 Auto";
+"mode.live"        = "🎤 Live";
+"mode.studio"      = "🎧 Studio";
+"menu.prepare"     = "✨ Tout préparer";
+"menu.charge"      = "🔋 Confirmer que l'iPhone charge";
+"menu.quitOthers"  = "🧹 Quitter les autres applis…";
+"menu.journal"     = "📜 Journal des actions";
+
+/* --- Confirmation avant de fermer des applis (la seule action qui peut faire
+       perdre du travail, donc la seule qui pose une question) --- */
+"quit.title"  = "Fermer ces applis ?";
+"quit.warn"   = "Une app qui tient un document non enregistré posera sa propre question.";
+"quit.ok"     = "Les fermer";
+"quit.cancel" = "Annuler";
