@@ -1,189 +1,138 @@
-# rig.toml — copy this to `rig.toml` (git-ignored) and adapt to YOUR rig. Everything
-# omitted falls back to the defaults in riglib/config.py.
-#
-# This is a COMPLETE, realistic example (a funk-band keyboard rig) so you can see every
-# feature wired up. It is anonymised — no real paths, IPs, MACs or ntfy topic. Replace
-# the placeholders with your own.
+# rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
+# falls back to the generic defaults in riglib/config.py. Nothing below is personal —
+# these are placeholder examples; replace with your paths / IPs / device names / MACs.
 
 [set]
-app = "/Applications/Ableton Live 12 Suite.app"   # app that opens the project
-project     = "/Users/you/Music/Gig Sets/Funk Set.als"   # the .als preflight opens
+ableton_app = "/Applications/Ableton Live 12 Suite.app"
+project     = "/path/to/your/Gig Set.als"    # the .als preflight opens
 open_after_launch = true
 
 [launch]
-# Launch order (Bome owns the MIDI plumbing, so it comes up before the set).
 apps = [
   "/Applications/Bome MIDI Translator Pro.app",
   "/Applications/Bome Network.app",
   "/Applications/Elgato Stream Deck.app",
-  "/Applications/Stage Traxx 4.app",
-  "/Applications/Amphetamine.app",
+  # "/Applications/Stage Traxx 4.app",
+  # "/Applications/Amphetamine.app",
 ]
 settle_seconds = 2
-# Shell commands run after launching apps (generic). Here: start an anti-sleep session.
-post_cmds = [
-  { cmd = "osascript -e 'tell application \"Amphetamine\" to start new session'", label = "Amphetamine session" },
-]
+amphetamine_session = true   # start an anti-sleep session during bring-up
 
 [checks]
-# label -> regex matched against the full process command line (pgrep -f).
-apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player", "Stage Traxx" = "Stage Traxx" }
-midi_required = ["Ableton Loopback"]       # MIDI input ports that MUST exist
-breath_port   = "Breath Controller"        # breath controller's MIDI input name
-audio_interface = "RME Fireface UCX"       # your audio interface's CoreAudio name
-default_output_match = "MacBook"           # macOS default output should be the Mac
-stage_network = "192.168.1"                # subnet the Mac must be on
-# USB devices that must be plugged: {label = product-name substring} (via ioreg).
-usb_devices = { "Stream Deck XL" = "Stream Deck XL", "Stream Deck Plus" = "Stream Deck Plus" }
+apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
+midi_required = ["Ableton Loopback"]      # MIDI input ports that MUST exist
+breath_port   = "Breath Controller"       # breath controller's MIDI input name
+audio_interface = "USB Audio"             # your interface's CoreAudio name
+default_output_match = "MacBook"          # macOS default output should be the Mac
+bome_network_port = 37000                 # Bome Network port; ESTABLISHED = remote connected
+iphone_host = ""                          # require a specific peer IP, or empty = any
+# Network (your stage + studio):
+stage_network = "192.168.1"               # subnet the Mac must be on
+modem_host    = "192.168.1.1"             # stage router/modem to ping
+studio_router = "192.168.1.1"             # reachable → "auto" mode = studio
+lamp_severity = "warn"
 
-# Keep-awake app holding a power assertion. `owner` = the name in `pmset -g assertions`.
-# Checked only in modes with require_awake = true.
-[checks.keepawake]
-process = "Amphetamine.app/Contents/MacOS/Amphetamine"
-owner   = "Amphetamine"
-label   = "Amphetamine (anti-veille)"
-icon    = "☕"
-start_cmd   = "osascript -e 'tell application \"Amphetamine\" to start new session'"
-start_label = "Start Amphetamine session"
+# Stream Decks. Short form (product-name substring per deck):
+#   streamdecks = { XL = "Stream Deck XL", Plus = "Stream Deck +" }
+# Long form (preferred) — matches the USB serial FIRST, product name second, and passes
+# if either hits. The name ioreg exposes isn't stable across firmwares (the Plus shows up
+# as "Stream Deck +" on some, "Stream Deck Plus" on others) whereas the serial never
+# changes. Read it off the Stream Deck app's own device id in any profile manifest:
+# "UUID": "@(1)[vid/pid/SERIAL]".
+# [[checks.streamdecks]]
+# name    = "XL"
+# serial  = "CL13L2A01061"
+# product = ["Stream Deck XL"]
 
-# A value read from an app's log, compared to the mode's `live_output`. Here: the audio
-# output device Ableton logs on startup. `pattern` needs one capture group.
-[checks.output_probe]
-log_glob = "~/Library/Preferences/Ableton/Live*/Log.txt"
-pattern  = "Audio In Out: Output Device: (.+)"
-label    = "Ableton output"
-icon     = "🎚️"
+# Stage lamps (Tuya/WLED) — found by MAC via ARP, then pinged. Add one block per lamp.
+# [[checks.lamps]]
+# name = "L1"
+# mac  = "aa:bb:cc:dd:ee:ff"
 
-# Remote links = an ESTABLISHED TCP connection on a port. Here: an iPhone (running a
-# network-MIDI app) connecting to Bome Network's port.
-[[checks.links]]
-name = "iPhone ↔ Bome"
-port = 37000
-icon = "📱"
+# VPN. An active tunnel rewrites the machine's routing, so the Mac can stop seeing the
+# iPhone, the stage modem and the lamps — hence a check, and a one-click cut.
+[checks.vpn]
+# VPNs you accept (substring of the service name) — they never turn the check red.
+ignore = []
+# Per-VPN override for HOW to cut it (substring → shell command). With no entry, the
+# generic method applies: disable the network service — the only thing that holds
+# against an on-demand profile (see riglib/vpn.py).
+[checks.vpn.off_cmds]
 
-# Hosts that must respond — a stage modem (by IP, blocking) and two smart lamps (by MAC,
-# resolved via ARP, warn). The engine just pings; the name + icon carry the meaning.
-[[checks.hosts]]
-name = "Stage modem"
-ip   = "192.168.1.1"
-severity = "fail"
-icon = "📡"
-[[checks.hosts]]
-name = "Lamp L1"
-mac  = "aa:bb:cc:00:00:01"
-icon = "💡"
-[[checks.hosts]]
-name = "Lamp L2"
-mac  = "aa:bb:cc:00:00:02"
-icon = "💡"
+# Open apps the rig doesn't need — one line each, **warning on stage** (a notification
+# landing in front of the set, CPU taken from the DAW, an updater waking up mid-song) and
+# **plain info in the studio**. Per-mode via `unexpected_apps_severity`; never fail — an
+# extra app makes the rig fragile, it doesn't stop it from playing. The dashboard lists
+# them with their icons and asks for confirmation before quitting anything; from a
+# terminal: `rig apps`, then `rig apps --close`.
+#
+# Only apps with a real on-screen presence are considered: menu-bar agents and background
+# apps never show up here — they can't clutter the screen.
+[checks.unexpected_apps]
+# Never offered for closing (substring of the name or path). Finder is here by default:
+# macOS relaunches it anyway.
+allow = ["Finder"]
 
-# Arbitrary command checks — the escape hatch: any condition, no code. Pass = exit 0
-# (or stdout matches expect_match). Optional fix_cmd powers a "réparer" button.
-# [[checks.commands]]
-# name = "Disk space"
-# cmd  = "[ $(df -g / | tail -1 | awk '{print $4}') -gt 10 ]"
-# severity = "warn"
-# icon = "💽"
-# [[checks.commands]]
-# name = "Postgres"
-# cmd  = "pg_isready -q"
-# fix_cmd = "brew services start postgresql"
-# fix_label = "Start Postgres"
-# icon = "🗄️"
+# --- windows: everything RUNS, only the DAW is SEEN ----------------------------------
+# The rig apps (MIDI router, deck software, backing-track player) must run — they carry
+# the routing, the buttons and the tracks — but their windows are noise on a stage
+# screen. Policies: "hide" (⌘H — gone from the screen, still running), "minimize"
+# (windows to the Dock), "keep" (left alone).
+[windows]
+default = "hide"
+launch_hidden = true      # `open -g -j`: apps come up already hidden, nothing flashes
+after_preflight = true    # a bring-up ends by tidying the screen
 
-# Things software can't detect → a human ticks them before playing. severity can be a
-# string or a per-profile map.
-[[checks.manual_confirms]]
-name = "Phone charging"
-icon = "🔋"
-severity = { live = "fail", studio = "warn" }
+[windows.apps]
+# Key = substring of the .app name. The DAW stays visible: the set IS the stage screen.
+"Ableton" = "keep"
 
 [mode]
-default = "auto"
-fallback = "live"          # no rule matches → this profile
-# Environment detection: first rule whose criterion holds wins. Criteria: ping (host
-# reachable), interface (Mac holds an IP on a subnet), cmd (command exits 0).
-detect = [
-  { profile = "studio", ping = "192.168.1.1" },
-  # { profile = "studio", interface = "192.168.1" },
-  # { profile = "rehearsal", cmd = "test -f ~/.rig-rehearsal" },
-]
+default = "auto"    # boots live; flips to studio when studio_router answers
 
 [modes.live]
-keyboard_ok   = ["P-225"]              # main stage keyboard (green if present)
-keyboard_warn = []                     # fallback keyboards (yellow if only these)
-live_output   = ["P-225"]              # Ableton must output here on stage
-require_awake = true
+keyboard_ok   = ["Piano"]             # your main keyboard's MIDI port (green if present)
+keyboard_warn = []                    # fallback keyboards (yellow if only these)
+live_output   = ["Piano"]            # Ableton must output here on stage
+require_amphetamine = true
 breath_severity = "fail"
 interface_severity = "fail"
 mac_power_severity = "fail"
+iphone_power_severity = "fail"
+# Le soundcheck (gestes réellement joués) compte comme un check à part entière :
+# un rig jamais joué n'est pas un rig vérifié. "off" pour ne pas l'exiger.
+soundcheck_severity = "fail"
+network_severity = "fail"   # covers BOTH stage_network and modem_host — same question
 # (Mac plugged but battery still draining = always FAIL, both modes.)
 
 [modes.studio]
-keyboard_ok   = ["Digital Piano", "P-225"]   # preferred desk keyboard → green
-keyboard_warn = ["microKey"]                 # a mini-keyboard alone → warning
-live_output   = ["MacBook", "RME Fireface UCX"]
-require_awake = false
+keyboard_ok   = ["Piano"]
+keyboard_warn = ["microKey"]
+live_output   = ["MacBook", "USB Audio"]
+require_amphetamine = false
 breath_severity = "warn"
 interface_severity = "warn"
 mac_power_severity = "warn"
+iphone_power_severity = "warn"
+network_severity = "warn"   # the stage network is elsewhere — at the desk it *can't*
+                            # answer, so its absence is information, not a defect
 
 [monitor]
 interval    = 5
 audio_every = 6
-alerts      = ["macos", "push", "midi"]
+alerts      = ["macos", "push", "streamdeck"]
 recovery_alerts = true
-
-# Optional automatic audio-level probe (macOS). Instead of the soundcheck asking you
-# "do you hear the sound?", a separate helper measures the real output level and confirms
-# it. Set `file` to enable, then install the helper:
-#   audiolevel/audiolevel 1.5 <bundle>          # run once → grant the audio permission
-#   audiolevel/install-daemon.sh <bundle>       # then install it as a login service
-# The helper publishes "<rms> <epoch>" to `file`; the engine only READS that file, so any
-# meter that writes the same format works. Empty `file` (default) = disabled → manual
-# confirm. `<bundle>` is an app-name substring to tap (e.g. your DAW); omit for global mix.
-[audiolevel]
-file      = ""       # e.g. "~/.cache/readyset/audiolevel" — empty disables the probe
-threshold = 0.003    # RMS above this = sound is flowing
-max_age   = 6        # seconds; a reading older than this = probe down → treated as "no signal"
-
-# You CAN also gate a check on it, but note: audio is silent between songs, so a continuous
-# monitor check would false-alarm. Prefer the soundcheck (a deliberate play-test) for audio.
-# [[checks.commands]]
-# label       = "Niveau audio en sortie"
-# icon        = "🎚️"
-# cmd         = "test $(( $(date +%s) - $(stat -f %m ~/.cache/readyset/audiolevel) )) -lt 6 && awk '{exit !($1+0>0.003)}' ~/.cache/readyset/audiolevel"
-# expect_exit = 0
 
 [alerts.push]
 # ntfy.sh: pick a PRIVATE, unguessable topic and subscribe to it in the ntfy app.
 server   = "https://ntfy.sh"
 topic    = ""            # e.g. "my-rig-9d3f2a" — leave empty to disable push
 priority = "high"
-insecure = false         # true only if your LAN does SSL interception (self-signed cert)
+insecure = false         # set true only if your LAN does SSL interception (self-signed)
 
-[alerts.midi]
+[alerts.streamdeck]
 # Emits a note on a dead-end IAC port. Create it once: Audio MIDI Setup → IAC Driver
 # → "+" → rename "rig-alert". Map a Stream Deck key to MIDI feedback (note 60, ch 15).
 port    = "rig-alert"
 channel = 15
 note    = 60
-
-# Signal-flow diagram. Each node references check keys; its colour = the worst status
-# among them. Positions are on a 764×300 canvas. Empty nodes list → diagram hidden.
-[diagram]
-edges = [["iphone","bome"],["streamdeck","bome"],["keyboard","daw"],["bome","daw"],["traxx","daw"],["daw","out"]]
-nodes = [
-  {id="iphone",    label="iPhone",       icon="📱", x=88,  y=56,  keys=["link:iPhone ↔ Bome"]},
-  {id="streamdeck",label="Stream Deck",  icon="🎛️", x=88,  y=150, keys=["usb:Stream Deck XL","usb:Stream Deck Plus","app:Stream Deck"]},
-  {id="keyboard",  label="Keyboard",     icon="🎹", x=88,  y=244, keys=["kbd:keyboard"]},
-  {id="bome",      label="Bome",         icon="🔀", x=312, y=103, keys=["app:Bome MIDI Translator","app:Bome Network"]},
-  {id="traxx",     label="Stage Traxx",  icon="▶️", x=312, y=244, keys=["app:Stage Traxx"]},
-  {id="daw",       label="Ableton Live", icon="🎵", x=520, y=150, keys=["app:Ableton","midi:Ableton Loopback"]},
-  {id="out",       label="Audio out",    icon="🔊", x=684, y=150, keys=["audio","audio:probe"]},
-]
-
-# Dashboard icons are config data (defaults in riglib/config.py). Override any here —
-# keyed by check key or prefix (exact wins, else longest prefix).
-# [icons]
-# "app:Ableton" = "🎹"

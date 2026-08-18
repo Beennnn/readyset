@@ -1,8 +1,8 @@
-"""Bring-up sequence — launch the configured apps in order, then open the project.
+"""Bring-up sequence — launch the rig apps in order, then open the gig set.
 
-Poll-for-readiness rather than fixed sleeps: after launching, wait until an expected
-MIDI port appears before opening the project, so it binds to live ports instead of
-racing an app that is still booting.
+Poll-for-readiness rather than fixed sleeps: after launching Bome we wait until
+its virtual MIDI ports actually appear before opening the Ableton set, so the set
+binds to live ports instead of racing an app that is still booting.
 """
 
 from __future__ import annotations
@@ -13,14 +13,20 @@ from pathlib import Path
 
 import mido
 
+from . import windows
 
-def _open_app(app_path: str) -> tuple[bool, str]:
+
+def _open_app(app_path: str, hidden: bool = False) -> tuple[bool, str]:
     if not Path(app_path).exists():
         return False, f"introuvable : {app_path}"
-    r = subprocess.run(["open", "-a", app_path], capture_output=True, text=True)
+    # -g : ne pas passer au premier plan. -j : démarrer masquée. Les deux se règlent au
+    # LANCEMENT, donc sans autorisation Accessibilité — c'est le moyen le plus propre de
+    # ne jamais voir clignoter la fenêtre d'une app qui n'a rien à faire à l'écran.
+    cmd = ["open", "-a", app_path] + (["-g", "-j"] if hidden else [])
+    r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
         return False, r.stderr.strip() or "open a échoué"
-    return True, "lancé"
+    return True, "lancé (masqué)" if hidden else "lancé"
 
 
 def _wait_for(predicate, timeout: float, interval: float = 0.5) -> bool:
@@ -43,11 +49,12 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
     settle = cfg["launch"].get("settle_seconds", 2)
     for app in cfg["launch"]["apps"]:
         name = Path(app).stem
+        hidden = windows.launch_hidden(cfg, app)
         if dry_run:
             exists = "" if Path(app).exists() else "  (introuvable !)"
-            log(f"  [dry-run] lancerait {name}{exists}")
+            log(f"  [dry-run] lancerait {name}{' masquée' if hidden else ''}{exists}")
             continue
-        ok, msg = _open_app(app)
+        ok, msg = _open_app(app, hidden=hidden)
         log(f"  {'▶' if ok else '✖'} {name} — {msg}")
         if ok:
             time.sleep(settle)
@@ -64,63 +71,74 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
         if _wait_for(lambda: _midi_port_present(anchor), timeout=15):
             log(f"  ✔ ports MIDI virtuels présents")
         else:
-            log(f"  ⚠️  « {anchor} » toujours absent après 15s (routeur MIDI pas prêt ?)")
+            log(f"  ⚠️  « {anchor} » toujours absent après 15s (Bome pas prêt ?)")
 
 
-def open_project(cfg: dict, log=print, dry_run: bool = False) -> None:
+def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
     if not cfg["set"].get("open_after_launch", True):
-        log("  (ouverture du projet désactivée : [set].open_after_launch = false)")
+        log("  (ouverture du set désactivée : [set].open_after_launch = false)")
         return
     project = cfg["set"]["project"]
-    app = cfg["set"]["app"]
+    app = cfg["set"]["ableton_app"]
     if dry_run:
-        pe = "" if Path(project).exists() else "  (projet introuvable !)"
-        ae = "" if Path(app).exists() else "  (app introuvable !)"
+        pe = "" if Path(project).exists() else "  (set introuvable !)"
+        ae = "" if Path(app).exists() else "  (Ableton introuvable !)"
         log(f"  [dry-run] ouvrirait « {Path(project).name} »{pe}")
         log(f"  [dry-run]   dans {Path(app).stem}{ae}")
         return
     if not Path(project).exists():
-        log(f"  ✖ projet introuvable : {project}")
+        log(f"  ✖ set introuvable : {project}")
         log(f"    → corrige [set].project dans rig.toml")
         return
     if not Path(app).exists():
-        log(f"  ✖ app introuvable : {app}")
+        log(f"  ✖ Ableton introuvable : {app}")
         return
     r = subprocess.run(["open", "-a", app, project], capture_output=True, text=True)
     if r.returncode != 0:
-        log(f"  ✖ ouverture du projet : {r.stderr.strip()}")
+        log(f"  ✖ ouverture du set : {r.stderr.strip()}")
         return
     log(f"  ▶ ouverture de « {Path(project).name} » dans {Path(app).stem}")
-    req = cfg["checks"].get("midi_required") or []
-    if req:
-        anchor = req[0]
-        log(f"  … attente du port « {anchor} »")
-        if _wait_for(lambda: _midi_port_present(anchor), timeout=45, interval=1):
-            log("  ✔ projet en ligne")
-        else:
-            log("  ⚠️  pas encore prêt après 45s (gros projet / plugins qui chargent)")
+    log("  … attente du port « Ableton Loopback »")
+    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=45, interval=1):
+        log("  ✔ Ableton en ligne")
+    else:
+        log("  ⚠️  Ableton pas encore prêt après 45s (gros set / plugins qui chargent)")
 
 
-def run_post_cmds(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Generic post-launch shell commands (config launch.post_cmds), e.g. starting an
-    anti-sleep session. Each entry: a string, or {cmd, label}."""
-    for entry in cfg["launch"].get("post_cmds", []):
-        cmd = entry.get("cmd") if isinstance(entry, dict) else entry
-        label = entry.get("label", cmd) if isinstance(entry, dict) else cmd
-        if not cmd:
-            continue
-        if dry_run:
-            log(f"  [dry-run] exécuterait : {label}")
-            continue
-        r = subprocess.run(["/bin/bash", "-lc", cmd], capture_output=True, text=True)
-        if r.returncode == 0:
-            log(f"  ▶ {label}")
-        else:
-            log(f"  ⚠️  {label} : {r.stderr.strip() or f'exit {r.returncode}'}")
+def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> None:
+    if not cfg["launch"].get("amphetamine_session", True):
+        return
+    if dry_run:
+        log("  [dry-run] démarrerait une session Amphetamine (anti-veille)")
+        return
+    # Amphetamine exposes an AppleScript command; a bare session runs indefinitely.
+    r = subprocess.run(
+        ["osascript", "-e", 'tell application "Amphetamine" to start new session'],
+        capture_output=True, text=True,
+    )
+    if r.returncode == 0:
+        log("  ☕ session Amphetamine démarrée")
+    else:
+        log(f"  ⚠️  Amphetamine : {r.stderr.strip() or 'session non démarrée (autorisation ?)'}")
+
+
+def tidy_windows(cfg: dict, log=print, dry_run: bool = False) -> None:
+    """Range les fenêtres en fin de bring-up (voir riglib/windows.py).
+
+    Après le lancement, même masquées au démarrage, des apps déjà ouvertes avant le
+    préflight peuvent traîner à l'écran — et Ableton, lui, vient de passer devant en
+    ouvrant le set. Ce passage final laisse donc l'écran dans l'état de scène : le set
+    devant, le reste rangé.
+    """
+    if not cfg.get("windows", {}).get("after_preflight", True):
+        return
+    log("  🪟 rangement des fenêtres…")
+    windows.tidy(cfg, log=log, dry_run=dry_run)
 
 
 def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     log("Lancement des apps du rig…" if not dry_run else "Séquence de mise en place (dry-run) :")
     launch_apps(cfg, log=log, dry_run=dry_run)
-    run_post_cmds(cfg, log=log, dry_run=dry_run)
-    open_project(cfg, log=log, dry_run=dry_run)
+    ensure_amphetamine_session(cfg, log=log, dry_run=dry_run)
+    open_set(cfg, log=log, dry_run=dry_run)
+    tidy_windows(cfg, log=log, dry_run=dry_run)

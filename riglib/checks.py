@@ -1,9 +1,12 @@
 """Health checks — the source of truth for both preflight and monitor.
 
-Each check returns a Result. Three levels:
-  ok    green  — present / running as expected
-  warn  yellow — optional thing missing (e.g. keyboard unplugged); not blocking
-  fail  red    — required thing missing; the rig is not gig-ready
+Each check returns a Result. Four levels:
+  ok    vert   — présent / lancé comme attendu
+  info  bleu   — absent, et c'est normal : de l'optionnel non branché (lampes d'ambiance,
+                 interface audio au bureau, réseau de scène quand on n'y est pas). Visible
+                 dans le dashboard, mais ne pèse NI sur le verdict NI sur le code de sortie.
+  warn  orange — quelque chose manque et ça mérite un coup d'œil ; pas bloquant
+  fail  rouge  — un élément requis manque ; le rig n'est pas prêt à jouer
 
 The checks are cheap (pgrep, an in-process MIDI port enumeration) except audio,
 which shells out to system_profiler (~1s) and is therefore rate-limited by the
@@ -16,22 +19,44 @@ import glob
 import json
 import os
 import subprocess
+import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 
 import mido
 
-OK, WARN, FAIL = "ok", "warn", "fail"
-_ICON = {OK: "✅", WARN: "⚠️ ", FAIL: "❌"}
+from . import apps, vpn
+
+# Quatre niveaux, du plus calme au plus grave. INFO est SOUS l'avertissement : il dit
+# « absent, et c'est normal » — un équipement facultatif qu'on n'a simplement pas branché
+# ce soir (lampes d'ambiance, interface audio au bureau). C'est le niveau qui manquait :
+# tout mettre en WARN faisait clignoter en orange des choses dont personne ne se soucie,
+# et à force on ne lit plus les oranges du tout — y compris les vrais.
+# Un check INFO ne rend PAS le rig « non prêt » : `worst()` l'ignore, le code de sortie
+# reste 0, et la pastille/le liseré ne s'allument pas.
+OK, INFO, WARN, FAIL = "ok", "info", "warn", "fail"
+_ICON = {OK: "✅", INFO: "ℹ️ ", WARN: "⚠️ ", FAIL: "❌"}
+
+# Valeur spéciale acceptée partout où une sévérité se règle (breath_severity,
+# interface_severity, network_severity, lamp_severity, [[checks.audio_devices]].severity…) :
+# le check ne s'exécute PAS et n'apparaît nulle part dans ce mode.
+#
+# À ne pas confondre avec INFO. "info" dit « absent, et c'est normal » — la ligne reste
+# affichée, on sait que la question a été posée. "off" dit « la question n'a pas de sens
+# ici » : sur scène le son sort du P-225, la RME n'est même pas dans le sac, donc afficher
+# « RME non détectée » chaque soir n'apprend rien à personne et allonge la liste à lire
+# avant de jouer. Ne l'utiliser que pour ça — masquer un vrai problème derrière "off",
+# c'est se rendre aveugle.
+OFF = "off"
 
 
 @dataclass
 class Result:
     key: str        # stable id for state tracking (e.g. "app:Ableton")
     label: str      # human label
-    status: str     # ok | warn | fail
+    status: str     # ok | info | warn | fail
     detail: str = ""
-    glyph: str = ""  # optional per-item icon (e.g. from config); "" = dashboard derives it
 
     @property
     def icon(self) -> str:
@@ -42,8 +67,24 @@ class Result:
         return self.status == OK
 
     def to_dict(self) -> dict:
-        return {"key": self.key, "label": self.label, "status": self.status,
-                "detail": self.detail, "glyph": self.glyph}
+        return {"key": self.key, "label": self.label,
+                "status": self.status, "detail": self.detail}
+
+
+def _hint(observed: str, advice: str) -> str:
+    """Colle un conseil au constat : « ce que je vois → ce que tu peux faire ».
+
+    Un check rouge sans conseil oblige à se souvenir du geste — et sur scène, cinq
+    minutes avant de jouer, c'est exactement ce qui manque. Le constat reste devant
+    (c'est lui qui est vrai), le conseil suit. Réservé au matériel : quand une
+    résolution automatique existe, c'est un bouton de remedy.py qu'il faut, pas une
+    phrase (personne ne lit un conseil qu'une machine pourrait exécuter).
+    """
+    # Le saut de ligne est SÉMANTIQUE, pas décoratif : chaque affichage le rend à sa
+    # façon. Le dashboard est en `white-space: pre-line` et met le conseil sur sa propre
+    # ligne — avant, un `nowrap` + ellipse coupait les conseils en plein milieu, ce qui
+    # est pire que pas de conseil. Le terminal, lui, les recolle et enroule tout seul.
+    return f"{observed}\n→ {advice}"
 
 
 def _pgrep(pattern: str) -> bool:
@@ -70,9 +111,16 @@ def _midi_inputs() -> list[str]:
     from .midi_lock import MIDI_LOCK
     try:
         with MIDI_LOCK:
-            return list(mido.get_input_names())
+            names = list(mido.get_input_names())
     except Exception as exc:  # pragma: no cover - backend init failure
         return [f"__error__:{exc}"]
+    # CoreMIDI can hand back an endpoint whose name reads as None: a device that
+    # vanished while the process kept its client open leaves a nameless ghost behind.
+    # A fresh process never sees it, which is why `rig check` stayed green while the
+    # long-lived dashboard crashed on EVERY request for 18 h (2026-08-18, after the
+    # Dell dock dropped the whole USB chain). Filtering here fixes every caller at
+    # once — several of them do `p.lower()` and would raise the same way.
+    return [n for n in names if isinstance(n, str) and n]
 
 
 def check_midi(cfg: dict) -> list[Result]:
@@ -103,29 +151,33 @@ def _present(substr: str) -> str | None:
 
 
 def check_keyboard(cfg: dict, mode: str) -> Result:
-    """Master keyboard, three tiers: a preferred keyboard (keyboard_ok) present → green;
-    only a fallback (keyboard_warn) present → yellow; none → red. Both lists are MIDI
-    input-port name substrings, per mode."""
+    """Three tiers: a preferred keyboard (keyboard_ok, e.g. Digital Piano / P-225) →
+    green; only a fallback (keyboard_warn, e.g. microKey Air) → yellow; none → red.
+    So in the studio microKey alone works but warns; the P-225 always satisfies."""
     m = cfg["modes"][mode]
     ok_list = m.get("keyboard_ok", m.get("keyboard", []))
     warn_list = m.get("keyboard_warn", [])
-    found_ok = next((_present(a) for a in ok_list if _present(a)), None)
+    # One _present() per candidate, not two: each call re-enumerates CoreMIDI under
+    # the MIDI lock, so the double evaluation doubled the cost of the check.
+    found_ok = next((hit for a in ok_list if (hit := _present(a))), None)
     if found_ok:
         return Result("kbd:keyboard", "Clavier", OK, f"détecté : {found_ok}")
-    found_warn = next((_present(a) for a in warn_list if _present(a)), None)
+    found_warn = next((hit for a in warn_list if (hit := _present(a))), None)
     if found_warn:
         return Result("kbd:keyboard", "Clavier", WARN,
-                      f"{found_warn} (clavier principal absent)")
-    # No keyboard at all. Severity is per-mode (default fail): on stage that's blocking,
-    # but in studio a missing keyboard is only a warning (keyboard_none_severity = "warn").
-    return Result("kbd:keyboard", "Clavier",
-                  m.get("keyboard_none_severity", "fail"), "aucun clavier branché")
+                      _hint(f"{found_warn} (clavier principal absent)",
+                            "allumer le clavier principal et le brancher en USB"))
+    return Result("kbd:keyboard", "Clavier", FAIL,
+                  _hint("aucun clavier branché",
+                        "l'allumer et le brancher en USB au Mac"))
 
 
-def check_breath(cfg: dict, mode: str) -> Result:
+def check_breath(cfg: dict, mode: str) -> Result | None:
     """Breath controller. Severity depends on mode: part of the live rig (fail),
     optional at the desk (warn)."""
     sev = cfg["modes"][mode].get("breath_severity", "warn")
+    if sev == OFF:
+        return None
     found = _present(cfg["checks"].get("breath_port", "Breath Controller"))
     if found:
         return Result("kbd:breath", "Breath controller", OK, f"détecté : {found}")
@@ -133,26 +185,20 @@ def check_breath(cfg: dict, mode: str) -> Result:
                   "absent" if sev == FAIL else "absent (optionnel en studio)")
 
 
-def check_keepawake(cfg: dict) -> Result | None:
-    """A configurable keep-awake app holding a power assertion (an anti-sleep utility).
-    Config `keepawake`: {process, owner, label, icon}. `owner` is the name that shows
-    in `pmset -g assertions`. Returns None if not configured. Domain-agnostic."""
-    ka = cfg["checks"].get("keepawake")
-    if not ka:
-        return None
-    label = ka.get("label", "Anti-veille")
-    icon = ka.get("icon", "")
-    if ka.get("process") and not _pgrep(ka["process"]):
-        return Result("sys:keepawake", label, FAIL, "pas lancé", icon)
+def check_amphetamine(cfg: dict) -> Result:
+    """Amphetamine must be running AND holding an active anti-sleep session. A live
+    session shows up as an '(Amphetamine)' power assertion in `pmset -g assertions`."""
+    if not _pgrep("Amphetamine.app/Contents/MacOS/Amphetamine"):
+        return Result("sys:amphetamine", "Amphetamine (anti-veille)", FAIL, "pas lancé")
     try:
         out = subprocess.run(["pmset", "-g", "assertions"],
                              capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
-        return Result("sys:keepawake", label, WARN, f"pmset: {exc}", icon)
-    owner = ka.get("owner", "")
-    active = bool(owner) and f"({owner})" in out
-    return Result("sys:keepawake", label, OK if active else FAIL,
-                  "session active" if active else "lancé, aucune session active", icon)
+        return Result("sys:amphetamine", "Amphetamine (anti-veille)", WARN, f"pmset: {exc}")
+    active = "(Amphetamine)" in out
+    return Result("sys:amphetamine", "Amphetamine (anti-veille)",
+                  OK if active else FAIL,
+                  "session active" if active else "lancé, aucune session active")
 
 
 def _tail(path: str, nbytes: int = 200_000) -> str:
@@ -163,40 +209,59 @@ def _tail(path: str, nbytes: int = 200_000) -> str:
         return fh.read().decode("utf-8", "ignore")
 
 
-def check_output_probe(cfg: dict, mode: str) -> Result | None:
-    """Read the current value of something from an app's log and check it's in the
-    mode's allowed set. Generic 'value from a log' probe — config `output_probe`:
-    {log_glob, pattern (1 capture group), label, icon}; allowed = mode.live_output.
-    Returns None if not configured."""
-    op = cfg["checks"].get("output_probe")
-    if not op:
-        return None
-    import re as _re
-    allowed = cfg["modes"][mode].get("live_output", [])
-    label = op.get("label", "Sortie") + " → " + " / ".join(allowed)
-    icon = op.get("icon", "")
-    logs = sorted(glob.glob(os.path.expanduser(op.get("log_glob", ""))),
-                  key=lambda p: os.path.getmtime(p), reverse=True)
-    # Not verifiable (no log, unreadable, or no value in it) → drop the item entirely
-    # rather than show an indeterminate warning. The probe only surfaces when it can
-    # actually read a value AND compare it.
+def check_live_output(cfg: dict, mode: str) -> Result:
+    """Où sort le son d'Ableton — lu dans son Log.txt, pas demandé à Ableton.
+
+    Deux choses à savoir pour lire cette ligne sans se tromper.
+
+    D'abord le libellé : il ne dit PAS « Live sort sur ces trois-là ». Le nom du
+    check est fixe, et la liste des sorties ACCEPTÉES (`live_output`, par mode :
+    le P-225 sur scène, la sortie macOS ou la RME au bureau) n'apparaît que si la
+    sortie réelle n'en fait pas partie — sinon on lisait une énumération là où on
+    attendait un état. C'était le reproche fait le 2026-08-18, et il était fondé.
+
+    Ensuite la fraîcheur : le Log.txt n'est écrit QUE quand Ableton tourne. Ableton
+    fermé, la dernière valeur reste lisible indéfiniment — et l'ancienne version
+    rendait un VERT franc sur une lecture vieille de 18 h, à côté d'un « Ableton
+    lancé ❌ ». Un état qu'on ne peut pas constater ne se déclare ni bon ni mauvais :
+    Ableton fermé, la ligne passe en INFO et dit à quand remonte la lecture.
+    """
+    wants = cfg["modes"][mode]["live_output"]
+    label = "Sortie audio d'Ableton"
+    logs = sorted(
+        glob.glob(os.path.expanduser("~/Library/Preferences/Ableton/Live*/Log.txt")),
+        key=lambda p: os.path.getmtime(p), reverse=True,
+    )
     if not logs:
-        return None
-    pat = _re.compile(op.get("pattern", "(.+)"))
-    val = None
+        return Result("audio:live", label, WARN, "log Ableton introuvable")
+    dev = None
     try:
         for line in _tail(logs[0]).splitlines():
-            m = pat.search(line)
-            if m:
-                val = m.group(1).strip()
-    except Exception:
-        return None
-    if val is None:
-        return None
-    short = val.split(" (")[0]
-    ok = any(a.lower() in val.lower() for a in allowed)
-    return Result("audio:probe", label, OK if ok else FAIL,
-                  short if ok else f"actuellement : {short}", icon)
+            if "Audio In Out: Output Device:" in line:
+                dev = line.split("Output Device:", 1)[1].strip()
+    except Exception as exc:
+        return Result("audio:live", label, WARN, f"lecture log: {exc}")
+    if dev is None:
+        return Result("audio:live", label, WARN, "indéterminée")
+
+    short = dev.split(" (")[0]
+    ok = any(w.lower() in dev.lower() for w in wants)
+
+    # Ableton fermé → rien à constater : on rend la dernière valeur connue, datée,
+    # sans verdict. Même motif de détection que le check « Ableton lancé », pour que
+    # les deux lignes ne puissent pas se contredire.
+    pattern = cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live")
+    if not _pgrep(pattern):
+        when = datetime.fromtimestamp(os.path.getmtime(logs[0])).strftime("%d/%m à %H:%M")
+        return Result("audio:live", label, INFO,
+                      f"Ableton n'est pas lancé — dernière sortie connue : {short} ({when})")
+
+    if ok:
+        return Result("audio:live", label, OK, short)
+    return Result("audio:live", label, FAIL,
+                  _hint(f"sort sur {short}",
+                        "attendu : " + " ou ".join(wants) +
+                        " — à changer dans Live > Préférences > Audio"))
 
 
 def _ping(host: str, timeout_s: int = 1) -> bool:
@@ -208,109 +273,135 @@ def _ping(host: str, timeout_s: int = 1) -> bool:
         return False
 
 
-def _norm_mac(mac: str) -> str:
-    return ":".join(p.zfill(2) for p in mac.lower().replace("-", ":").split(":"))
-
-
-def _gateway_mac() -> str | None:
-    """MAC of the current default gateway (router). Stable AND unique per router — unlike
-    its IP (192.168.1.1 is a near-universal default), so it identifies THIS specific network
-    even where another venue reuses the same subnet. Pings the gateway first to warm the
-    ARP cache."""
-    import re as _re
-    try:
-        gw = subprocess.run(["route", "-n", "get", "default"],
-                            capture_output=True, text=True, timeout=4).stdout
-        ip = next((ln.split(":", 1)[1].strip() for ln in gw.splitlines() if "gateway:" in ln), None)
-        if not ip:
-            return None
-        _ping(ip)   # ensure the router is in the ARP table
-        out = subprocess.run(["arp", "-n", ip], capture_output=True, text=True, timeout=4).stdout
-        m = _re.search(r"([0-9a-fA-F]{1,2}(?::[0-9a-fA-F]{1,2}){5})", out)
-        return _norm_mac(m.group(1)) if m else None
-    except Exception:
-        return None
-
-
-def _criterion_holds(rule: dict) -> bool:
-    """One environment-detection criterion. Generic: reachable host (ping), the Mac holding
-    an IP on a subnet (interface), the default gateway's MAC (gateway_mac — stable/unique per
-    router), or an arbitrary command exiting 0 (cmd)."""
-    if rule.get("ping"):
-        return _ping(rule["ping"])
-    if rule.get("gateway_mac"):
-        return _gateway_mac() == _norm_mac(rule["gateway_mac"])
-    if rule.get("interface"):
-        try:
-            out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
-            return f"inet {rule['interface']}." in out
-        except Exception:
-            return False
-    if rule.get("cmd"):
-        try:
-            return subprocess.run(["/bin/bash", "-lc", rule["cmd"]],
-                                  stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                  timeout=rule.get("timeout", 6)).returncode == 0
-        except Exception:
-            return False
-    return False
-
-
 def resolve_mode(cfg: dict, requested: str = "auto") -> str:
-    """Pick the active profile. An explicit request wins. Otherwise the environment is
-    detected: config [mode].detect is an ordered list of {profile, <criterion>}; the
-    first rule whose criterion holds wins, else [mode].fallback (else the first mode).
-    Fully config-driven — no hardcoded network or profile names."""
-    modes = cfg.get("modes", {})
-    if requested in modes:
+    """live | studio | auto → concrete mode. Auto = studio when the studio router
+    (192.168.1.1) answers, else live. So the tool boots live and flips to studio
+    only once it sees the home network."""
+    if requested in ("live", "studio"):
         return requested
-    md = cfg.get("mode", {})
-    for rule in md.get("detect", []):
-        prof = rule.get("profile")
-        if prof in modes and _criterion_holds(rule):
-            return prof
-    fb = md.get("fallback")
-    return fb if fb in modes else next(iter(modes), "live")
+    return "studio" if _ping(cfg["checks"].get("studio_router", "192.168.1.1")) else "live"
 
 
-def check_stage_network(cfg: dict, mode: str = "") -> Result:
-    # Per-mode override: modes.<mode>.stage_network wins over the global checks.stage_network.
-    # Lets "live" test the stage subnet (192.168.8.x) and "studio" the home one (192.168.1.x).
-    m = cfg.get("modes", {}).get(mode, {})
-    prefix = m.get("stage_network") or cfg["checks"].get("stage_network", "192.168.1")
+def _network_severity(cfg: dict, mode: str) -> str:
+    """Severity of the two stage-network checks, per mode. Both answer the same physical
+    question — « suis-je branché sur le réseau de scène ? » — so they share one knob:
+    blocking on stage (no modem = no iPhone, no lamps, no remote), informational at the
+    desk, where that network is simply somewhere else and can never answer."""
+    return cfg["modes"].get(mode, {}).get("network_severity", "fail")
+
+
+def check_stage_network(cfg: dict, mode: str) -> Result | None:
+    """Le réseau de scène, en UNE ligne à deux étages plutôt qu'en deux checks.
+
+    Ils posaient déjà la même question physique — « suis-je sur le réseau de scène ? » —
+    au point de partager un seul réglage de sévérité. Séparés, ils s'allumaient toujours
+    ensemble et coûtaient deux lignes pour un seul fait.
+
+    L'ordre du diagnostic va de la cause à la conséquence : le modem D'ABORD, parce que
+    c'est lui qui distribue les adresses. Modem éteint → aucune IP possible, et annoncer
+    « le Mac n'est pas sur le réseau » ferait chercher du côté du Mac un problème qui est
+    dans la mallette. Modem debout mais pas d'IP → là seulement, c'est le Mac (câble,
+    mauvais WiFi). Le cas inverse existe aussi : une IP et un modem muet, c'est-à-dire un
+    modem qui a donné le bail puis a lâché.
+    """
+    sev = _network_severity(cfg, mode)
+    if sev == OFF:
+        return None
+    prefix = cfg["checks"].get("stage_network", "192.168.1")
+    host = cfg["checks"].get("modem_host", "192.168.1.1")
+    label = f"Réseau de scène ({prefix}.x)"
+
     try:
         out = subprocess.run(["ifconfig"], capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
-        return Result("net:stage", f"Mac sur le réseau {prefix}.x", WARN, f"ifconfig: {exc}")
+        return Result("net:stage", label, WARN, f"ifconfig: {exc}")
     ip = next((w for line in out.splitlines() if f"inet {prefix}." in line
                for w in line.split() if w.startswith(f"{prefix}.")), None)
-    return Result("net:stage", f"Mac sur le réseau {prefix}.x",
-                  OK if ip else FAIL, ip or "pas d'IP sur ce subnet")
+    modem = _ping(host)
+
+    if modem and ip:
+        return Result("net:stage", label, OK, f"Mac en {ip} · modem {host} répond")
+
+    if sev != FAIL:      # au bureau, ce réseau est simplement ailleurs
+        return Result("net:stage", label, sev, "absent (normal hors scène)")
+
+    if not modem and not ip:
+        detail = _hint(f"le modem {host} ne répond pas, et le Mac n'a pas d'IP en {prefix}.x",
+                       "allumer le modem de scène EN PREMIER : c'est lui qui distribue les "
+                       "adresses, le Mac ne peut rien obtenir tant qu'il est éteint")
+    elif not modem:
+        detail = _hint(f"Mac en {ip}, mais le modem {host} ne répond pas",
+                       "le modem a donné son adresse puis s'est tu — le rallumer ; "
+                       "sans lui, ni iPhone, ni lampes, ni télécommande")
+    else:
+        detail = _hint(f"le modem {host} répond, mais le Mac n'a pas d'IP en {prefix}.x",
+                       "côté Mac : vérifier le câble, ou qu'il est bien sur le WiFi de "
+                       "scène et pas resté sur un autre réseau")
+    return Result("net:stage", label, sev, detail)
 
 
-def check_usb(cfg: dict) -> list[Result]:
-    """USB devices that must be plugged, matched by ioreg product-name substring
-    (SPUSBDataType is empty on some Macs). Domain-agnostic: config `usb_devices` maps
-    a label to a product substring."""
-    devices = cfg["checks"].get("usb_devices", {})
-    if not devices:
-        return []
+def _streamdeck_specs(cfg: dict) -> list[dict]:
+    """Normalise both config shapes into [{name, serial, products}].
+
+    Legacy shape (still accepted): streamdecks = { XL = "Stream Deck XL", … } — one
+    product-name substring per deck. Rich shape: a list of [[checks.streamdecks]]
+    tables carrying a serial AND one or more product names.
+    """
+    raw = cfg["checks"].get("streamdecks", {"XL": "Stream Deck XL", "Plus": "Stream Deck +"})
+    if isinstance(raw, dict):
+        return [{"name": k, "serial": "", "products": [v]} for k, v in raw.items()]
+    specs = []
+    for deck in raw:
+        products = deck.get("product", [])
+        if isinstance(products, str):
+            products = [products]
+        specs.append({"name": deck.get("name", "?"),
+                      "serial": deck.get("serial", ""),
+                      "products": products})
+    return specs
+
+
+def check_streamdeck(cfg: dict) -> list[Result]:
+    """Each Stream Deck must be present on USB (via ioreg — SPUSBDataType is empty on
+    this Mac). 'Asleep' (dimmed screen) is an app-internal state we can't read.
+
+    A deck matches on its USB **serial** first, product name second, and passes if
+    EITHER hits. Why not product name alone (the pre-2026-08-17 criterion): the
+    marketing string ioreg exposes isn't stable — the Plus enumerates as "Stream Deck +"
+    on some firmwares, so a lone "Stream Deck Plus" substring reports a genuinely
+    plugged deck as absent. The serial never changes; read it off the Stream Deck app's
+    own device id in any profile manifest — `"UUID": "@(1)[vid/pid/SERIAL]"`.
+
+    Never match the bare string "Stream Deck": the app opens every USB device on the
+    bus, leaving AppleUSBHostDeviceUserClient nodes *named* "Stream Deck" hanging off
+    unrelated hardware (the Dell dock, hubs…). They're there with no deck plugged at
+    all — matching them would turn this check into a permanent green light. Quoting the
+    needle (`"Stream Deck XL"`) is what keeps us on the `= "…"` property values.
+    """
     try:
-        out = subprocess.run(["ioreg", "-r", "-c", "IOUSBHostDevice"],
+        # -l so idVendor/idProduct/kUSBSerialNumberString are printed, not just names.
+        out = subprocess.run(["ioreg", "-r", "-c", "IOUSBHostDevice", "-l"],
                              capture_output=True, text=True, timeout=8).stdout
     except Exception as exc:
-        return [Result("usb:_backend", "USB", WARN, f"ioreg: {exc}")]
+        return [Result("usb:streamdeck", "Stream Deck (USB)", WARN, f"ioreg: {exc}")]
     res = []
-    for label, product in devices.items():
-        present = product in out
-        res.append(Result(f"usb:{label}", label, OK if present else FAIL,
-                          "branché" if present else "non détecté en USB"))
+    for spec in _streamdeck_specs(cfg):
+        label, serial = spec["name"], spec["serial"]
+        hit = f"n° série {serial}" if serial and f'"{serial}"' in out else ""
+        if not hit:
+            hit = next((p for p in spec["products"] if f'"{p}"' in out), "")
+        res.append(Result(f"usb:{label}", f"Stream Deck {label}",
+                          OK if hit else FAIL,
+                          f"branché ({hit})" if hit else
+                          _hint("non détecté en USB",
+                                "le brancher en USB ; s'il passe par le dock, "
+                                "vérifier que le dock est alimenté")))
     return res
 
 
 def _ip_for_mac(mac: str) -> str | None:
-    """Resolve a host's current IP from its MAC via the ARP table (for devices on
-    reserved-but-variable DHCP addresses, the MAC is the stable key)."""
+    """Resolve a device's current IP from its MAC via the ARP table (the lamps get
+    reserved-but-variable DHCP addresses, so MAC is the stable key)."""
     target = mac.lower().replace("-", ":")
     target = ":".join(p.zfill(2) for p in target.split(":"))
     try:
@@ -328,58 +419,41 @@ def _ip_for_mac(mac: str) -> str | None:
     return None
 
 
-def check_hosts(hosts: list) -> list[Result]:
-    """Named network hosts that must respond. The engine is domain-agnostic — a host
-    is just a thing that answers on the network; whether it's a lamp, a modem or a
-    mixer lives only in the name. Each host has an `ip` (pinged directly) OR a `mac`
-    (resolved via ARP then pinged), an optional `severity` (default warn) and an
-    optional `icon` (emoji shown in the dashboard). `hosts` is passed explicitly so the
-    caller can mix global hosts (checks.hosts) with per-mode ones (modes.<mode>.hosts)."""
-    res = []
-    for h in hosts:
-        name = h.get("name", "?")
-        sev = h.get("severity", WARN)
-        glyph = h.get("icon", "")
-        by_ip = bool(h.get("ip"))
-        ip = h.get("ip") or _ip_for_mac(h.get("mac", ""))
-        key = f"host:{name}"
+def check_lamps(cfg: dict, mode: str) -> list[Result]:
+    """Stage lamps L1/L2 (Tuya). Found by MAC in the ARP table, then pinged. Warn-level
+    (ambiance, not sound-critical); ARP only sees them once they've talked on the net."""
+    sev = cfg["checks"].get("lamp_severity", WARN)
+    if sev == OFF:
+        return []
+    # Une seule ligne pour toutes les lampes : elles s'allument ensemble, s'éteignent
+    # ensemble et se réparent du même geste. Une ligne par lampe répétait deux fois le
+    # même fait — et avec quatre lampes le tableau ne parlerait plus que d'elles. Le
+    # détail les NOMME quand même : c'est le nom qui manque quand une seule tombe.
+    up, silent, missing = [], [], []
+    for lamp in cfg["checks"].get("lamps", []):
+        name = lamp.get("name", "?")
+        ip = _ip_for_mac(lamp.get("mac", ""))
         if ip and _ping(ip):
-            res.append(Result(key, name, OK, f"répond ({ip})", glyph))
+            up.append(f"{name} ({ip})")
         elif ip:
-            res.append(Result(key, name, sev, f"vu ({ip}) mais ne répond pas", glyph))
+            silent.append(f"{name} ({ip})")
         else:
-            res.append(Result(key, name, sev,
-                              "pas de réponse" if by_ip else "introuvable (ARP)", glyph))
-    return res
-
-
-def check_commands(cfg: dict) -> list[Result]:
-    """Arbitrary user-defined checks — run a command, pass if it exits 0 (or if its
-    stdout matches `expect_match`). This is what makes the engine domain-open: any
-    condition becomes a config entry, no code. Config `commands` = list of
-    {name, cmd, expect_exit?=0, expect_match?, severity?, icon?, timeout?}."""
-    import re as _re
-    res = []
-    for c in cfg["checks"].get("commands", []):
-        name = c.get("name", "?")
-        icon = c.get("icon", "")
-        sev = c.get("severity", FAIL)
-        try:
-            p = subprocess.run(["/bin/bash", "-lc", c.get("cmd", "")],
-                               capture_output=True, text=True, timeout=c.get("timeout", 10))
-        except Exception as exc:
-            res.append(Result(f"cmd:{name}", name, WARN, f"erreur: {exc}", icon))
-            continue
-        # Optional `fail_detail` = a friendly message shown when the check fails (instead of
-        # the raw "exit N" / "sortie inattendue").
-        if "expect_match" in c:
-            ok = bool(_re.search(c["expect_match"], p.stdout))
-            detail = "" if ok else c.get("fail_detail", "sortie inattendue")
-        else:
-            ok = p.returncode == c.get("expect_exit", 0)
-            detail = "" if ok else c.get("fail_detail", f"exit {p.returncode}")
-        res.append(Result(f"cmd:{name}", name, OK if ok else sev, detail, icon))
-    return res
+            missing.append(name)
+    if not (up or silent or missing):
+        return []
+    label = "Lampes de scène"
+    if not silent and not missing:
+        return [Result("lamp:all", label, OK, "connectées : " + ", ".join(up))]
+    constat = []
+    if up:
+        constat.append("connectée(s) : " + ", ".join(up))
+    if silent:
+        constat.append("adresse prise mais muette(s) : " + ", ".join(silent))
+    if missing:
+        constat.append("introuvable(s) : " + ", ".join(missing))
+    return [Result("lamp:all", label, sev,
+                   _hint(" · ".join(constat),
+                         "les allumer et vérifier qu'elles sont visibles sur le réseau"))]
 
 
 def _instant_amperage() -> int | None:
@@ -424,107 +498,205 @@ def check_mac_power(cfg: dict, mode: str) -> Result:
     return Result("sys:macpower", "Alimentation Mac", OK, f"branché ({pct})")
 
 
-def check_manual_confirms(cfg: dict, mode: str, acks: dict) -> list[Result]:
-    """Things software can't detect → a human ticks them before playing. Config
-    `manual_confirms` = [{name, icon?, severity?}] where severity is "warn"/"fail" or a
-    {profile: severity} map. Unconfirmed → the severity; confirmed → green."""
-    res = []
-    for mc in cfg["checks"].get("manual_confirms", []):
-        name = mc.get("name", "?")
-        icon = mc.get("icon", "")
-        sev = mc.get("severity", "warn")
-        if isinstance(sev, dict):
-            sev = sev.get(mode, "warn")
-        if acks.get(name):
-            res.append(Result(f"manual:{name}", name, OK, "confirmé manuellement", icon))
+def check_iphone_charge(cfg: dict, mode: str, acked: bool = False) -> Result | None:
+    """iPhone charging — NOT detectable from the Mac (the iPhone charges on a separate
+    charger and talks to Bome over Wi-Fi, so it never appears here). Manual confirm:
+    tick it before playing. Unconfirmed → fail on stage, mere info at the desk."""
+    sev = cfg["modes"][mode].get("iphone_power_severity", "warn")
+    if sev == OFF:
+        return None
+    if acked:
+        return Result("sys:iphonecharge", "iPhone en charge", OK, "confirmé manuellement")
+    # En live c'est BLOQUANT tant que ce n'est pas coché, et la ligne doit le dire :
+    # « à confirmer » tout seul se lit comme une formalité, alors que c'est la seule
+    # chose qui retient le rig. Au bureau, même phrase mais sans l'avertissement — il n'y
+    # bloque rien (voir iphone_power_severity par mode).
+    if sev == FAIL:
+        return Result("sys:iphonecharge", "iPhone en charge", sev,
+                      _hint("à confirmer — le Mac ne peut pas le détecter",
+                            "brancher le téléphone sur SON chargeur (pas sur le Mac : "
+                            "il puiserait dans les 90 W du dock), puis cocher. Le rig "
+                            "reste bloqué tant que ce n'est pas fait"))
+    return Result("sys:iphonecharge", "iPhone en charge", sev,
+                  "à confirmer — non détectable depuis le Mac")
+
+
+def check_bome_iphone(cfg: dict) -> Result:
+    """Detect the Bome Network ↔ iPhone link via an ESTABLISHED TCP connection on
+    Bome Network's port (37000). The iPhone runs Bome Network and connects here."""
+    port = cfg["checks"].get("bome_network_port", 37000)
+    host = str(cfg["checks"].get("iphone_host", "")).strip()
+    try:
+        out = subprocess.run(
+            ["lsof", "-nP", f"-iTCP:{port}", "-sTCP:ESTABLISHED"],
+            capture_output=True, text=True, timeout=6,
+        ).stdout
+    except Exception as exc:
+        return Result("net:iphone", "Bome Network ↔ iPhone", FAIL, f"lsof: {exc}")
+
+    lines = [l for l in out.splitlines() if "ESTABLISHED" in l]
+    if host:
+        lines = [l for l in lines if host in l]
+    if not lines:
+        # Le lien a DEUX bouts, et le conseil ne vaut que s'il désigne le bon. Bome
+        # Network éteint sur le Mac est visible d'ici ; s'il tourne, alors le côté
+        # muet est forcément le téléphone — c'est la seule chose qu'on ne voit pas.
+        # remedy.py suit exactement la même règle : pas de bouton « relancer » quand
+        # le Mac est déjà en ordre, sinon on relance ce qui marche.
+        mac_side = cfg["checks"]["apps"].get("Bome Network", "Bome Network")
+        if not _pgrep(mac_side):
+            advice = "lancer Bome Network sur le MAC (il est éteint ici)"
         else:
-            res.append(Result(f"manual:{name}", name, sev, "à confirmer", icon))
-    return res
-
-
-def check_links(cfg: dict) -> list[Result]:
-    """Named remote links = an ESTABLISHED TCP connection on a port (e.g. a remote
-    device connecting to a network app). Domain-agnostic: config `links` = list of
-    {name, port, host? (peer substring filter), severity?, icon?}."""
-    res = []
-    for lk in cfg["checks"].get("links", []):
-        name = lk.get("name", "?")
-        port = lk.get("port")
-        icon = lk.get("icon", "")
-        sev = lk.get("severity", FAIL)
-        host = str(lk.get("host", "")).strip()
-        try:
-            out = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:ESTABLISHED"],
-                                 capture_output=True, text=True, timeout=6).stdout
-        except Exception as exc:
-            res.append(Result(f"link:{name}", name, WARN, f"lsof: {exc}", icon))
-            continue
-        lines = [l for l in out.splitlines() if "ESTABLISHED" in l]
-        if host:
-            lines = [l for l in lines if host in l]
-        if not lines:
-            res.append(Result(f"link:{name}", name, sev, "aucune connexion", icon))
-            continue
-        peer = next((tok.split("->", 1)[1] for tok in lines[0].split() if "->" in tok), "")
-        res.append(Result(f"link:{name}", name, OK,
-                          f"connecté{f' ({peer})' if peer else ''}", icon))
-    return res
+            advice = ("Bome Network tourne sur le Mac → c'est côté IPHONE qu'il n'est "
+                      "pas lancé. L'ouvrir sur le téléphone, et vérifier qu'il est sur "
+                      "le même réseau que le Mac")
+        return Result("net:iphone", "Bome Network ↔ iPhone", FAIL,
+                      _hint("aucune connexion", advice))
+    # NAME column looks like "192.168.1.10:37000->192.168.1.20:52345 (ESTABLISHED)"
+    peer = ""
+    for tok in lines[0].split():
+        if "->" in tok:
+            peer = tok.split("->", 1)[1]
+            break
+    return Result("net:iphone", "Bome Network ↔ iPhone", OK,
+                  f"connecté{f' ({peer})' if peer else ''}")
 
 
 # system_profiler is slow (~1s); cache its JSON so audio + default-output checks
 # (and a polling dashboard) share one call instead of shelling out repeatedly.
-_profile_cache: dict = {"ts": 0.0, "data": None}
+# ready : une lecture a abouti au moins une fois (sinon on ne conclut RIEN sur
+# l'audio). running : une sonde est en vol, inutile d'en lancer une seconde.
+_profile_cache: dict = {"ts": 0.0, "data": None, "ready": False, "running": False}
 _PROFILE_TTL = 10.0
 
 
+def _audio_probe() -> None:
+    """Interroge CoreAudio en tâche de fond et range le résultat dans le cache."""
+    try:
+        out = subprocess.run(
+            ["system_profiler", "SPAudioDataType", "-json"],
+            capture_output=True, text=True, timeout=20,
+        ).stdout
+        _profile_cache["data"] = json.loads(out)
+        _profile_cache["ready"] = True
+    except Exception:
+        # Échec ou blocage : on GARDE la dernière lecture valable plutôt que de la
+        # remplacer par du vide, qui ferait clignoter en rouge des appareils bien
+        # présents. `ready` reste à sa valeur, donc l'ancienne réponse continue de servir.
+        pass
+    finally:
+        _profile_cache["running"] = False
+
+
 def _audio_items() -> list[dict]:
+    """L'inventaire CoreAudio, JAMAIS bloquant — il rend ce qu'il a sous la main.
+
+    Pourquoi ce détour par un thread plutôt qu'un simple appel avec délai : le
+    2026-08-18, une mesure `audiolevel` a laissé CoreAudio coincé, et `system_profiler
+    SPAudioDataType` a cessé de rendre la main. Le `timeout=` de subprocess n'a pas
+    suffi — expiré, il TUE le processus, mais un processus bloqué dans un appel noyau
+    ne meurt pas tout de suite, et l'attente débordait largement. Résultat : /api/state
+    ne répondait plus du tout et le dashboard restait sur « …chargement ».
+
+    Un service de scène ne doit jamais dépendre d'un appel système qui peut se figer.
+    La lecture part donc en tâche de fond et le check répond immédiatement avec la
+    dernière valeur connue ; tant qu'aucune lecture n'a abouti, `ready` est faux et les
+    checks audio le DISENT (« lecture en cours ») au lieu d'annoncer une absence fausse.
+    """
     now = time.time()
-    if _profile_cache["data"] is None or now - _profile_cache["ts"] > _PROFILE_TTL:
-        try:
-            out = subprocess.run(
-                ["system_profiler", "SPAudioDataType", "-json"],
-                capture_output=True, text=True, timeout=15,
-            ).stdout
-            _profile_cache["data"] = json.loads(out)
-        except Exception:
-            _profile_cache["data"] = {}
+    if (not _profile_cache["running"]
+            and now - _profile_cache["ts"] > _PROFILE_TTL):
         _profile_cache["ts"] = now
+        _profile_cache["running"] = True
+        threading.Thread(target=_audio_probe, daemon=True).start()
     data = _profile_cache["data"] or {}
     return [it for top in data.get("SPAudioDataType", []) for it in top.get("_items", [])]
 
 
-def _default_output_name() -> str | None:
-    """Name of the macOS default sound OUTPUT device right now, or None if undetermined."""
-    for it in _audio_items():
-        if it.get("coreaudio_default_audio_output_device") == "spaudio_yes":
-            return it.get("_name", "")
-    return None
+def _audio_ready() -> bool:
+    """Vrai dès qu'une lecture CoreAudio a abouti au moins une fois."""
+    return bool(_profile_cache["ready"])
 
 
 def check_audio(cfg: dict, mode: str = "live") -> Result | None:
-    """Verify the audio OUTPUT is on the mode's expected device. Per-mode:
-    modes.<mode>.audio_interface = the device the sound must go out on (e.g. the P-225 in
-    live). Absent for a mode → nothing to verify (returns None; e.g. studio). Mismatch is a
-    hard error — on stage, sound on the wrong device means silence to the PA."""
-    want = cfg["modes"].get(mode, {}).get("audio_interface")
-    if not want:
+    want = cfg["checks"]["audio_interface"]
+    sev = cfg["modes"].get(mode, {}).get("interface_severity", "fail")
+    if sev == OFF:
         return None
-    name = _default_output_name()
-    ok = bool(name) and want.lower() in name.lower()
+    names = [it.get("_name", "") for it in _audio_items()]
+    if not _audio_ready():
+        return Result("audio", f"Interface audio « {want} »", INFO, "lecture CoreAudio en cours…")
+    hit = any(want.lower() in n.lower() for n in names)
     return Result(
-        key="audio", label=f"Sortie audio sur {want}",
-        status=OK if ok else FAIL,
-        detail="" if ok else f"sortie actuelle : {name or 'indéterminée'} (attendu : {want})",
+        key="audio", label=f"Interface audio « {want} »",
+        status=OK if hit else sev,
+        detail="" if hit else ("non détectée" if sev == FAIL else "non détectée (OK en studio)"),
     )
+
+
+def check_audio_devices(cfg: dict, mode: str) -> list[Result]:
+    """Périphériques audio SUPPLÉMENTAIRES à surveiller, un bloc [[checks.audio_devices]]
+    par entrée.
+
+    Distinct de `check_audio` (l'interface principale) et de `check_live_output` (ce que
+    Live utilise VRAIMENT) : ici on constate seulement qu'un périphérique est présent
+    côté CoreAudio. Cas d'usage : le P-225 expose une carte son USB « P-Series » en plus
+    de son port MIDI. Son MIDI peut très bien répondre alors que sa sortie audio, elle,
+    n'est pas montée — un câble USB à moitié mort, un hub qui décroche — et on ne s'en
+    aperçoit qu'en lançant le son. Le clavier a l'air branché, le piano reste muet.
+
+    `severity` par entrée (défaut warn), et peut être un dict par mode :
+        severity = { live = "fail", studio = "warn" }
+    """
+    names = [it.get("_name", "") for it in _audio_items()]
+    out = []
+    for dev in cfg["checks"].get("audio_devices", []):
+        want = dev.get("match", "")
+        sev = dev.get("severity", WARN)
+        if isinstance(sev, dict):
+            sev = sev.get(mode, WARN)
+        if sev == OFF:
+            continue
+        if not _audio_ready():
+            out.append(Result(key=f"audio:{dev.get('name', want)}",
+                              label=dev.get("name", f"Périphérique audio « {want} »"),
+                              status=INFO, detail="lecture CoreAudio en cours…"))
+            continue
+        hit = next((n for n in names if want.lower() in n.lower()), None)
+        out.append(Result(
+            key=f"audio:{dev.get('name', want)}",
+            label=dev.get("name", f"Périphérique audio « {want} »"),
+            status=OK if hit else sev,
+            # Ce check ne prouve QUE la présence côté CoreAudio — jamais qu'un son
+            # sort réellement par là. C'est la limite du constat : une carte peut
+            # être montée et rester muette (mauvaise sortie choisie dans Live, volume
+            # à zéro, câble mort côté jack). Le seul verdict qui vaut est l'oreille,
+            # d'où le renvoi vers la page Soundcheck, qui joue et fait écouter.
+            detail=hit or _hint(
+                "non détecté côté CoreAudio",
+                "le rebrancher / le rallumer, puis JOUER du son pour vérifier qu'il "
+                "sort bien par cette sortie (page 🎹 Soundcheck du dashboard) — "
+                "être vu par le Mac ne prouve pas qu'on l'entend"),
+        ))
+    return out
 
 
 def check_default_output(cfg: dict) -> Result:
     """The macOS default sound output must be the Mac itself (built-in), not an
     external / AirPlay / conferencing device."""
     want = cfg["checks"].get("default_output_match", "MacBook")
-    name = _default_output_name()
+    name = None
+    for it in _audio_items():
+        if it.get("coreaudio_default_audio_output_device") == "spaudio_yes":
+            name = it.get("_name", "")
+            break
     if name is None:
-        return Result("sys:output", "Sortie son par défaut (Mac)", WARN, "indéterminée")
+        # « Pas encore lu » et « lu, rien trouvé » ne sont pas la même chose : le premier
+        # est de l'attente, le second un vrai défaut. Les confondre ferait clignoter un
+        # avertissement à chaque démarrage du service.
+        return Result("sys:output", "Sortie son par défaut (Mac)",
+                      INFO if not _audio_ready() else WARN,
+                      "lecture CoreAudio en cours…" if not _audio_ready() else "indéterminée")
     ok = want.lower() in name.lower()
     return Result(
         key="sys:output", label="Sortie son par défaut (Mac)",
@@ -533,79 +705,65 @@ def check_default_output(cfg: dict) -> Result:
     )
 
 
-def read_audiolevel(cfg: dict) -> dict | None:
-    """Read the optional audio-level probe file (see the `[audiolevel]` config + the
-    audiolevel/ helper). The file holds one line "<rms> <epoch>". Returns None when the
-    probe is not configured; otherwise {enabled, rms, age, fresh, ok, threshold}. `ok` is
-    True only when the reading is fresh AND above threshold — i.e. sound is really flowing
-    right now. The soundcheck uses this to auto-confirm audio instead of asking the human."""
-    al = cfg.get("audiolevel", {})
-    path = os.path.expanduser(al.get("file", "") or "")
-    if not path:
-        return None
-    thr = float(al.get("threshold", 0.003))
-    max_age = float(al.get("max_age", 6))
-    try:
-        raw = open(path).read().split()
-        rms = float(raw[0])
-        ts = float(raw[1]) if len(raw) > 1 else 0.0
-    except Exception:
-        # Configured but unreadable (probe never started / file missing) → enabled but not ok.
-        return {"enabled": True, "rms": 0.0, "age": None, "fresh": False, "ok": False, "threshold": thr}
-    age = max(0.0, time.time() - ts)
-    fresh = age <= max_age
-    return {"enabled": True, "rms": rms, "age": round(age, 1),
-            "fresh": fresh, "ok": bool(fresh and rms > thr), "threshold": thr}
-
-
-# PPP:Modem entries here are serial gadgets (ToneX pedal, Seeed boards), not VPNs —
-# a VPN is a *connected* service that isn't one of those serial modems.
+# Le parsing vit dans riglib/vpn.py, avec la coupure : un seul lecteur de `scutil --nc
+# list` pour les deux, sinon le check et le fix finissent par ne plus parler du même VPN.
+# (Les entrées [PPP:Modem] y sont écartées : ce sont des gadgets série — pédale ToneX,
+# cartes Seeed — que macOS range dans la même liste, pas des VPN.)
 def check_vpn(cfg: dict) -> Result:
     try:
-        out = subprocess.run(["scutil", "--nc", "list"],
-                             capture_output=True, text=True, timeout=5).stdout
+        active = vpn.connected(cfg)
     except Exception as exc:
         return Result("sys:vpn", "VPN inactif", WARN, f"scutil: {exc}")
-    active = [l for l in out.splitlines()
-              if "(Connected)" in l and "[PPP:Modem]" not in l]
     if not active:
         return Result("sys:vpn", "VPN inactif", OK, "")
-    name = ""
-    if '"' in active[0]:
-        name = active[0].split('"')[1]
-    return Result("sys:vpn", "VPN inactif", FAIL, f"VPN actif : {name}".rstrip(" :"))
+    names = ", ".join(n for n, _ in active if n) or "?"
+    return Result("sys:vpn", "VPN inactif", FAIL, f"VPN actif : {names}")
+
+
+# Une ligne PAR app en trop, et pas un unique « 4 apps ouvertes » : chacune se juge
+# séparément (WhatsApp sur scène n'est pas Audio MIDI Setup), chacune a son bouton
+# « Quitter », et l'historique du monitor sait dire laquelle est apparue en cours de route.
+def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
+    """Apps ouvertes dont le rig n'a pas besoin — warn en live, info en studio.
+
+    Jamais FAIL : une app en trop ne rend pas le rig injouable, elle le rend fragile.
+    En faire un bloquant apprendrait surtout à ignorer les rouges.
+    """
+    default = WARN if mode == "live" else INFO
+    sev = cfg["modes"][mode].get("unexpected_apps_severity", default)
+    if sev == OFF:
+        return []
+    return [Result(key=f"xapp:{a['name']}", label=a["name"], status=sev,
+                   detail=f"ouverte, pas nécessaire au rig — {a['path']}")
+            for a in apps.unexpected(cfg)]
 
 
 def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
             manual: dict | None = None) -> list[Result]:
     manual = manual or {}
     m = cfg["modes"][mode]
-    results = check_apps(cfg) + check_usb(cfg) + check_midi(cfg)
+    results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
     results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
     results += [check_stage_network(cfg, mode)]
-    results += check_hosts(cfg["checks"].get("hosts", []))   # global hosts (e.g. lamps)
-    results += check_hosts(m.get("hosts", []))               # per-mode hosts (e.g. the modem)
-    results += check_links(cfg)
-    results += check_commands(cfg)
-    results += [check_vpn(cfg)]
-    results += [check_mac_power(cfg, mode)]
-    results += check_manual_confirms(cfg, mode, manual)
-    if m.get("require_awake", False):
-        r = check_keepawake(cfg)
-        if r:
-            results.append(r)
+    results += check_lamps(cfg, mode)
+    results += [check_bome_iphone(cfg), check_vpn(cfg)]
+    results += check_unexpected_apps(cfg, mode)
+    results += [check_mac_power(cfg, mode),
+                check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]
+    if m.get("require_amphetamine", True):
+        results.append(check_amphetamine(cfg))
     if with_audio:
-        results.append(check_default_output(cfg))
-        a = check_audio(cfg, mode)       # None when the mode has nothing to verify (e.g. studio)
-        if a:
-            results.append(a)
-        op = check_output_probe(cfg, mode)
-        if op:
-            results.append(op)
-    return results
+        results += [check_default_output(cfg), check_audio(cfg, mode)]
+        results += check_audio_devices(cfg, mode)
+        results.append(check_live_output(cfg, mode))
+    # Les checks réglés sur "off" rendent None : ils disparaissent ici, une bonne fois,
+    # plutôt que chaque appelant ait à s'en soucier.
+    return [r for r in results if r is not None]
 
 
 def worst(results: list[Result]) -> str:
+    """Pire niveau du lot. INFO n'apparaît JAMAIS ici : c'est une annotation par ligne,
+    pas un état du rig — un rig dont tout l'optionnel est débranché reste « prêt »."""
     if any(r.status == FAIL for r in results):
         return FAIL
     if any(r.status == WARN for r in results):
