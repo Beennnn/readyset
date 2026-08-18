@@ -28,6 +28,20 @@ cp rig.example.toml rig.toml     # then edit for your setup
 Exit codes for `check`/`preflight`: `0` all-green, `1` warnings only, `2` a required
 check failed — so you can gate a launcher or a button on it.
 
+## Ce dépôt, et son jumeau `rig-control` — deux rôles, pas deux copies
+
+`readyset` est la **version publiable** de l'outil : générique, sous licence, avec
+`plugins/`, sans rien qui appartienne à une installation particulière.
+
+Son jumeau privé [`rig-control`](https://github.com/Beennnn/rig-control) est **le rig
+réel de Benoît** : sa config, ses n° de série, ses agents launchd. C'est là que tout
+arrive en premier, sur du matériel qui joue — et c'est de là que remonte ici ce qui est
+généralisable, une fois prouvé.
+
+Partage décidé le 2026-08-18, après que les deux eurent divergé de ~2800 lignes. La
+règle qui évite que ça recommence : **rien ne naît ici**. Ce dépôt reçoit, il ne
+défriche pas.
+
 ## What it can check (generic primitives)
 
 Each is a config entry, not code:
