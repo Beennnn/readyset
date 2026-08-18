@@ -1,0 +1,62 @@
+/* RigMenuBar — traduction française.
+
+   La langue de base du projet est l'ANGLAIS : elle vit dans le code, en valeur par
+   défaut de T(). Ce fichier ne fait que la surcharger. Une clé absente ici retombe
+   donc en anglais au lieu de casser — on peut traduire par morceaux.
+
+   Nouvelle langue : copier ce fichier dans <code>.lproj/, traduire la partie droite,
+   et ajouter le code à CFBundleLocalizations dans build.sh. Aucun Swift à toucher. */
+
+/* --- État du rig (repris dans la pastille et l'en-tête du menu) --- */
+"status.ok"          = "prêt";
+"status.warn"        = "avertissement(s)";
+"status.fail"        = "bloquant(s)";
+"status.unreachable" = "injoignable";
+
+/* --- Pastille flottante et panneau de détail --- */
+"pill.summary"     = "Rig — %d à vérifier";
+"pill.openWeb"     = "Ouvrir le dashboard web (détail)";
+"pill.unfold"      = "Déplier le détail";
+"pill.fold"        = "Replier le détail";
+"panel.noBlockers" = "Aucun bloquant (avertissements masqués)";
+"detail.noFix"     = "Pas de résolution automatique — à corriger à la main.";
+
+/* --- Menu de l'icône --- */
+"menu.dashboard"    = "🌐 Ouvrir le dashboard";
+"menu.fixAll"       = "⚡ Lancer tous les correctifs";
+"menu.detail"       = "🔍 Voir le détail des problèmes…";
+"menu.refresh"      = "↻ Rafraîchir maintenant";
+"menu.refreshShort" = "↻ Rafraîchir";
+"menu.settings"     = "⚙︎ Réglages…";
+"menu.quit"         = "⏻ Quitter iRig";
+
+/* --- Fenêtre Réglages : onglets --- */
+"settings.title" = "Réglages iRig";
+"tab.display"    = "Affichage";
+"tab.alerts"     = "Alertes";
+"tab.screens"    = "Écrans";
+
+/* --- Onglet Affichage --- */
+"display.glyph.title"  = "Colorer le glyphe de la barre de menus";
+"display.glyph.hint"   = "Le piano de la barre de menus prend la couleur du pire check : vert, orange, rouge.";
+"display.border.title" = "Liseré au bord de l'écran";
+"display.border.hint"  = "Encadre l'écran d'un trait de couleur tant qu'un problème dure. Lisible de loin, depuis la scène.";
+"display.pill.title"   = "Pastille flottante";
+"display.pill.hint"    = "Petite barre posée sur l'écran qui résume l'état, en plus de l'icône du menu.";
+"display.panel.title"  = "Détails dans un panneau sous la pastille";
+"display.panel.hint"   = "Liste les problèmes sous la pastille, chacun avec son bouton de correction. Désactivé, le détail arrive sous forme de menu classique au clic sur la pastille.";
+
+/* --- Onglet Alertes --- */
+"alerts.warnings.title" = "Afficher les avertissements, pas que les erreurs";
+"alerts.warnings.hint"  = "Sinon seules les erreurs bloquantes (rouge) sont listées ; les avertissements orange restent masqués.";
+"alerts.popnew.title"   = "Ouvrir le panneau à chaque nouveau problème";
+"alerts.popnew.hint"    = "Dès qu'un check bascule en avertissement OU en erreur, le panneau se déplie tout seul pour que ça ne passe pas inaperçu.";
+"alerts.notify.title"   = "Une notification au changement d'état";
+"alerts.notify.hint"    = "Notification macOS quand la gravité empire (vert → orange → rouge), pas à chaque check.";
+"alerts.autofix.title"  = "Corriger automatiquement";
+"alerts.autofix.hint"   = "iRig relance apps et ports tout seul, sans rien demander — y compris en plein morceau. À laisser éteint sur scène.";
+
+/* --- Onglet Écrans --- */
+"screens.showOn" = "Afficher sur";
+"screens.main"   = "Écran principal";
+"screens.all"    = "Tous les écrans";

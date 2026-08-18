@@ -5,8 +5,8 @@
 // passive, silent signals (no repeating sound/notification). Everything is toggleable
 // from the menu-bar item's OPTIONS menu, and the choices persist (UserDefaults):
 //
-//   • Menu-bar glyph — recoloured by status (ok → discreet template; warn → orange;
-//     fail → red; dashboard unreachable → grey).
+//   • Menu-bar glyph — recoloured by status (ok → green; warn → orange; fail → red;
+//     dashboard unreachable → grey).
 //   • Edge border — a coloured frame around every screen (click-through). Warn/fail only.
 //   • Floating pill — a top-centre badge with the counts ("❌ N  ⚠ M  Rig"). Warn/fail only.
 //   • Expanded panel (default ON) — the problem list ALWAYS unfolded right under the pill:
@@ -23,6 +23,22 @@ import Cocoa
 import UserNotifications
 
 // ---------------------------------------------------------------------------
+// Localisation
+// ---------------------------------------------------------------------------
+/// Every user-visible string goes through `T`. The English text lives in the call site
+/// as the DEFAULT value, so the app is fully usable — and generic — with no .strings
+/// file at all; a translation only overrides what it actually covers. That is what makes
+/// English the base language of the project while a French build is just `fr.lproj`
+/// dropped into Resources, never a fork of the source.
+///
+/// Adding a language: copy `menubar/Resources/fr.lproj/Localizable.strings` to
+/// `<code>.lproj/`, translate the right-hand side, and add the code to
+/// CFBundleLocalizations in build.sh. No Swift change.
+func T(_ key: String, _ english: String) -> String {
+    NSLocalizedString(key, value: english, comment: "")
+}
+
+// ---------------------------------------------------------------------------
 // Status model
 // ---------------------------------------------------------------------------
 enum RigStatus {
@@ -34,9 +50,14 @@ enum RigStatus {
         case "fail": return .fail; default: return .unreachable
         }
     }
-    var glyphColor: NSColor? {          // nil = default template (adapts light/dark)
+    /// nil = glyphe template monochrome (suit le clair/sombre du système).
+    /// `.ok` est VERT depuis le 2026-08-18 : en template, « tout va bien » et « le glyphe
+    /// coloré est désactivé » se ressemblaient trait pour trait, donc un rig vert ne se
+    /// distinguait pas d'une option éteinte. Le vert est une information, pas du décor —
+    /// il dit « vérifié à l'instant, rien à corriger », ce qu'un glyphe neutre ne dit pas.
+    var glyphColor: NSColor? {
         switch self {
-        case .ok: return nil; case .warn: return .systemOrange
+        case .ok: return .systemGreen; case .warn: return .systemOrange
         case .fail: return .systemRed; case .unreachable: return .systemGray
         }
     }
@@ -47,8 +68,9 @@ enum RigStatus {
                       case .warn: return 2; case .fail: return 3 }
     }
     var label: String {
-        switch self { case .ok: return "prêt"; case .warn: return "avertissement(s)"
-                      case .fail: return "bloquant(s)"; case .unreachable: return "injoignable" }
+        switch self { case .ok: return T("status.ok", "ready"); case .warn: return T("status.warn", "warning(s)")
+                      case .fail: return T("status.fail", "blocker(s)")
+                      case .unreachable: return T("status.unreachable", "unreachable") }
     }
 }
 
@@ -134,6 +156,46 @@ final class ClickableEffectView: NSVisualEffectView {
     }
     override func mouseUp(with event: NSEvent) { onClick?() }
     override func resetCursorRects() { addCursorRect(bounds, cursor: .pointingHand) }
+}
+
+/// NSTabViewController repose le titre de la fenêtre sur le libellé de l'onglet courant
+/// à chaque bascule — d'où une fenêtre « Sans titre » au premier affichage, puis un titre
+/// qui change en naviguant. On le refixe après coup pour garder un titre stable.
+final class SettingsTabController: NSTabViewController {
+    // Le premier onglet est sélectionné pendant la construction, quand `view.window` est
+    // encore nil : le redimensionnement ci-dessous ne s'appliquerait donc jamais à
+    // l'ouverture, et la fenêtre garderait sa taille initiale. On le rejoue à l'affichage.
+    override func viewDidAppear() {
+        super.viewDidAppear()
+        fit(to: tabViewItems[safe: selectedTabViewItemIndex])
+    }
+
+    override func tabView(_ tabView: NSTabView, didSelect item: NSTabViewItem?) {
+        super.tabView(tabView, didSelect: item)
+        fit(to: item)
+    }
+
+    private func fit(to item: NSTabViewItem?) {
+        guard let win = view.window else { return }
+        win.title = T("settings.title", "iRig Settings")
+        // La fenêtre garderait sinon la hauteur de l'onglet le plus haut, laissant un grand
+        // vide sous les onglets plus courts. On la retaille sur le contenu réel, en gardant
+        // le bord HAUT fixe : `setFrame` ancre en bas, donc sans compenser l'origine la
+        // fenêtre semblerait sauter vers le haut à chaque changement d'onglet.
+        guard let page = item?.viewController?.view else { return }
+        let size = NSSize(width: max(page.fittingSize.width, win.contentLayoutRect.width),
+                          height: page.fittingSize.height)
+        let top = win.frame.maxY
+        win.setContentSize(size)
+        var f = win.frame; f.origin.y = top - f.height
+        win.setFrame(f, display: true, animate: false)
+    }
+}
+
+extension Array {
+    /// Indice tolérant : `selectedTabViewItemIndex` vaut -1 tant qu'aucun onglet n'est
+    /// sélectionné, ce qui ferait planter un accès direct.
+    subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
 // A macOS toggle switch bound to a preference key (used by the Settings window).
@@ -265,7 +327,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // The panel is the header's unfolded body → straight to the problem list.
         if probs.isEmpty {
             let msg = NSTextField(labelWithString: problems.isEmpty ? "Tout est ok 🎉"
-                                                   : "Aucun bloquant (warnings masqués)")
+                                                   : T("panel.noBlockers", "No blockers (warnings hidden)"))
             msg.font = .systemFont(ofSize: 12); msg.textColor = .secondaryLabelColor
             outer.addArrangedSubview(msg)
         } else {
@@ -414,7 +476,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let colored = Pref.on(Pref.glyph, default: true)
         guard let base = baseSymbol else {
             let dot = !colored ? "" : (current == .fail ? "🔴" : current == .warn ? "🟠"
-                        : current == .unreachable ? "⚪" : "")
+                        : current == .unreachable ? "⚪" : "🟢")
             b.title = "🎹" + dot; return
         }
         if colored, let c = current.glyphColor {
@@ -460,7 +522,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         bar.stack.addArrangedSubview(dot(current.overlayColor))     // red/orange accent
         let n = curFails + curWarns
-        let summary = NSTextField(labelWithString: "Rig — \(n) à vérifier")
+        let summary = NSTextField(labelWithString: String(format: T("pill.summary", "Rig — %d to check"), n))
         summary.font = .systemFont(ofSize: 14, weight: .bold); summary.textColor = .white
         bar.stack.addArrangedSubview(summary)
 
@@ -469,11 +531,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                                    "Lancer tous les correctifs", #selector(fixAll), green: true))
         }
         bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
-                                               "Ouvrir le dashboard web (détail)", #selector(open)))
+                                               T("pill.openWeb", "Open the web dashboard (details)"), #selector(open)))
         // Disclosure chevron LAST (far right), per platform convention.
         let folded = panelFolded || !Pref.on(Pref.expanded, default: true)
         bar.stack.addArrangedSubview(barButton(folded ? "chevron.down" : "chevron.up", nil,
-                                               folded ? "Déplier le détail" : "Replier le détail",
+                                               folded ? T("pill.unfold", "Unfold the details") : T("pill.fold", "Fold the details"),
                                                #selector(toggleFold)))
     }
 
@@ -567,12 +629,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 let fix = NSMenuItem(title: "🔧 \(rem)", action: #selector(applyFix(_:)), keyEquivalent: "")
                 fix.target = self; fix.representedObject = p.key; sub.addItem(fix)
                 mi.submenu = sub
-            } else { mi.isEnabled = false; mi.toolTip = "Pas de résolution automatique — à corriger à la main." }
+            } else { mi.isEnabled = false; mi.toolTip = T("detail.noFix", "No automatic fix — needs a hand.") }
             menu.addItem(mi)
         }
         menu.addItem(.separator())
         add(menu, "🌐 Ouvrir le dashboard", #selector(open))
-        add(menu, "↻ Rafraîchir", #selector(refreshNow))
+        add(menu, T("menu.refreshShort", "↻ Refresh"), #selector(refreshNow))
         menu.popUp(positioning: nil, at: NSEvent.mouseLocation, in: nil)
     }
 
@@ -583,15 +645,18 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let head = NSMenuItem(title: "🎹 Rig — \(current.label)", action: nil, keyEquivalent: "")
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
-        let settings = NSMenuItem(title: "⚙︎ Réglages…", action: #selector(showSettings), keyEquivalent: ",")
+        // L'ouverture du dashboard passe en tête : c'est l'action de loin la plus
+        // fréquente. Les réglages descendent en bas, avec Quitter — on y touche une
+        // fois puis plus jamais, ils n'ont rien à faire au-dessus des actions du soir.
+        add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
+        add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
+        add(menu, T("menu.detail", "🔍 Show problem details…"), #selector(showDetailMenu))
+        add(menu, T("menu.refresh", "↻ Refresh now"), #selector(refreshNow))
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
+                                  action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
-        menu.addItem(.separator())
-        add(menu, "⚡ Lancer tous les correctifs", #selector(fixAll))
-        add(menu, "🔍 Voir le détail des problèmes…", #selector(showDetailMenu))
-        add(menu, "🌐 Ouvrir le dashboard", #selector(open))
-        add(menu, "↻ Rafraîchir maintenant", #selector(refreshNow))
-        menu.addItem(.separator())
-        add(menu, "⏻ Quitter iRig", #selector(quit))
+        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
     }
 
     // ---- Settings window (classic macOS look) ------------------------------
@@ -602,75 +667,180 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    /// Fenêtre Réglages en ONGLETS (NSTabViewController style .toolbar) — le gabarit
+    /// natif des Réglages macOS. Avant : les trois sections empilées dans une seule
+    /// colonne, soit 732 px de haut une fois les explications ajoutées. Les onglets
+    /// ramènent chaque page à sa propre hauteur et la fenêtre se redimensionne toute
+    /// seule en changeant d'onglet.
     private func makeSettingsWindow() -> NSWindow {
-        let w = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 460, height: 200),
-                         styleMask: [.titled, .closable, .miniaturizable], backing: .buffered, defer: false)
-        w.title = "Réglages iRig"
+        let tabs = SettingsTabController()
+        tabs.tabStyle = .toolbar
+
+        tabs.addTabViewItem(settingsTab(T("tab.display", "Display"), "eye", [
+            Row("paintpalette", T("display.glyph.title", "Colour the menu-bar glyph"),
+                T("display.glyph.hint",
+                  "The menu-bar piano takes the colour of the worst check: green, orange, red."),
+                Pref.glyph, true, { self.applyGlyph() }),
+            Row("square.dashed", T("display.border.title", "Border around the screen"),
+                T("display.border.hint",
+                  "Frames the screen in colour for as long as a problem lasts. Readable from across a stage."),
+                Pref.border, true, { self.applyOverlay() }),
+            Row("capsule", T("display.pill.title", "Floating pill"),
+                T("display.pill.hint",
+                  "A small bar on screen summarising the state, on top of the menu-bar icon."),
+                Pref.pill, true, { self.applyOverlay() }),
+            Row("list.bullet.rectangle", T("display.panel.title", "Details in a panel under the pill"),
+                T("display.panel.hint",
+                  "Lists the problems under the pill, each with its own fix button. Turned off, the "
+                  + "details come up as a plain menu when you click the pill."),
+                Pref.expanded, true, { self.panelFolded = false; self.applyOverlay() }),
+        ]))
+
+        tabs.addTabViewItem(settingsTab(T("tab.alerts", "Alerts"), "bell", [
+            Row("exclamationmark.triangle", T("alerts.warnings.title", "Show warnings, not just errors"),
+                T("alerts.warnings.hint",
+                  "Otherwise only blocking errors (red) are listed; orange warnings stay hidden."),
+                Pref.warnings, true, { self.applyOverlay() }),
+            Row("rectangle.expand.vertical", T("alerts.popnew.title", "Open the panel on every new problem"),
+                T("alerts.popnew.hint",
+                  "The moment a check turns to a warning OR an error, the panel unfolds by itself so it "
+                  + "can't go unnoticed."),
+                Pref.popnew, true, {}),
+            Row("bell", T("alerts.notify.title", "One notification when the state changes"),
+                T("alerts.notify.hint",
+                  "A macOS notification when severity gets worse (green → orange → red), not on every check."),
+                Pref.notify, false, {}),
+            Row("wrench.and.screwdriver", T("alerts.autofix.title", "Fix automatically"),
+                T("alerts.autofix.hint",
+                  "iRig relaunches apps and ports on its own, without asking — including mid-song. "
+                  + "Leave this off on stage."),
+                Pref.autofix, false, warning: true, { self.maybeAutoFix() }),
+        ]))
+
+        let screens = NSViewController()
+        screens.view = settingsPage([settingsScreenSection()])
+        let screensTab = NSTabViewItem(viewController: screens)
+        screensTab.label = T("tab.screens", "Screens")
+        screensTab.image = NSImage(systemSymbolName: "display.2", accessibilityDescription: nil)
+        tabs.addTabViewItem(screensTab)
+
+        let w = NSWindow(contentViewController: tabs)
+        w.title = T("settings.title", "iRig Settings")
         w.isReleasedWhenClosed = false
-        let stack = NSStackView()
-        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
-        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        stack.addArrangedSubview(settingsSection("Affichage", [
-            ("Glyphe menu-barre coloré", Pref.glyph, true, { self.applyGlyph() }),
-            ("Liseré au bord de l'écran", Pref.border, true, { self.applyOverlay() }),
-            ("Pastille flottante", Pref.pill, true, { self.applyOverlay() }),
-            ("Panneau déplié sous la pastille", Pref.expanded, true, { self.panelFolded = false; self.applyOverlay() }),
-        ]))
-        stack.addArrangedSubview(settingsSection("Alertes", [
-            ("Afficher les warnings dans la popup", Pref.warnings, true, { self.applyOverlay() }),
-            ("Déplier sur un nouveau problème", Pref.popnew, true, {}),
-            ("Une notification au changement d'état", Pref.notify, false, {}),
-            ("Corriger automatiquement (peut perturber)", Pref.autofix, false, { self.maybeAutoFix() }),
-        ]))
-        stack.addArrangedSubview(settingsScreenSection())
-
-        let footer = NSStackView(); footer.orientation = .horizontal; footer.spacing = 12
-        footer.translatesAutoresizingMaskIntoConstraints = false
-        let ver = NSTextField(labelWithString: "iRig · readyset")
-        ver.font = .systemFont(ofSize: 11); ver.textColor = .secondaryLabelColor
-        let quit = NSButton(title: "Quitter iRig", target: self, action: #selector(quit))
-        quit.bezelStyle = .rounded
-        footer.addArrangedSubview(ver)
-        footer.addArrangedSubview(NSView())                       // flexible spacer
-        footer.addArrangedSubview(quit)
-        stack.addArrangedSubview(footer)
-        footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -48).isActive = true
-
-        w.contentView = stack
-        w.setContentSize(stack.fittingSize)
+        // .resizable : la largeur venait de `fittingSize`, qui sous-estime un NSGridView
+        // imbriqué dans un NSStackView — d'où du texte rogné à droite dès qu'un libellé
+        // s'allonge. Rester redimensionnable évite que le prochain libellé un peu long
+        // re-produise le bug.
+        w.styleMask.insert(.resizable)
+        w.styleMask.remove(.miniaturizable)   // une fenêtre de réglages ne se réduit pas
         return w
     }
 
-    private func settingsSection(_ title: String, _ rows: [(String, String, Bool, () -> Void)]) -> NSView {
-        let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
-        let h = NSTextField(labelWithString: title.uppercased())
-        h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
-        box.addArrangedSubview(h)
-        let grid = NSGridView(); grid.translatesAutoresizingMaskIntoConstraints = false
-        grid.rowSpacing = 12; grid.columnSpacing = 24
-        for (label, key, def, onChange) in rows {
-            let l = NSTextField(labelWithString: label)
-            let sw = PrefSwitch(); sw.key = key; sw.onChange = onChange
-            sw.state = Pref.on(key, default: def) ? .on : .off
-            sw.target = self; sw.action = #selector(switchToggled(_:))
-            grid.addRow(with: [l, sw])
+    /// Une page d'onglet : les vues empilées, avec les marges des Réglages macOS.
+    private func settingsPage(_ views: [NSView]) -> NSView {
+        // Cale flexible en dernier : la fenêtre prend la hauteur de l'onglet le PLUS haut,
+        // et sans cette cale le NSGridView se dilate pour occuper le surplus — d'où des
+        // trous entre les lignes du plus court. La cale absorbe tout l'excédent, les
+        // réglages restent collés en haut, quel que soit l'onglet.
+        let filler = NSView()
+        filler.setContentHuggingPriority(.init(1), for: .vertical)
+        let stack = NSStackView(views: views + [filler])
+        stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
+        stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
+        for v in views { v.setContentHuggingPriority(.required, for: .vertical) }
+        // Plancher de largeur : la largeur d'enroulement des explications (330) + la colonne
+        // des icônes + celle de l'interrupteur + les marges.
+        stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 470).isActive = true
+        return stack
+    }
+
+    private func settingsTab(_ title: String, _ symbol: String, _ rows: [Row]) -> NSTabViewItem {
+        let vc = NSViewController()
+        vc.view = settingsPage([settingsSection(rows)])
+        let item = NSTabViewItem(viewController: vc)
+        item.label = title
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        return item
+    }
+
+    /// One settings row. `hint` is the grey second line that says what the switch actually
+    /// DOES — a toggle whose label only names a UI element ("Panneau déplié sous la
+    /// pastille") tells you where it applies but not what changes, so nobody can predict
+    /// the effect without flipping it. `warning: true` paints the row orange with a ⚠️:
+    /// reserved for switches that can act on the rig on their own.
+    private struct Row {
+        let icon: String, label: String, hint: String, key: String, def: Bool
+        let warning: Bool, onChange: () -> Void
+        init(_ icon: String, _ label: String, _ hint: String, _ key: String, _ def: Bool,
+             warning: Bool = false, _ onChange: @escaping () -> Void) {
+            self.icon = icon; self.label = label; self.hint = hint; self.key = key
+            self.def = def; self.warning = warning; self.onChange = onChange
         }
-        grid.column(at: 1).xPlacement = .trailing
+    }
+
+    /// Plus de titre de section : l'onglet le porte déjà. Le répéter au-dessus de la
+    /// grille ferait doublon avec le libellé de l'onglet sélectionné.
+    private func settingsSection(_ rows: [Row]) -> NSView {
+        let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
+        let grid = NSGridView(); grid.translatesAutoresizingMaskIntoConstraints = false
+        grid.rowSpacing = 16; grid.columnSpacing = 14
+        for row in rows {
+            // Colonne d'icônes : un symbole par réglage, en pastille teintée façon Réglages
+            // système. Ce n'est pas décoratif — c'est le repère qu'on retrouve d'un coup
+            // d'œil quand on revient changer UN réglage précis, sans relire les libellés.
+            let tint: NSColor = row.warning ? .systemOrange : .controlAccentColor
+            let badge = NSView()
+            badge.wantsLayer = true
+            badge.layer?.cornerRadius = 7
+            badge.layer?.backgroundColor = tint.withAlphaComponent(0.16).cgColor
+            badge.translatesAutoresizingMaskIntoConstraints = false
+            let glyph = NSImageView()
+            let cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .medium)
+                .applying(.init(paletteColors: [tint]))
+            glyph.image = NSImage(systemSymbolName: row.icon, accessibilityDescription: row.label)?
+                .withSymbolConfiguration(cfg)
+            glyph.translatesAutoresizingMaskIntoConstraints = false
+            badge.addSubview(glyph)
+            NSLayoutConstraint.activate([
+                badge.widthAnchor.constraint(equalToConstant: 30),
+                badge.heightAnchor.constraint(equalToConstant: 30),
+                glyph.centerXAnchor.constraint(equalTo: badge.centerXAnchor),
+                glyph.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
+            ])
+
+            // Le ⚠️ dans le libellé ferait doublon avec la pastille orange : la couleur du
+            // titre et celle de l'icône disent déjà « attention ».
+            let title = NSTextField(labelWithString: row.label)
+            if row.warning { title.textColor = .systemOrange }
+            let hint = NSTextField(labelWithString: row.hint)
+            hint.font = .systemFont(ofSize: 11); hint.textColor = .secondaryLabelColor
+            // The hint wraps rather than stretching the window: these sentences are longer
+            // than the labels, and an un-wrapped one is what pushes the content off the
+            // right edge.
+            hint.lineBreakMode = .byWordWrapping
+            hint.preferredMaxLayoutWidth = 330
+            let text = NSStackView(views: [title, hint])
+            text.orientation = .vertical; text.alignment = .leading; text.spacing = 2
+
+            let sw = PrefSwitch(); sw.key = row.key; sw.onChange = row.onChange
+            sw.state = Pref.on(row.key, default: row.def) ? .on : .off
+            sw.target = self; sw.action = #selector(switchToggled(_:))
+            // yPlacement est porté par la LIGNE, pas par la colonne : sans ça l'interrupteur
+            // se cale en haut du bloc titre+hint au lieu d'être centré en face.
+            grid.addRow(with: [badge, text, sw]).yPlacement = .center
+        }
+        grid.column(at: 0).xPlacement = .center
+        grid.column(at: 2).xPlacement = .trailing
         box.addArrangedSubview(grid)
         return box
     }
 
     private func settingsScreenSection() -> NSView {
         let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
-        let h = NSTextField(labelWithString: "ÉCRANS")
-        h.font = .systemFont(ofSize: 11, weight: .semibold); h.textColor = .secondaryLabelColor
-        box.addArrangedSubview(h)
         let grid = NSGridView(); grid.rowSpacing = 12; grid.columnSpacing = 24
-        let l = NSTextField(labelWithString: "Afficher sur")
+        let l = NSTextField(labelWithString: T("screens.showOn", "Show on"))
         let pop = NSPopUpButton()
-        pop.addItems(withTitles: ["Écran principal", "Tous les écrans"])
+        pop.addItems(withTitles: [T("screens.main", "Main screen"), T("screens.all", "All screens")])
         pop.selectItem(at: (UserDefaults.standard.string(forKey: Pref.screenMode) ?? "main") == "all" ? 1 : 0)
         pop.target = self; pop.action = #selector(screenPopup(_:))
         grid.addRow(with: [l, pop])
