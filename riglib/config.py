@@ -23,88 +23,95 @@ BIN_DIR = Path(__file__).resolve().parent.parent
 # lives in rig.toml, which is git-ignored and deep-merged over these defaults.
 DEFAULTS: dict = {
     "set": {
-        "app": "",                         # app that opens the project (set in rig.toml)
+        "ableton_app": "/Applications/Ableton Live 12 Suite.app",
         "project": "",                     # your gig .als — set in rig.toml
         "open_after_launch": True,
     },
     "launch": {
         # Standard app locations; override the list in rig.toml for your own rig.
-        "apps": [],   # apps to launch (paths) — set in rig.toml
+        "apps": [
+            "/Applications/Bome MIDI Translator Pro.app",
+            "/Applications/Bome Network.app",
+            "/Applications/Elgato Stream Deck.app",
+        ],
         "settle_seconds": 2,   # grace after an app launches before polling readiness
-        # Shell commands run after launching apps (e.g. start an anti-sleep session).
-        # Each: a string, or {cmd, label}.
-        "post_cmds": [],
+        "amphetamine_session": True,   # start an anti-sleep session during bring-up
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
-        "apps": {},
+        "apps": {
+            "Ableton": "Ableton Live.*/MacOS/Live",
+            "Stream Deck": "Elgato Stream Deck.app/Contents/MacOS/Stream Deck",
+            "Bome MIDI Translator": "MIDITranslatorPro",
+            "Bome Network": "Bome Network.app/Contents/MacOS/MT Player",
+        },
         # MIDI input ports that MUST be present (substring match).
-        "midi_required": [],
+        "midi_required": ["Ableton Loopback"],
         "breath_port": "Breath Controller",     # breath controller's MIDI input name
+        "audio_interface": "USB Audio",         # your interface's name — set in rig.toml
         "default_output_match": "MacBook",      # macOS default output should be the Mac
-        # Subnet the Mac must hold an IP on (example — set your own in rig.toml).
-        "stage_network": "192.168.1",
-        # USB devices that must be plugged: {label = product-name substring} (ioreg).
-        "usb_devices": {},
-        # Named hosts that must respond: {name, ip OR mac, severity?, icon?}.
-        "hosts": [],
-        # Remote links = an ESTABLISHED TCP connection on a port: {name, port, host?,
-        # severity?, icon?}. (e.g. a remote device connecting to a network app.)
-        "links": [],
-        # Arbitrary command checks — the domain-open escape hatch. Each:
-        # {name, cmd, expect_exit?=0, expect_match?, severity?, icon?, timeout?}.
-        "commands": [],
-        # Things the Mac can't detect → a human ticks them before playing. Each:
-        # {name, icon?, severity? ("warn"/"fail" or {profile=sev})}. Unconfirmed = severity.
-        "manual_confirms": [],
-        # Keep-awake app holding a power assertion (optional): {process, owner, label,
-        # icon}. `owner` = name shown in `pmset -g assertions`. Absent = not checked.
-        # "keepawake": {"process": "...", "owner": "...", "label": "...", "icon": "☕"},
-        # Value probed from an app log (optional): {log_glob, pattern, label, icon}.
-        # Compared against the mode's `live_output`. Absent = not checked.
-        # "output_probe": {"log_glob": "...", "pattern": "...(.+)", "label": "...", "icon": "🎚️"},
+        # Bome Network's TCP port; an ESTABLISHED connection on it = a remote (iPhone)
+        # is connected. iphone_host, if set, requires the peer address to contain it.
+        "bome_network_port": 37000,
+        "iphone_host": "",
+        # --- network (examples — set your own in rig.toml) ---
+        "stage_network": "192.168.1",     # subnet the Mac must hold an IP on
+        "modem_host": "192.168.1.1",      # stage router/modem to ping
+        "studio_router": "192.168.1.1",   # if reachable → "auto" resolves to studio
+        # Stream Decks by ioreg USB product name.
+        "streamdecks": {"XL": "Stream Deck XL", "Plus": "Stream Deck Plus"},
+        # Stage lamps (Tuya) — [{name="L1", mac="aa:bb:cc:dd:ee:ff"}, …] in rig.toml.
+        "lamps": [],
+        "lamp_severity": "warn",          # ambiance, not sound-critical
+        # VPN: an active tunnel rewrites the machine's routing, so the Mac can stop
+        # seeing the iPhone, the stage modem and the lamps. `ignore` lists VPNs you
+        # accept (substring of the service name); `off_cmds` overrides how a given VPN
+        # is cut (substring → shell command) when the generic method doesn't fit.
+        "vpn": {"ignore": [], "off_cmds": {}},
+        # Apps ouvertes dont le rig n'a pas besoin (warn en live, info en studio). `allow`
+        # = jamais proposées à la fermeture. Le Finder y est d'office : macOS le relance.
+        "unexpected_apps": {"allow": ["Finder"]},
+    },
+    # Window policy per app — everything RUNS, only Ableton is SEEN. See riglib/windows.py.
+    "windows": {
+        "default": "hide",          # hide | minimize | keep
+        "apps": {"Ableton": "keep"},
+        "launch_hidden": True,      # bring apps up already hidden (`open -g -j`)
+        "after_preflight": True,    # tidy the screen at the end of a bring-up
     },
     # Two rigs, one tool. Start "live"; when the studio router is reachable, "auto"
     # resolves to "studio". The dashboard tirette forces it; CLI: --mode live|studio|auto.
-    # Profile auto-detection. `detect` = ordered [{profile, <criterion>}]; first whose
-    # criterion holds wins, else `fallback`. Criteria: ping / interface / gateway_mac
-    # (router's MAC — stable & unique, best for "am I home") / cmd.
-    "mode": {"default": "auto", "fallback": "live", "detect": []},
+    "mode": {"default": "auto"},
     "modes": {
         "live": {
             # keyboard_ok present → green; only keyboard_warn present → yellow; none → red.
             "keyboard_ok": ["Piano"],              # your main keyboard's MIDI port name
             "keyboard_warn": [],
-            "live_output": ["Piano"],              # the DAW's audio output device on stage
-            "audio_interface": "Piano",            # macOS default OUTPUT must be this on stage (else error); omit → not checked
-            "require_awake": True,
+            "live_output": ["Piano"],              # Ableton's audio output device on stage
+            "require_amphetamine": True,
             "breath_severity": "fail",
+            "interface_severity": "fail",
             "mac_power_severity": "fail",
+            "iphone_power_severity": "fail",
+            "unexpected_apps_severity": "warn",   # on stage, every extra app is a risk
         },
         "studio": {
-            "keyboard_ok": ["Piano", "microKey"],
-            "keyboard_warn": [],
-            "keyboard_none_severity": "warn",   # no keyboard at all: "warn" here vs default "fail" (live)
+            "keyboard_ok": ["Piano"],
+            "keyboard_warn": ["microKey"],
             "live_output": ["MacBook", "USB Audio"],
-            "require_awake": False,
+            "require_amphetamine": False,
             "breath_severity": "warn",
+            "interface_severity": "warn",
             "mac_power_severity": "warn",
+            "iphone_power_severity": "warn",
+            "unexpected_apps_severity": "info",   # at the desk it's just a fact
         },
     },
     "monitor": {
         "interval": 5,        # seconds between fast checks (apps + MIDI)
         "audio_every": 6,     # run the slow audio check once every N cycles
-        "alerts": ["macos"],  # active backends: macos, push, midi
+        "alerts": ["macos", "push", "streamdeck"],  # backends: macos, push, streamdeck
         "recovery_alerts": True,
-    },
-    # Optional automatic audio-level probe. A separate helper (see audiolevel/) that holds
-    # the OS audio permission publishes "<rms> <epoch>" to `file`; the engine only READS it
-    # — no platform-specific code here, any meter that writes that format works. When `file`
-    # is empty or stale, the soundcheck falls back to the manual "I hear sound" confirm.
-    "audiolevel": {
-        "file": "",           # path the probe writes to (set in rig.toml to enable); empty = disabled
-        "threshold": 0.003,   # RMS above this = sound is flowing
-        "max_age": 6,         # seconds; a reading older than this is considered stale (probe down)
     },
     "alerts": {
         "push": {
@@ -112,26 +119,13 @@ DEFAULTS: dict = {
             "topic": "",       # set a PRIVATE topic, e.g. "my-rig-9d3f", to enable
             "priority": "high",
         },
-        "midi": {
+        "streamdeck": {
             # Dedicated dead-end IAC port so the alert note never hits the live routing.
             # Create it: Audio MIDI Setup → IAC Driver → "+" → rename to "rig-alert".
             "port": "rig-alert",
             "channel": 15,     # 1-16 (kept off the musical channels)
             "note": 60,
         },
-    },
-    # Signal-flow diagram topology (config-driven). nodes: {id,label,icon,keys,x,y};
-    # edges: [[fromId,toId],…]. Empty → diagram hidden. Define yours in rig.toml.
-    "diagram": {"nodes": [], "edges": []},
-    # Dashboard icons, as data (no emoji hardcoded in the engine). Keyed by a check
-    # key or a prefix; resolution = exact key, else the longest matching prefix, else
-    # "•". A host's own `icon` (from [[checks.hosts]]) always wins. Override in rig.toml.
-    "icons": {
-        "app": "📦", "usb": "🎛️", "host": "📡", "link": "🔗", "cmd": "⚙️", "manual": "✋",
-        "kbd:breath": "🌬️", "kbd": "🎹",
-        "net:stage": "🌐", "net": "📱",
-        "sys:vpn": "🔒", "sys:output": "💻", "sys:keepawake": "☕", "sys:macpower": "🔌",
-        "audio:probe": "🎚️", "audio": "🔊", "kbd": "🎹", "midi": "🔌",
     },
 }
 

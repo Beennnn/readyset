@@ -15,11 +15,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
+from . import apps, launch, vpn
 
 
 @dataclass
 class Remedy:
-    label: str                                  # button text, e.g. "Relancer <app>"
+    label: str                                  # button text, e.g. "Relancer Bome"
     run: Callable[[bool], tuple[bool, str]]     # run(dry_run) -> (ok, message)
 
 
@@ -35,6 +36,15 @@ def _launch_app(path: str, dry: bool) -> tuple[bool, str]:
     return True, f"{name} relancé"
 
 
+def _open_set(cfg: dict, dry: bool) -> tuple[bool, str]:
+    logs: list[str] = []
+    # force open_after_launch for this explicit action even if config disables it
+    forced = dict(cfg)
+    forced["set"] = {**cfg["set"], "open_after_launch": True}
+    launch.open_set(forced, log=logs.append, dry_run=dry)
+    return True, "\n".join(logs)
+
+
 def _app_path_for(cfg: dict, label: str) -> str | None:
     for app in cfg["launch"]["apps"]:
         if label.lower() in Path(app).stem.lower():
@@ -42,18 +52,8 @@ def _app_path_for(cfg: dict, label: str) -> str | None:
     return None
 
 
-def _launch_app_doc(app: str, doc: str, dry: bool) -> tuple[bool, str]:
-    """Open a document IN an app (e.g. the DAW on the set's project file)."""
-    if not Path(app).exists():
-        return False, f"app introuvable : {app}"
-    if not Path(doc).exists():
-        return False, f"fichier introuvable : {doc}"
-    if dry:
-        return True, f"[dry-run] ouvrirait {Path(doc).name} dans {Path(app).stem}"
-    r = subprocess.run(["open", "-a", app, doc], capture_output=True, text=True)
-    if r.returncode != 0:
-        return False, f"{Path(app).stem} : {r.stderr.strip() or 'open a échoué'}"
-    return True, f"{Path(doc).name} ouvert dans {Path(app).stem}"
+def _bome_path(cfg: dict) -> str | None:
+    return _app_path_for(cfg, "Bome")
 
 
 def resolve(cfg: dict, result) -> Remedy | None:
@@ -62,57 +62,81 @@ def resolve(cfg: dict, result) -> Remedy | None:
 
 
 def resolve_key(cfg: dict, key: str) -> Remedy | None:
-    """Same as resolve() but keyed by string — used by the dashboard fix endpoint.
-    Remedies are generic: a config-driven fix map, relaunch a configured app, open the
-    set on its project, run a command check's fix_cmd, or a keep-awake start command.
-    Everything specific lives in config."""
-    # Config-driven fix map wins for ANY key: [checks.fixes] maps key -> {label, cmd}.
-    # This is how built-in checks (sys:vpn, sys:output, …) get a one-click fix without
-    # hardcoding domain specifics in the engine.
-    fixes = cfg["checks"].get("fixes", {})
-    if key in fixes and fixes[key].get("cmd"):
-        f = fixes[key]
-        return Remedy(f.get("label", "Réparer"), lambda dry, cmd=f["cmd"]: _run_cmd(cmd, dry))
-
-    # A launched app that's down → relaunch it. If it's the set's DAW, open it ON the
-    # configured project file ([set].project = the file to launch, editable in config).
+    """Same as resolve() but keyed by string — used by the dashboard fix endpoint."""
     if key.startswith("app:"):
-        appname = key.split(":", 1)[1]
-        st = cfg.get("set", {})
-        app, proj = st.get("app"), st.get("project")
-        if app and proj and appname.lower() in Path(app).stem.lower():
-            return Remedy(st.get("fix_label", f"Ouvrir le projet ({Path(proj).stem})"),
-                          lambda dry, a=app, p=proj: _launch_app_doc(a, p, dry))
-        path = _app_path_for(cfg, appname)
+        label = key.split(":", 1)[1]
+        if "ableton" in label.lower():
+            return Remedy("Ouvrir le set (relance Ableton)",
+                          lambda dry: _open_set(cfg, dry))
+        path = _app_path_for(cfg, label)
         if path:
-            return Remedy(f"Relancer {Path(path).stem}", lambda dry: _launch_app(path, dry))
+            return Remedy(f"Relancer {label}", lambda dry: _launch_app(path, dry))
         return None
 
-    # Command checks: run the configured fix_cmd (generic, config-driven).
-    if key.startswith("cmd:"):
+    # Required MIDI ports only (optional ones use the "midi?:" prefix → no remedy).
+    if key.startswith("midi:") and not key.startswith("midi?:"):
         name = key.split(":", 1)[1]
-        for c in cfg["checks"].get("commands", []):
-            if c.get("name") == name and c.get("fix_cmd"):
-                return Remedy(c.get("fix_label", "Réparer"),
-                              lambda dry, cmd=c["fix_cmd"]: _run_cmd(cmd, dry))
+        if "ableton loopback" in name.lower():
+            return Remedy("Rouvrir le set Ableton", lambda dry: _open_set(cfg, dry))
+        bome = _bome_path(cfg)
+        if bome:
+            return Remedy("Relancer Bome (routing MIDI)",
+                          lambda dry: _launch_app(bome, dry))
         return None
 
-    # Keep-awake: run its configured start command (e.g. start an anti-sleep session).
-    if key == "sys:keepawake":
-        ka = cfg["checks"].get("keepawake", {})
-        if ka.get("start_cmd"):
-            return Remedy(ka.get("start_label", "Démarrer la session"),
-                          lambda dry, cmd=ka["start_cmd"]: _run_cmd(cmd, dry))
+    # Bome Network ↔ iPhone. Le lien a deux bouts et un seul est actionnable d'ici.
+    #
+    # Si Bome Network TOURNE déjà sur le Mac, le relancer ne peut rien réparer : le
+    # côté muet est le téléphone, qu'aucun bouton du Mac n'atteint. Pire, le bouton
+    # coupe une app qui marche — et sur scène, il serait cliqué en premier justement
+    # parce qu'il est là. Donc pas de correctif : le check dit d'ouvrir Bome Network
+    # sur l'iPhone (règle posée par Benoît le 2026-08-18).
+    #
+    # S'il est éteint sur le Mac, en revanche, c'est bien ici que ça se répare.
+    if key == "net:iphone":
+        from .checks import _pgrep
+        if _pgrep(cfg["checks"]["apps"].get("Bome Network", "Bome Network")):
+            return None
+        net = _app_path_for(cfg, "Bome Network")
+        if net:
+            return Remedy("Lancer Bome Network (éteint sur le Mac)",
+                          lambda dry: _launch_app(net, dry))
         return None
 
-    # Audio interface = hardware, output device set inside the app — nothing to relaunch.
+    # Amphetamine: launch it if needed, then start an anti-sleep session.
+    if key == "sys:amphetamine":
+        return Remedy("Démarrer session Amphetamine", _amphetamine_session)
+
+    # App en trop → la fermer. Le clic sur le bouton EST la confirmation pour une app
+    # isolée ; la fermeture en lot passe par le panneau dédié du dashboard, qui liste les
+    # icônes et demande une confirmation explicite avant de tout fermer d'un coup.
+    if key.startswith("xapp:"):
+        name = key.split(":", 1)[1]
+        for a in apps.unexpected(cfg):
+            if a["name"] == name:
+                path = a["path"]
+                return Remedy(f"Quitter {name}", lambda dry: apps.quit_app(path, dry_run=dry))
+        return None
+
+    # VPN actif → le couper. Pas un simple `scutil stop` : voir riglib/vpn.py (l'on-demand
+    # reforme le tunnel dans la demi-seconde ; il faut éteindre le service réseau).
+    # Coupure PERSISTANTE, d'où le libellé explicite et le `rig vpn on` pour l'inverse.
+    if key == "sys:vpn":
+        return Remedy("Couper le VPN", lambda dry: vpn.turn_off(cfg, dry_run=dry))
+
+    # Audio interface = hardware, and Live's output device is set inside Ableton —
+    # nothing to relaunch here.
     return None
 
 
-def _run_cmd(cmd: str, dry: bool) -> tuple[bool, str]:
+def _amphetamine_session(dry: bool) -> tuple[bool, str]:
     if dry:
-        return True, f"[dry-run] exécuterait : {cmd}"
-    r = subprocess.run(["/bin/bash", "-lc", cmd], capture_output=True, text=True)
+        return True, "[dry-run] démarrerait une session Amphetamine"
+    subprocess.run(["open", "-a", "/Applications/Amphetamine.app"], capture_output=True)
+    r = subprocess.run(
+        ["osascript", "-e", 'tell application "Amphetamine" to start new session'],
+        capture_output=True, text=True,
+    )
     if r.returncode == 0:
-        return True, "ok"
-    return False, (r.stderr.strip() or f"exit {r.returncode}")[:200]
+        return True, "session Amphetamine démarrée"
+    return False, r.stderr.strip() or "échec (autorisation Automation ?)"
