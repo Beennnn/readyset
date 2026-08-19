@@ -52,6 +52,11 @@ DEFAULTS: dict = {
         # y a 20 min » reste vrai, alors qu'une fenêtre courte l'aurait déclaré périmé
         # sans que rien n'ait changé. L'âge est affiché sur la ligne : c'est lui qui
         # permet de juger, pas un seuil.
+        # Si le téléphone se met à battre régulièrement (une publication toutes les N
+        # minutes plutôt qu'au seul branchement), descendre cette valeur juste au-dessus
+        # de N : le silence devient alors un signal en soi — « le téléphone n'a rien dit
+        # depuis… », qui désigne le téléphone et non la prise. Rien d'autre à changer :
+        # toute publication est un battement.
         "phone_stale_seconds": 3600,
     },
     "checks": {
