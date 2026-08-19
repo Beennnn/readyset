@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import socket
+import subprocess
 import time
 import threading
 import webbrowser
@@ -362,6 +363,26 @@ def _lan_ip() -> str | None:
         return None
 
 
+def _bonjour_name() -> str:
+    """Le nom en .local sous lequel les autres machines trouvent ce Mac.
+
+    Piège : `socket.gethostname()` rend le nom du SHELL — ici « macbook-pro-benoit »,
+    qui ne résout que sur cette machine. Bonjour publie le LocalHostName, un troisième
+    nom (macOS en tient trois : ComputerName, HostName, LocalHostName) — ici
+    « MacBook-Pro-de-Benoit.local », le seul que le téléphone puisse joindre. Imprimer
+    l'autre revenait à donner la seule URL qui ne marche pas.
+    """
+    try:
+        out = subprocess.run(["scutil", "--get", "LocalHostName"],
+                             capture_output=True, text=True, timeout=3).stdout.strip()
+        if out:
+            return f"{out}.local"
+    except Exception:
+        pass
+    name = socket.gethostname()
+    return name if "." in name else f"{name}.local"
+
+
 def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
           host: str | None = None) -> None:
     host = host or str(cfg.get("server", {}).get("host", "127.0.0.1"))
@@ -376,12 +397,7 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
         # Ouvert au réseau : dire OÙ, sinon il faut aller chercher son IP à la main pour
         # configurer le téléphone. Et dire ce que ça implique — il n'y a pas de mot de
         # passe, quiconque est sur ce réseau peut déclencher les actions du dashboard.
-        # Le nom court seul ne résout QUE sur cette machine : c'est en .local, via
-        # Bonjour, que le téléphone trouvera le Mac — et ce nom-là survit à un
-        # changement d'adresse, contrairement à l'IP juste en dessous.
-        name = socket.gethostname()
-        if "." not in name:
-            name += ".local"
+        name = _bonjour_name()
         for label, u in ((".local", f"http://{name}:{port}/"),
                          ("IP    ", f"http://{_lan_ip()}:{port}/" if _lan_ip() else None)):
             if u:
