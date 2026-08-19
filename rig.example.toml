@@ -28,15 +28,40 @@ amphetamine_session = true   # start an anti-sleep session during bring-up
 # (/api/fix, /api/quit-apps, /api/preflight). À n'ouvrir que sur un réseau de confiance.
 host = "127.0.0.1"
 # Âge au-delà duquel le dernier rapport du téléphone n'est plus cru (secondes).
-phone_stale_seconds = 300
+# Âge au-delà duquel le dernier relevé n'est plus cru et la ligne revient à
+# « à confirmer ». Une heure, pas cinq minutes : une automatisation iOS ne publie qu'au
+# BRANCHEMENT, donc « branché il y a 20 min » reste vrai. Si le Mac interroge lui-même
+# (idevice_poll_seconds ci-dessous), descendre juste au-dessus de cette cadence : le
+# silence devient alors un signal en soi.
+phone_stale_seconds = 3600
 
-# Le téléphone publie son état lui-même — le Mac ne peut pas voir s'il est en charge :
-#   curl -X POST http://<mac>.local:8765/api/phone \
-#        -H 'Content-Type: application/json' \
-#        -d '{"charging": true, "battery": 87}'
-# Côté iPhone : Raccourcis → « Obtenir le niveau de la batterie » + « État de charge »
-# → « Obtenir le contenu de l'URL » (POST, JSON). Une automatisation « quand je branche
-# / débranche » suffit ; le check redevient « à confirmer » passé phone_stale_seconds.
+# --- la pente de la batterie, qui sert de DÉMENTI ------------------------------------
+# « En charge » est un fait daté du branchement, que plus rien ne revérifie : un câble
+# sorti, une multiprise éteinte, un chargeur mort ne le changent pas. La batterie, si.
+# Un seul pour cent PERDU suffit à conclure — une batterie qui charge ne recule pas —
+# d'où un écart minimal court, moins long qu'un soundcheck.
+trend_window_seconds = 10800       # on ne regarde pas au-delà de 3 h en arrière
+trend_min_span_seconds = 180       # écart minimal pour parler de baisse
+# ESTIMER l'autonomie demande bien plus de recul : à 1 % près sur 3 min, la pente vaut
+# ±20 %/h. Sous cet écart on dit « elle descend » sans oser chiffrer combien de temps.
+trend_autonomy_span_seconds = 1800
+autonomy_min_hours = 3.0           # en dessous, il ne passera pas la soirée → erreur
+
+# --- deux sources possibles, un seul historique --------------------------------------
+# 1) LE TÉLÉPHONE PUBLIE (aucune installation) :
+#      curl -X POST http://<mac>.local:8765/api/phone \
+#           -H 'Content-Type: application/json' \
+#           -d '{"charging": true, "battery": 87}'
+#    Côté iPhone : Raccourcis → « Niveau de la batterie » + « État de charge » →
+#    « Obtenir le contenu de l'URL » (POST, JSON), déclenché par une automatisation
+#    « quand je branche / débranche ». Simple, mais ce n'est pas un battement : la pente
+#    a besoin de plusieurs points.
+# 2) LE MAC INTERROGE (battement régulier, rien à installer sur le téléphone) — via
+#    libimobiledevice : `brew install libimobiledevice`, puis l'iPhone branché UNE fois
+#    en USB, déverrouillé, « Se fier », et Finder → « Afficher cet iPhone lorsqu'il est
+#    en Wi-Fi ». Sans appairage, la lecture échoue en silence et rien ne change.
+idevice_poll_seconds = 60          # 0 = ne pas interroger
+idevice_bin = ""                   # vide = PATH, puis les emplacements Homebrew
 
 [checks]
 apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
