@@ -91,7 +91,11 @@ def _ago(seconds: float | None) -> str:
     """
     if seconds is None:
         return "?"
-    return f"{int(seconds)} s" if seconds < 90 else f"{int(seconds // 60)} min"
+    if seconds < 90:
+        return f"{int(seconds)} s"
+    if seconds < 5400:                       # au-delà d'une heure et demie, « 120 min »
+        return f"{int(seconds // 60)} min"   # oblige à diviser de tête pour situer
+    return f"{seconds / 3600:.0f} h"
 
 
 def _hint(observed: str, advice: str) -> str:
@@ -545,6 +549,19 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
                             "dans les 90 W du dock). La ligne verdit seule, sans rien cocher"))
     if acked:
         return Result("sys:iphonecharge", "iPhone en charge", OK, "confirmé manuellement")
+    if phone and phone.get("seen"):
+        # Il a parlé, puis s'est tu. C'est un TROISIÈME état, et le seul qui désigne le
+        # téléphone lui-même : « pas de nouvelles » n'est pas « pas en charge », et surtout
+        # pas « on ne sait pas encore ». Un téléphone éteint, sorti du Wi-Fi ou dont
+        # l'automatisation ne part plus, c'est aussi le lien Bome qui va tomber — autant
+        # le dire ici plutôt que de laisser une ligne verte périmée le cacher.
+        last = "en charge" if phone.get("charging") else "PAS en charge"
+        batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
+        return Result("sys:iphonecharge", "iPhone en charge", sev,
+                      _hint(f"le téléphone n'a rien dit depuis {_ago(phone.get('age'))} "
+                            f"(dernier signe : {last}{batt})",
+                            "vérifier qu'il est allumé et sur le Wi-Fi — le lien Bome en "
+                            "dépend aussi — ou confirmer à la main"))
     # En live c'est BLOQUANT tant que ce n'est pas coché, et la ligne doit le dire :
     # « à confirmer » tout seul se lit comme une formalité, alors que c'est la seule
     # chose qui retient le rig. Au bureau, même phrase mais sans l'avertissement — il n'y
