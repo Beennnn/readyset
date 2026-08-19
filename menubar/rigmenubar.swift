@@ -75,7 +75,13 @@ enum RigStatus {
     }
 }
 
-struct Problem { let key, label, status, detail, glyph: String; let remedy: String? }
+struct Problem {
+    let key, label, status, detail, glyph: String
+    let remedy: String?
+    /// Les sous-éléments d'un check composite (le soundcheck et ses gestes), tels que
+    /// `/api/state` les donne. Vide pour un check ordinaire.
+    let parts: [(name: String, ok: Bool)]
+}
 
 // ---------------------------------------------------------------------------
 // Preferences (which alert mechanisms are enabled) — persisted.
@@ -285,10 +291,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     for it in items {
                         let st = (it["status"] as? String) ?? "ok"
                         guard st == "fail" || st == "warn" else { continue }
+                        let parts = (it["parts"] as? [[String: Any]] ?? []).map {
+                            (name: ($0["name"] as? String) ?? "?", ok: ($0["ok"] as? Bool) ?? false)
+                        }
                         probs.append(Problem(
                             key: (it["key"] as? String) ?? "", label: (it["label"] as? String) ?? "?",
                             status: st, detail: (it["detail"] as? String) ?? "",
-                            glyph: (it["glyph"] as? String) ?? "•", remedy: it["remedy"] as? String))
+                            glyph: (it["glyph"] as? String) ?? "•", remedy: it["remedy"] as? String,
+                            parts: parts))
                     }
                     probs.sort { (($0.status == "fail" ? 0 : 1), $0.label) < (($1.status == "fail" ? 0 : 1), $1.label) }
                 }
@@ -534,17 +544,34 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false; menu.addItem(none)
         }
-        for p in probs {
-            var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shortItem(p)) — \(shortProblem(p))"
+        // Les checks composites (le soundcheck) descendent en bas de la liste : ils
+        // ouvrent une section à eux, et une section au milieu couperait les autres en deux.
+        for p in probs.filter({ $0.parts.isEmpty }) + probs.filter({ !$0.parts.isEmpty }) {
+            let missing = p.parts.filter { !$0.ok }
+            // Un composite énumère déjà ses manquants dans son texte — coupés faute de
+            // place, c'est justement ce qui a motivé la section. On tronque avant les deux
+            // points : la liste juste en dessous les donne en entier.
+            let detail = missing.isEmpty ? shortProblem(p)
+                       : shorten(p.detail.components(separatedBy: " : ").first ?? p.detail, 52)
+            var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shortItem(p)) — \(detail)"
             if let rem = p.remedy { title += "   🔧 \(shorten(rem, 24))" }
             // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : une
             // ligne sans action, macOS la grise — or c'est la lisibilité qu'on vient chercher.
+            if !missing.isEmpty { menu.addItem(.separator()) }
             let mi = NSMenuItem(title: title,
                                 action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
                                 keyEquivalent: "")
             mi.target = self; mi.representedObject = p.key
             mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label) — \(p.detail)"
             menu.addItem(mi)
+            // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien
+            // à cliquer — d'où des lignes indentées sous leur check, sans action.
+            for m in missing {
+                let sub = NSMenuItem(title: "◦ \(m.name)", action: nil, keyEquivalent: "")
+                sub.indentationLevel = 1; sub.isEnabled = false
+                sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
+                menu.addItem(sub)
+            }
         }
         if probs.contains(where: { $0.remedy != nil }) {
             add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
