@@ -70,12 +70,15 @@ def _soundcheck_result(cfg: dict, mode: str) -> checks.Result | None:
     missing = [n for n, ok in items if not ok]
     if not missing:
         return checks.Result("sc:play", "Soundcheck joué", checks.OK,
-                             f"{len(items)} gestes vérifiés")
+                             f"{len(items)} gestes vérifiés", parts=items)
+    # `parts` porte les gestes un par un : le texte ci-dessous les énumère pour qui n'a
+    # qu'une ligne (le dashboard, une notification), la liste sert à qui peut les déplier.
     return checks.Result("sc:play", "Soundcheck joué", sev,
                          checks._hint(f"{len(missing)} geste(s) pas encore reçu(s) : "
                                       + ", ".join(missing),
                                       "les jouer une fois — la vérification est passive, "
-                                      "rien à cocher"))
+                                      "rien à cocher"),
+                         parts=items)
 
 
 def build_state(cfg: dict, with_audio: bool = True) -> dict:
