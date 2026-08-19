@@ -44,7 +44,13 @@ _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't
 # Jusqu'ici on cochait donc une case à la main — une déclaration, pas une mesure, qui
 # reste cochée après avoir débranché le téléphone. Le téléphone, lui, connaît la réponse :
 # il la publie, et le check devient une vraie observation, horodatée.
-_PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": ""}
+_PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": "",
+                # Les derniers relevés [ts, batterie, en charge], pour la PENTE. Un seul
+                # point ne dit rien : c'est la comparaison de deux relevés qui démonte un
+                # « en charge » devenu faux. Court exprès — au-delà de quelques heures la
+                # pente d'hier ne dit plus rien de la prise de ce soir.
+                "history": []}
+_HISTORY_CAP = 24
 # Le rapport est relu au démarrage, et réécrit à chaque publication. Le téléphone parle
 # sur ÉVÉNEMENT — branché, débranché — pas en battement régulier : sans ce fichier, un
 # redémarrage du dashboard (ou du Mac, une heure avant de jouer) effacerait un fait qui
@@ -58,7 +64,7 @@ def _phone_load() -> None:
         d = json.loads(_PHONE_FILE.read_text())
     except Exception:
         return                      # jamais publié, fichier absent ou illisible : tant pis
-    for k in ("ts", "charging", "battery", "name"):
+    for k in ("ts", "charging", "battery", "name", "history"):
         if k in d:
             _PHONE[k] = d[k]
 
@@ -122,6 +128,43 @@ def _soundcheck_result(cfg: dict, mode: str) -> checks.Result | None:
                          parts=items)
 
 
+def _phone_trend(cfg: dict) -> dict | None:
+    """Ce que fait la batterie entre le relevé le plus ancien de la fenêtre et le dernier.
+
+    C'est le DÉMENTI du drapeau : « en charge » est un fait daté du branchement, que
+    plus rien ne revérifie ; un câble qui lâche ou une multiprise éteinte ne le
+    changent pas. Une batterie qui recule, si.
+
+    Deux verdicts, et deux exigences différentes :
+      • `falling` — un seul pour cent perdu suffit, une batterie qui charge ne recule
+        pas. Quelques minutes d'écart, donc, moins que ne dure un soundcheck.
+      • `hours_left` — demande beaucoup plus de recul : à 1 % près sur 3 minutes la
+        pente vaut ±20 %/h. Sous `trend_autonomy_span_seconds`, on constate la baisse
+        sans oser la chiffrer. Une estimation fausse serait pire que pas d'estimation.
+
+    On compare toujours au plus ANCIEN point de la fenêtre, jamais au précédent : le
+    bras de levier long est ce qui rend le chiffre honnête.
+    """
+    srv = cfg.get("server", {})
+    now = time.time()
+    pts = [p for p in _PHONE.get("history", [])
+           if len(p) >= 2 and p[1] is not None
+           and now - p[0] <= float(srv.get("trend_window_seconds", 10800))]
+    if len(pts) < 2:
+        return None
+    span = pts[-1][0] - pts[0][0]
+    if span < float(srv.get("trend_min_span_seconds", 180)):
+        return None
+    delta = pts[-1][1] - pts[0][1]
+    per_hour = delta / (span / 3600)
+    out = {"per_hour": round(per_hour, 1), "span": round(span), "delta": delta,
+           "from": pts[0][1], "to": pts[-1][1], "points": len(pts),
+           "falling": delta <= -1, "rising": delta >= 1, "hours_left": None}
+    if out["falling"] and span >= float(srv.get("trend_autonomy_span_seconds", 1800)):
+        out["hours_left"] = round(pts[-1][1] / abs(per_hour), 1)
+    return out
+
+
 def phone_snapshot(cfg: dict) -> dict:
     """Le dernier rapport du téléphone, avec son âge et sa fraîcheur déjà tranchée.
 
@@ -130,12 +173,12 @@ def phone_snapshot(cfg: dict) -> dict:
     """
     if not _PHONE["ts"]:
         return {"seen": False, "fresh": False, "age": None,
-                "charging": None, "battery": None, "name": ""}
+                "charging": None, "battery": None, "name": "", "trend": None}
     age = round(time.time() - _PHONE["ts"], 1)
     stale = float(cfg.get("server", {}).get("phone_stale_seconds", 300))
     return {"seen": True, "fresh": age <= stale, "age": age,
             "charging": _PHONE["charging"], "battery": _PHONE["battery"],
-            "name": _PHONE["name"]}
+            "name": _PHONE["name"], "trend": _phone_trend(cfg)}
 
 
 def build_state(cfg: dict, with_audio: bool = True) -> dict:
@@ -293,6 +336,10 @@ class _Handler(BaseHTTPRequestHandler):
             if body.get("name"):
                 _PHONE["name"] = str(body["name"])[:40]
             _PHONE["ts"] = time.time()
+            if _PHONE["battery"] is not None:
+                _PHONE["history"] = ([*_PHONE.get("history", []),
+                                      [_PHONE["ts"], _PHONE["battery"], _PHONE["charging"]]]
+                                     )[-_HISTORY_CAP:]
             _phone_save()
             self._json({"ok": True, **phone_snapshot(self.cfg)})
         elif self.path == "/api/audiolevel":
