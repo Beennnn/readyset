@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from urllib.parse import parse_qs, urlparse
 
-from . import apps, audiolevel, checks, gear, idevice, launch, midimon, remedy, windows
+from . import apps, audiolevel, checks, gear, idevice, launch, midimon, remedy, spectrum, windows
 
 _MON = midimon.MidiMonitor()   # shared live MIDI monitor for the soundcheck page
 
@@ -332,6 +332,12 @@ class _Handler(BaseHTTPRequestHandler):
             self.wfile.write(png)
         elif self.path.startswith("/api/phone"):
             self._json(phone_snapshot(self.cfg))
+        elif self.path.startswith("/api/audio/spectrum"):
+            # Hors de build_state, délibérément : une touche Stream Deck rafraîchit une
+            # dizaine de fois par seconde, alors que l'état complet se recalcule toutes les
+            # 4 s. Les mêler ferait payer une capture audio à chaque tour d'état — et un
+            # spectre vieux de 4 s ne ressemblerait à rien.
+            self._json(spectrum.snapshot(self.cfg))
         elif self.path.startswith("/api/midi"):
             self._json(_MON.snapshot())
         else:
