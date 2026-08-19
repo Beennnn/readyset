@@ -18,6 +18,7 @@
 "pill.openWeb"     = "Ouvrir le dashboard web (détail)";
 "pill.details"     = "Voir le détail";
 "panel.noBlockers" = "Aucun bloquant (avertissements masqués)";
+"menu.gestureHint" = "Le jouer une fois — la vérification est passive, rien à cocher";
 "detail.noFix"     = "Pas de résolution automatique — à corriger à la main.";
 
 /* --- Menu de l'icône --- */
