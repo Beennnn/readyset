@@ -83,6 +83,15 @@ DEFAULTS: dict = {
         # a besoin de plusieurs points. Sans appairage, la lecture rend None sans bruit.
         "idevice_poll_seconds": 60,
         "idevice_bin": "",              # vide = cherché dans le PATH puis dans Homebrew
+        # --- spectre audio servi sur /api/audio/spectrum -----------------------------
+        # La source se résout par son NOM : les index avfoundation changent d'un
+        # redémarrage à l'autre, et un index figé finirait par écouter le micro en croyant
+        # écouter le mix. La capture démarre au premier appel et s'arrête toute seule
+        # après `idle_stop` sans requête — tenir un périphérique audio ouvert en
+        # permanence sur une machine de scène est exactement ce qu'on veut éviter.
+        "spectrum_source": "Wave Link Stream",
+        "spectrum_bands": 16,
+        "spectrum_idle_stop_seconds": 20,
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
