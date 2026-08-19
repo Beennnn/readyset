@@ -46,9 +46,13 @@ DEFAULTS: dict = {
         # choses sur le Mac. Il n'y a pas d'authentification — le pare-feu du réseau
         # est la seule barrière.
         "host": "127.0.0.1",
-        # Au-delà, le dernier rapport du téléphone est considéré périmé : il décrit un
-        # état d'il y a trop longtemps pour qu'on parie dessus avant de jouer.
-        "phone_stale_seconds": 300,
+        # Au-delà, le dernier rapport du téléphone est considéré périmé et la ligne
+        # revient à « à confirmer ». Une heure, pas cinq minutes : le téléphone publie
+        # sur ÉVÉNEMENT (branché / débranché), pas en battement régulier — « branché il
+        # y a 20 min » reste vrai, alors qu'une fenêtre courte l'aurait déclaré périmé
+        # sans que rien n'ait changé. L'âge est affiché sur la ligne : c'est lui qui
+        # permet de juger, pas un seuil.
+        "phone_stale_seconds": 3600,
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
