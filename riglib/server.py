@@ -376,8 +376,14 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
         # Ouvert au réseau : dire OÙ, sinon il faut aller chercher son IP à la main pour
         # configurer le téléphone. Et dire ce que ça implique — il n'y a pas de mot de
         # passe, quiconque est sur ce réseau peut déclencher les actions du dashboard.
-        for label, u in (("nom", f"http://{socket.gethostname()}:{port}/"),
-                         ("IP ", f"http://{_lan_ip()}:{port}/" if _lan_ip() else None)):
+        # Le nom court seul ne résout QUE sur cette machine : c'est en .local, via
+        # Bonjour, que le téléphone trouvera le Mac — et ce nom-là survit à un
+        # changement d'adresse, contrairement à l'IP juste en dessous.
+        name = socket.gethostname()
+        if "." not in name:
+            name += ".local"
+        for label, u in ((".local", f"http://{name}:{port}/"),
+                         ("IP    ", f"http://{_lan_ip()}:{port}/" if _lan_ip() else None)):
             if u:
                 print(f"  réseau local ({label}) → {u}")
         print("  ⚠ ouvert au réseau local, sans authentification — réseau de confiance "
