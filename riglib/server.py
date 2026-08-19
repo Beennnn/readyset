@@ -45,6 +45,30 @@ _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't
 # reste cochée après avoir débranché le téléphone. Le téléphone, lui, connaît la réponse :
 # il la publie, et le check devient une vraie observation, horodatée.
 _PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": ""}
+# Le rapport est relu au démarrage, et réécrit à chaque publication. Le téléphone parle
+# sur ÉVÉNEMENT — branché, débranché — pas en battement régulier : sans ce fichier, un
+# redémarrage du dashboard (ou du Mac, une heure avant de jouer) effacerait un fait qui
+# est toujours vrai, et il faudrait débrancher puis rebrancher le téléphone rien que pour
+# le lui réapprendre. `logs/` est le seul dossier local déjà exclu de git.
+_PHONE_FILE = Path(__file__).resolve().parent.parent / "logs" / "phone-report.json"
+
+
+def _phone_load() -> None:
+    try:
+        d = json.loads(_PHONE_FILE.read_text())
+    except Exception:
+        return                      # jamais publié, fichier absent ou illisible : tant pis
+    for k in ("ts", "charging", "battery", "name"):
+        if k in d:
+            _PHONE[k] = d[k]
+
+
+def _phone_save() -> None:
+    try:
+        _PHONE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _PHONE_FILE.write_text(json.dumps(_PHONE))
+    except Exception:
+        pass                        # un rapport non persisté vaut mieux qu'un 500
 
 _GROUP = {"app:": "Apps", "xapp:": "Apps en trop", "usb:": "Stream Deck",
           "kbd:": "Clavier & jeu",
@@ -269,6 +293,7 @@ class _Handler(BaseHTTPRequestHandler):
             if body.get("name"):
                 _PHONE["name"] = str(body["name"])[:40]
             _PHONE["ts"] = time.time()
+            _phone_save()
             self._json({"ok": True, **phone_snapshot(self.cfg)})
         elif self.path == "/api/audiolevel":
             # Mesure de signal à la demande — jamais dans la boucle de rafraîchissement :
@@ -386,6 +411,7 @@ def _bonjour_name() -> str:
 def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
           host: str | None = None) -> None:
     host = host or str(cfg.get("server", {}).get("host", "127.0.0.1"))
+    _phone_load()
     threading.Thread(target=_state_loop, args=(cfg,), daemon=True).start()
     handler = type("Handler", (_Handler,), {"cfg": cfg})
     httpd = ThreadingHTTPServer((host, port), handler)
