@@ -58,6 +58,25 @@ DEFAULTS: dict = {
         # depuis… », qui désigne le téléphone et non la prise. Rien d'autre à changer :
         # toute publication est un battement.
         "phone_stale_seconds": 3600,
+        # --- la pente de la batterie, qui SERT DE DÉMENTI au drapeau -----------------
+        # « en charge » est un événement : vrai à l'instant du branchement, et plus
+        # jamais revérifié. Un câble qui lâche, une multiprise éteinte, un chargeur mort
+        # ne changent rien à ce qui a été dit — mais la batterie, elle, se met à
+        # descendre. C'est la seule chose qui puisse contredire le drapeau, et elle ne
+        # demande pas un battement serré : deux points suffisent à voir une pente.
+        "trend_window_seconds": 10800,     # on ne regarde pas plus loin que 3 h en arrière
+        # Un pour cent PERDU suffit à conclure : une batterie qui charge ne recule pas.
+        # D'où un écart minimal court — le temps qu'un pour cent tombe, quelques minutes,
+        # soit moins que ne dure un soundcheck. C'est ce qui rend le démenti utilisable
+        # au moment où on s'en sert.
+        "trend_min_span_seconds": 180,
+        # ESTIMER L'AUTONOMIE demande bien plus de recul que constater une baisse : à
+        # 1 % près sur 3 minutes, la pente vaut ±20 %/h et l'estimation ne veut rien
+        # dire. Sous cet écart on dit « elle descend », sans chiffrer combien de temps.
+        "trend_autonomy_span_seconds": 1800,
+        # En dessous, le téléphone ne passera pas la soirée : c'est une erreur, pas une
+        # remarque. Trois heures = le temps d'arriver, d'installer, de jouer.
+        "autonomy_min_hours": 3.0,
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).

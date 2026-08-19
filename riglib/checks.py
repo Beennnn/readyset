@@ -534,15 +534,50 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
     on the phone — a real observation, timestamped, that stops being true on its own), or
     you tick it by hand (a declaration, which survives unplugging the phone). Neither →
     fail on stage, mere info at the desk.
+
+    Rejected, and not to be retried: using the Bome link as a sign of life for THIS check.
+    An established TCP connection proves the phone is reachable, not that it is plugged in
+    — a phone on Wi-Fi and off its charger keeps that link up while it drains. It would
+    have manufactured exactly the unobserved green light everything here avoids. The only
+    thing that can contradict the flag is the battery going down; see the trend below.
     """
     sev = cfg["modes"][mode].get("iphone_power_severity", "warn")
     if sev == OFF:
         return None
     if phone and phone.get("fresh") and phone.get("charging") is not None:
         batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
+        tr = phone.get("trend") or {}
+        # La MESURE passe avant le DRAPEAU. « En charge » date du branchement et n'est
+        # plus revérifié ; une batterie qui recule, elle, est en train de se produire.
+        # Quand les deux se contredisent, c'est le drapeau qui a tort — câble sorti,
+        # multiprise éteinte, chargeur mort. Aucun de ces trois ne se déclare.
+        if tr.get("falling"):
+            drop = (f"{tr['from']} → {tr['to']} % en {_ago(tr['span'])}")
+            left = tr.get("hours_left")
+            hmin = float(cfg.get("server", {}).get("autonomy_min_hours", 3.0))
+            if left is not None and left < hmin:
+                # Le vrai risque du soir : pas « est-il branché ? » mais « tiendra-t-il
+                # jusqu'à la fin ? ». À ce rythme, non — et c'est une erreur, pas une
+                # remarque, parce qu'il n'y a plus de rattrapage une fois sur scène.
+                return Result("sys:iphonecharge", "iPhone en charge", FAIL,
+                              _hint(f"il ne tiendra pas : {drop}, soit ~{left} h "
+                                    f"d'autonomie (moins de {hmin:g} h)",
+                                    "le brancher MAINTENANT et vérifier que le niveau "
+                                    "remonte avant de partir"))
+            if phone["charging"]:
+                return Result("sys:iphonecharge", "iPhone en charge", sev,
+                              _hint(f"il se dit branché mais la batterie DESCEND : {drop}",
+                                    "câble sorti, multiprise éteinte ou chargeur mort — "
+                                    "aucun des trois ne se déclare tout seul"))
+            est = f", soit ~{left} h d'autonomie" if left is not None else ""
+            return Result("sys:iphonecharge", "iPhone en charge", sev,
+                          _hint(f"pas en charge, il descend : {drop}{est}",
+                                "le brancher sur SON chargeur (pas sur le Mac : il "
+                                "puiserait dans les 90 W du dock)"))
         if phone["charging"]:
+            climb = f" (+{tr['delta']} % en {_ago(tr['span'])})" if tr.get("rising") else ""
             return Result("sys:iphonecharge", "iPhone en charge", OK,
-                          f"le téléphone le dit{batt} — il y a {_ago(phone['age'])}")
+                          f"le téléphone le dit{batt}{climb} — il y a {_ago(phone['age'])}")
         return Result("sys:iphonecharge", "iPhone en charge", sev,
                       _hint(f"le téléphone dit qu'il n'est PAS en charge{batt}",
                             "le brancher sur SON chargeur (pas sur le Mac : il puiserait "
