@@ -242,6 +242,33 @@ def check_amphetamine(cfg: dict) -> Result:
                   "session active" if active else "lancé, aucune session active")
 
 
+def _process_age(pattern: str) -> float | None:
+    """Depuis combien de secondes ce process tourne — None s'il ne tourne pas.
+
+    `ps -o etime=` plutôt que `lstart` : un temps écoulé n'a ni format de date ni nom de
+    mois à interpréter, donc rien qui puisse changer avec la langue du système.
+    """
+    try:
+        pid = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True,
+                             timeout=5).stdout.split()
+        if not pid:
+            return None
+        out = subprocess.run(["ps", "-o", "etime=", "-p", pid[0]], capture_output=True,
+                             text=True, timeout=5).stdout.strip()
+    except Exception:
+        return None
+    if not out:
+        return None
+    days, _, rest = out.partition("-")
+    if not rest:
+        days, rest = "0", days
+    parts = [int(x) for x in rest.split(":")]
+    while len(parts) < 3:
+        parts.insert(0, 0)
+    h, m, sec = parts
+    return int(days) * 86400 + h * 3600 + m * 60 + sec
+
+
 def _tail(path: str, nbytes: int = 200_000) -> str:
     size = os.path.getsize(path)
     with open(path, "rb") as fh:
@@ -275,18 +302,50 @@ def check_live_output(cfg: dict, mode: str) -> Result:
     )
     if not logs:
         return Result("audio:live", label, WARN, "log Ableton introuvable")
-    dev = None
+    dev, when_iso = None, None
     try:
         for line in _tail(logs[0]).splitlines():
             if "Audio In Out: Output Device:" in line:
                 dev = line.split("Output Device:", 1)[1].strip()
+                # Découpe sur « : » SUIVI D'UN ESPACE : l'horodatage en contient trois
+                # sans espace (23:38:16), donc un split sur le premier deux-points rendait
+                # « 2026-08-19T23 » — que fromisoformat accepte sans broncher, en lisant
+                # 23 h pile. L'écart mesuré devenait faux jusqu'à 59 minutes.
+                when_iso = line.split(": ", 1)[0]     # 2026-08-19T23:38:16.911624
     except Exception as exc:
         return Result("audio:live", label, WARN, f"lecture log: {exc}")
     if dev is None:
-        return Result("audio:live", label, WARN, "indéterminée")
+        return Result("audio:live", label, WARN,
+                      _hint("aucune sortie déclarée dans le journal de Live",
+                            "régler la sortie une fois : la ligne apparaîtra et cette "
+                            "vérification deviendra possible"))
 
     short = dev.split(" (")[0]
     ok = any(w.lower() in dev.lower() for w in wants)
+
+    # LA LIGNE EST-ELLE DE CETTE SESSION ? Le Log.txt n'écrit « Output Device » qu'au
+    # CHANGEMENT, et le même fichier couvre des mois : une ligne peut donc décrire la
+    # session d'avant-hier pendant que Live tourne aujourd'hui sur autre chose. Mesuré le
+    # 2026-08-19 : Live lancé la veille à 19:38, dernière ligne datant du 17 juin, et la
+    # sortie réellement sélectionnée était « No Device » — soit aucun son du tout.
+    #
+    # Une valeur antérieure au lancement ne prouve donc rien sur maintenant. On ne la
+    # déclare ni bonne ni mauvaise : on dit qu'elle n'est pas confirmée, et le correctif
+    # (qui RÈGLE la sortie) fait apparaître une ligne fraîche, ce qui rend le check
+    # concluant. C'est aussi pour ça que la mise en place applique la sortie au lieu de
+    # se fier à ce qu'elle lit.
+    age = _process_age(cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live"))
+    if age is not None and when_iso:
+        try:
+            logged_ago = (datetime.now() - datetime.fromisoformat(when_iso)).total_seconds()
+        except ValueError:
+            logged_ago = None
+        if logged_ago is not None and logged_ago > age:
+            stamp = when_iso.replace("T", " ")[:16]
+            return Result("audio:live", label, WARN,
+                          _hint(f"non confirmée depuis le lancement de Live "
+                                f"(dernière trace : {short}, du {stamp})",
+                                "régler la sortie pour en avoir le cœur net"))
 
     # Ableton fermé → rien à constater : on rend la dernière valeur connue, datée,
     # sans verdict. Même motif de détection que le check « Ableton lancé », pour que

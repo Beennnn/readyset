@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import apps, launch, vpn
+from . import apps, launch, liveaudio, vpn
 
 
 @dataclass
@@ -56,6 +56,12 @@ def _bome_path(cfg: dict) -> str | None:
     return _app_path_for(cfg, "Bome")
 
 
+def checks_mode(cfg: dict) -> str:
+    """Le mode résolu — le remède doit viser la même sortie que le check qui l'a déclenché."""
+    from . import checks
+    return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
+
+
 def resolve(cfg: dict, result) -> Remedy | None:
     """Return the remedy for a failed/warned check, or None if not actionable."""
     return resolve_key(cfg, result.key)
@@ -72,6 +78,17 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
         if path:
             return Remedy(f"Relancer {label}", lambda dry: _launch_app(path, dry))
         return None
+
+    # La sortie audio d'Ableton : le seul check dont le correctif touche l'INTÉRIEUR d'une
+    # app, sans la relancer. Relancer Live serait la réparation la plus brutale du lot —
+    # on perdrait le set chargé — alors que le réglage se change dans l'app ouverte.
+    if key == "audio:live":
+        mode = checks_mode(cfg)
+        want = liveaudio.wanted(cfg, mode)
+        if not want:
+            return None
+        return Remedy(f"Régler la sortie sur {want}",
+                      lambda dry: liveaudio.apply(cfg, mode, dry))
 
     # Required MIDI ports only (optional ones use the "midi?:" prefix → no remedy).
     if key.startswith("midi:") and not key.startswith("midi?:"):
