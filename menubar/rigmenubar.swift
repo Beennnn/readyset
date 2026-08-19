@@ -208,6 +208,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// « Auto » doit rester coché quand il choisit studio tout seul, sinon le menu laisse
     /// croire qu'on a figé le mode à la main.
     var requestedMode = "auto"
+    /// Mode EFFECTIF rendu par /api/state, à ne pas confondre avec `requestedMode` : en
+    /// « auto » le rig résout lui-même vers live ou studio, donc le mode DEMANDÉ ne dit
+    /// pas où on se trouve. `nil` = moteur injoignable, donc mode non prouvé.
+    var effectiveMode: String?
+    /// Alimentation du port qui porte le Stream Deck. `nil` = pas d'état prouvé : soit
+    /// sd-power est absent, soit ses ports ne sont pas figés, soit l'un d'eux ne répond
+    /// plus. Dans les trois cas on n'offre aucune action plutôt que d'en offrir une qui
+    /// échouerait en silence.
+    var streamDeckPowered: Bool?
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var settingsWin: NSWindow?                    // the classic Settings window
@@ -228,7 +237,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             name: NSApplication.didChangeScreenParametersNotification, object: nil)
 
         refresh()
-        let t = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in self?.refresh() }
+        let t = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+            self?.refresh()
+            // Sondé au même rythme plutôt qu'à l'ouverture du menu : `fill(_:)` reconstruit
+            // tout d'un bloc et de façon synchrone, il ne peut donc pas attendre un appel
+            // externe. Le coût est un uhubctl toutes les 5 s, mesuré à 0,1 s.
+            self?.refreshStreamDeck()
+        }
         RunLoop.main.add(t, forMode: .common); timer = t
 
         // Test/debug hook: RIG_SETTINGS=1 opens the Settings window at launch (for screenshots).
@@ -282,10 +297,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         URLSession.shared.dataTask(with: req) { [weak self] data, _, err in
             var status = RigStatus.unreachable; var warns = 0, fails = 0; var probs: [Problem] = []
             var wantedMode = "auto"
+            var liveMode: String?
             if err == nil, let data = data,
                let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
                 if let s = obj["status"] as? String { status = RigStatus.parse(s) }
                 wantedMode = (obj["requested"] as? String) ?? "auto"
+                liveMode = obj["mode"] as? String
                 warns = (obj["warns"] as? NSNumber)?.intValue ?? 0
                 fails = (obj["fails"] as? NSNumber)?.intValue ?? 0
                 if let items = obj["items"] as? [[String: Any]] {
@@ -308,6 +325,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             DispatchQueue.main.async {
                 self?.requestedMode = wantedMode
+                // Repasse à nil quand le moteur n'a pas répondu : sans ça un dernier mode
+                // connu périmé autoriserait une coupure sur une information morte.
+                self?.effectiveMode = liveMode
                 self?.apply(status, warns: warns, fails: fails, problems: probs)
             }
         }.resume()
@@ -613,6 +633,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
         add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
+        addStreamDeckItem(menu)
         menu.addItem(.separator())
 
         add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
@@ -848,6 +869,101 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         c.sound = nil
         UNUserNotificationCenter.current().add(
             UNNotificationRequest(identifier: "rig-change-\(current.rank)", content: c, trigger: nil))
+    }
+
+    // ---- Alimentation du Stream Deck ---------------------------------------
+    //
+    // Les hubs internes du dock annoncent « ppps » (per-port power switching — couper le
+    // +5 V d'un port précis par une commande USB standard). `~/.local/bin/sd-power` envoie
+    // cette commande via uhubctl, sur le port qui porte le hub du Stream Deck : tout ce qui
+    // est branché derrière tombe avec lui.
+    //
+    // Exécuté LOCALEMENT, et non par un POST vers /api comme le reste de ce menu. C'est
+    // délibéré : le cas où l'on veut le plus sûrement rétablir un Stream Deck coupé est
+    // celui où le moteur est à terre — le faire transiter par l'API le rendrait
+    // indisponible exactement quand il sert.
+
+    private var sdPowerPath: String { NSHomeDirectory() + "/.local/bin/sd-power" }
+
+    private func sdPower(_ arg: String, done: @escaping (String) -> Void) {
+        let exe = sdPowerPath
+        guard FileManager.default.isExecutableFile(atPath: exe) else {
+            return DispatchQueue.main.async { done("") }
+        }
+        DispatchQueue.global(qos: .utility).async {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: exe)
+            p.arguments = [arg]
+            let pipe = Pipe(); p.standardOutput = pipe; p.standardError = pipe
+            var out = ""
+            do {
+                try p.run()
+                // Lire AVANT waitUntilExit : attendre la fin du process d'abord
+                // interbloquerait les deux dès que la sortie remplit le tampon du tube.
+                let d = pipe.fileHandleForReading.readDataToEndOfFile()
+                p.waitUntilExit()
+                out = String(data: d, encoding: .utf8) ?? ""
+            } catch { out = "" }
+            DispatchQueue.main.async { done(out) }
+        }
+    }
+
+    func refreshStreamDeck() {
+        sdPower("status") { [weak self] out in
+            // Sortie vide et « inconnu » mènent au même endroit : aucun état prouvé, donc
+            // aucune action offerte. sd-power rend « inconnu » quand une cible de sa config
+            // ne répond plus — un port renuméroté, typiquement.
+            if out.contains("État : on")       { self?.streamDeckPowered = true }
+            else if out.contains("État : off") { self?.streamDeckPowered = false }
+            else                               { self?.streamDeckPowered = nil }
+        }
+    }
+
+    /// Le libellé PORTE l'état et la permission : pas d'action séparée couper/rallumer,
+    /// pas de boîte de dialogue. Un menu se lit d'un coup d'œil en montant sur scène.
+    private func addStreamDeckItem(_ menu: NSMenu) {
+        let mi: NSMenuItem
+        switch streamDeckPowered {
+        case .some(false):
+            // Rallumer n'est JAMAIS bloqué : ni hors studio, ni moteur injoignable. Le
+            // garde-fou protège le geste risqué, pas le retour à l'état sûr — refuser un
+            // rallumage laisserait le Stream Deck mort sans issue.
+            mi = NSMenuItem(title: T("menu.sdRestore", "🔌 Restore the Stream Deck"),
+                            action: #selector(toggleStreamDeck), keyEquivalent: "")
+            mi.target = self
+        case .some(true) where effectiveMode == "studio":
+            mi = NSMenuItem(title: T("menu.sdCut", "🔌 Cut the Stream Deck"),
+                            action: #selector(toggleStreamDeck), keyEquivalent: "")
+            mi.target = self
+        case .some(true):
+            // Couper en live, c'est perdre le pilotage du set au pire moment. Un mode
+            // inconnu compte comme un refus : on ne peut alors PAS prouver qu'on n'est
+            // pas en live, et le doute doit pencher du côté qui ne casse pas le concert.
+            let m = effectiveMode ?? T("menu.sdModeUnknown", "mode unknown")
+            mi = NSMenuItem(title: T("menu.sdStudioOnly", "🔌 Stream Deck — studio only")
+                                   + " (\(m))", action: nil, keyEquivalent: "")
+            mi.isEnabled = false
+        case .none:
+            mi = NSMenuItem(title: T("menu.sdUnset", "🔌 Stream Deck — run `sd-power detect`"),
+                            action: nil, keyEquivalent: "")
+            mi.isEnabled = false
+        }
+        menu.addItem(mi)
+    }
+
+    @objc func toggleStreamDeck() {
+        // Revalidation au clic : le menu a pu être construit plusieurs secondes plus tôt et
+        // le mode bascule tout seul entre-temps. On ne coupe que sur un studio confirmé
+        // à cet instant ; sinon on se contente de rafraîchir, et le libellé dira pourquoi.
+        guard streamDeckPowered == false || effectiveMode == "studio" else {
+            refreshStreamDeck(); return
+        }
+        // « on »/« off » explicites plutôt que « toggle » : le script relirait l'état de
+        // son côté, ce qui rouvrirait la course que la revalidation ci-dessus vient de
+        // fermer.
+        sdPower(streamDeckPowered == false ? "on" : "off") { [weak self] _ in
+            self?.refreshStreamDeck()
+        }
     }
 
     // ---- Menu helper -------------------------------------------------------
