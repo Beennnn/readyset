@@ -92,6 +92,13 @@ enum Pref {
     static let pill = "pref.floatingPill"
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
+    /// Coupure d'alimentation du Stream Deck — OFF par défaut, et c'est délibéré : le
+    /// port se désigne par un identifiant (« 32-2 2 ») dérivé de l'énumération USB, qui
+    /// change dès qu'on rebranche ailleurs. Constaté le 2026-08-19 : le hub est passé du
+    /// dock à un port direct du Mac, et la config figée une heure plus tôt ne désignait
+    /// plus rien. Une entrée qui coupe une alimentation ne doit pas s'offrir tant que sa
+    /// cible n'a pas été confirmée.
+    static let streamDeck = "pref.streamDeckPower"
     static let screenMode = "pref.screenMode"      // "main" (default) | "all" | "custom"
     static let screenIDs = "pref.screenIDs"        // display IDs for "custom"
     static func on(_ key: String, default def: Bool) -> Bool {
@@ -691,6 +698,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   "iRig relaunches apps and ports on its own, without asking — including mid-song. "
                   + "Leave this off on stage."),
                 Pref.autofix, false, warning: true, { self.maybeAutoFix() }),
+            Row("powerplug", T("alerts.streamDeck.title", "Show the Stream Deck power entry"),
+                T("alerts.streamDeck.hint",
+                  "Adds a menu entry that cuts the USB port carrying the Stream Deck — and "
+                  + "everything plugged into it. The port is designated by a number that "
+                  + "changes when you move the cable, so re-run `sd-power detect` after "
+                  + "replugging. Cutting stays studio-only."),
+                Pref.streamDeck, false, warning: true, { self.refreshStreamDeck() }),
         ]))
 
         let screens = NSViewController()
@@ -909,6 +923,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func refreshStreamDeck() {
+        // Option éteinte = aucun appel à uhubctl. Le sondage n'est pas gratuit : il touche
+        // le bus USB toutes les 5 s, ce qu'on ne fait pas pour une entrée qui ne s'affiche
+        // même pas.
+        guard Pref.on(Pref.streamDeck, default: false) else {
+            streamDeckPowered = nil
+            return
+        }
         sdPower("status") { [weak self] out in
             // Sortie vide et « inconnu » mènent au même endroit : aucun état prouvé, donc
             // aucune action offerte. sd-power rend « inconnu » quand une cible de sa config
@@ -922,6 +943,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// Le libellé PORTE l'état et la permission : pas d'action séparée couper/rallumer,
     /// pas de boîte de dialogue. Un menu se lit d'un coup d'œil en montant sur scène.
     private func addStreamDeckItem(_ menu: NSMenu) {
+        // Absente, pas grisée : une entrée grisée en permanence occupe une ligne du menu
+        // et laisse croire à une panne, là où l'absence dit simplement « pas activé ».
+        guard Pref.on(Pref.streamDeck, default: false) else { return }
         let mi: NSMenuItem
         switch streamDeckPowered {
         case .some(false):
