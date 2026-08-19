@@ -65,6 +65,11 @@
 "menu.prepare"     = "✨ Tout préparer";
 "menu.charge"      = "🔋 Confirmer que l'iPhone charge";
 "menu.quitOthers"  = "🧹 Quitter les autres applis…";
+"menu.sdCut"        = "🔌 Couper le Stream Deck";
+"menu.sdRestore"    = "🔌 Rallumer le Stream Deck";
+"menu.sdStudioOnly" = "🔌 Stream Deck — coupure réservée au studio";
+"menu.sdModeUnknown" = "mode inconnu";
+"menu.sdUnset"      = "🔌 Stream Deck — lancer « sd-power detect »";
 "menu.journal"     = "📜 Journal des actions";
 
 /* --- Confirmation avant de fermer des applis (la seule action qui peut faire
