@@ -19,7 +19,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from urllib.parse import parse_qs, urlparse
 
-from . import apps, audiolevel, checks, gear, launch, midimon, remedy, windows
+from . import apps, audiolevel, checks, gear, idevice, launch, midimon, remedy, windows
 
 _MON = midimon.MidiMonitor()   # shared live MIDI monitor for the soundcheck page
 
@@ -44,7 +44,7 @@ _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't
 # Jusqu'ici on cochait donc une case à la main — une déclaration, pas une mesure, qui
 # reste cochée après avoir débranché le téléphone. Le téléphone, lui, connaît la réponse :
 # il la publie, et le check devient une vraie observation, horodatée.
-_PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": "",
+_PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": "", "source": "",
                 # Les derniers relevés [ts, batterie, en charge], pour la PENTE. Un seul
                 # point ne dit rien : c'est la comparaison de deux relevés qui démonte un
                 # « en charge » devenu faux. Court exprès — au-delà de quelques heures la
@@ -64,7 +64,7 @@ def _phone_load() -> None:
         d = json.loads(_PHONE_FILE.read_text())
     except Exception:
         return                      # jamais publié, fichier absent ou illisible : tant pis
-    for k in ("ts", "charging", "battery", "name", "history"):
+    for k in ("ts", "charging", "battery", "name", "source", "history"):
         if k in d:
             _PHONE[k] = d[k]
 
@@ -128,6 +128,33 @@ def _soundcheck_result(cfg: dict, mode: str) -> checks.Result | None:
                          parts=items)
 
 
+def phone_record(charging=None, battery=None, name=None, source: str = "phone") -> None:
+    """Enregistre un relevé, d'où qu'il vienne — le téléphone qui publie, ou le Mac qui
+    interroge. Un seul magasin pour les deux : c'est ce qui permet à la pente de se
+    calculer sur des points de provenances mélangées sans que rien n'ait à le savoir.
+    Ce qui est nul est ignoré, jamais écrasé — un relevé partiel ne doit pas effacer ce
+    qu'on savait déjà.
+    """
+    if charging is not None:
+        _PHONE["charging"] = bool(charging)
+    if battery is not None:
+        try:
+            _PHONE["battery"] = max(0, min(100, int(float(battery))))
+        except (TypeError, ValueError):
+            pass
+    if name:
+        _PHONE["name"] = str(name)[:40]
+    _PHONE["source"] = source
+    # L'horodatage est posé ICI, jamais pris dans le message : l'heure d'un téléphone n'a
+    # pas à être crue, et c'est la fraîcheur qui compte, pas la date qu'il revendique.
+    _PHONE["ts"] = time.time()
+    if _PHONE["battery"] is not None:
+        _PHONE["history"] = ([*_PHONE.get("history", []),
+                              [_PHONE["ts"], _PHONE["battery"], _PHONE["charging"]]]
+                             )[-_HISTORY_CAP:]
+    _phone_save()
+
+
 def _phone_trend(cfg: dict) -> dict | None:
     """Ce que fait la batterie entre le relevé le plus ancien de la fenêtre et le dernier.
 
@@ -172,13 +199,14 @@ def phone_snapshot(cfg: dict) -> dict:
     redécide ce qu'est « récent » et deux d'entre elles finissent par se contredire.
     """
     if not _PHONE["ts"]:
-        return {"seen": False, "fresh": False, "age": None,
+        return {"seen": False, "fresh": False, "age": None, "source": "",
                 "charging": None, "battery": None, "name": "", "trend": None}
     age = round(time.time() - _PHONE["ts"], 1)
     stale = float(cfg.get("server", {}).get("phone_stale_seconds", 300))
     return {"seen": True, "fresh": age <= stale, "age": age,
             "charging": _PHONE["charging"], "battery": _PHONE["battery"],
-            "name": _PHONE["name"], "trend": _phone_trend(cfg)}
+            "name": _PHONE["name"], "source": _PHONE.get("source", ""),
+            "trend": _phone_trend(cfg)}
 
 
 def build_state(cfg: dict, with_audio: bool = True) -> dict:
@@ -326,21 +354,8 @@ class _Handler(BaseHTTPRequestHandler):
             # pas par le dashboard. Tout est optionnel : ce qui manque reste inconnu
             # plutôt que d'être supposé faux. L'horodatage, lui, est posé ICI — l'heure
             # du téléphone n'a pas à être crue, et c'est la fraîcheur qui compte.
-            if "charging" in body:
-                _PHONE["charging"] = bool(body.get("charging"))
-            if "battery" in body:
-                try:
-                    _PHONE["battery"] = max(0, min(100, int(float(body["battery"]))))
-                except (TypeError, ValueError):
-                    pass
-            if body.get("name"):
-                _PHONE["name"] = str(body["name"])[:40]
-            _PHONE["ts"] = time.time()
-            if _PHONE["battery"] is not None:
-                _PHONE["history"] = ([*_PHONE.get("history", []),
-                                      [_PHONE["ts"], _PHONE["battery"], _PHONE["charging"]]]
-                                     )[-_HISTORY_CAP:]
-            _phone_save()
+            phone_record(charging=body.get("charging"), battery=body.get("battery"),
+                         name=body.get("name"), source="phone")
             self._json({"ok": True, **phone_snapshot(self.cfg)})
         elif self.path == "/api/audiolevel":
             # Mesure de signal à la demande — jamais dans la boucle de rafraîchissement :
@@ -411,12 +426,23 @@ class _Handler(BaseHTTPRequestHandler):
 
 def _state_loop(cfg: dict) -> None:
     """Recalcule l'état sans fin, à cadence fixe, quoi que fassent les clients."""
+    ticks = 0
     while True:
         try:
             data = build_state(cfg)
             _STATE["data"], _STATE["ts"] = data, time.time()
         except Exception as exc:                  # un check qui lève ne doit pas tuer la
             print(f"[state] {type(exc).__name__}: {exc}", flush=True)   # boucle entière
+        ticks += 1
+        # Le battement que le téléphone ne sait pas produire : c'est le Mac qui demande,
+        # à cadence fixe, tant que l'appareil est appairé. Silencieux s'il ne l'est pas —
+        # `read` rend None et on garde ce que le téléphone a publié de son côté.
+        every = float(cfg.get("server", {}).get("idevice_poll_seconds", 60))
+        if every > 0 and ticks % max(1, int(every / REFRESH_EVERY)) == 0:
+            got = idevice.read(cfg)
+            if got:
+                phone_record(charging=got["charging"], battery=got["battery"],
+                             source=f"mac:{got['via']}")
         time.sleep(REFRESH_EVERY)
 
 

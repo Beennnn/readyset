@@ -84,6 +84,20 @@ class Result:
         return d
 
 
+def _source_label(phone: dict | None) -> str:
+    """Qui a fait le relevé — le téléphone qui publie, ou le Mac qui interroge.
+
+    Ce n'est pas de la décoration : les deux n'ont pas les mêmes angles morts. Le
+    téléphone ne parle qu'au branchement (donc peut se taire longtemps sans que rien
+    n'aille mal) ; le Mac bat régulièrement mais s'arrête net si l'appairage saute.
+    Savoir laquelle des deux vient de parler, c'est savoir quoi aller vérifier.
+    """
+    src = (phone or {}).get("source", "")
+    if src.startswith("mac:"):
+        return "le Mac en USB" if src.endswith("usb") else "le Mac en Wi-Fi"
+    return "le téléphone"
+
+
 def _ago(seconds: float | None) -> str:
     """« il y a 12 s » / « il y a 4 min » — l'âge d'une observation, en toutes lettres.
 
@@ -566,7 +580,8 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
                                     "remonte avant de partir"))
             if phone["charging"]:
                 return Result("sys:iphonecharge", "iPhone en charge", sev,
-                              _hint(f"il se dit branché mais la batterie DESCEND : {drop}",
+                              _hint(f"branché d'après {_source_label(phone)}, mais la "
+                                    f"batterie DESCEND : {drop}",
                                     "câble sorti, multiprise éteinte ou chargeur mort — "
                                     "aucun des trois ne se déclare tout seul"))
             est = f", soit ~{left} h d'autonomie" if left is not None else ""
@@ -577,9 +592,10 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
         if phone["charging"]:
             climb = f" (+{tr['delta']} % en {_ago(tr['span'])})" if tr.get("rising") else ""
             return Result("sys:iphonecharge", "iPhone en charge", OK,
-                          f"le téléphone le dit{batt}{climb} — il y a {_ago(phone['age'])}")
+                          f"{_source_label(phone)} le dit{batt}{climb} "
+                          f"— il y a {_ago(phone['age'])}")
         return Result("sys:iphonecharge", "iPhone en charge", sev,
-                      _hint(f"le téléphone dit qu'il n'est PAS en charge{batt}",
+                      _hint(f"pas en charge d'après {_source_label(phone)}{batt}",
                             "le brancher sur SON chargeur (pas sur le Mac : il puiserait "
                             "dans les 90 W du dock). La ligne verdit seule, sans rien cocher"))
     if acked:
@@ -593,10 +609,10 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
         last = "en charge" if phone.get("charging") else "PAS en charge"
         batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
         return Result("sys:iphonecharge", "iPhone en charge", sev,
-                      _hint(f"le téléphone n'a rien dit depuis {_ago(phone.get('age'))} "
-                            f"(dernier signe : {last}{batt})",
-                            "vérifier qu'il est allumé et sur le Wi-Fi — le lien Bome en "
-                            "dépend aussi — ou confirmer à la main"))
+                      _hint(f"aucun relevé depuis {_ago(phone.get('age'))} "
+                            f"(dernier signe, par {_source_label(phone)} : {last}{batt})",
+                            "téléphone éteint ou hors du Wi-Fi — le lien Bome en dépend "
+                            "aussi — ou appairage perdu côté Mac ; sinon, confirmer à la main"))
     # En live c'est BLOQUANT tant que ce n'est pas coché, et la ligne doit le dire :
     # « à confirmer » tout seul se lit comme une formalité, alors que c'est la seule
     # chose qui retient le rig. Au bureau, même phrase mais sans l'avertissement — il n'y

@@ -77,6 +77,12 @@ DEFAULTS: dict = {
         # En dessous, le téléphone ne passera pas la soirée : c'est une erreur, pas une
         # remarque. Trois heures = le temps d'arriver, d'installer, de jouer.
         "autonomy_min_hours": 3.0,
+        # Cadence à laquelle le Mac interroge lui-même le téléphone (ideviceinfo).
+        # 0 = ne pas interroger. C'est le seul battement RÉGULIER possible : une
+        # automatisation iOS ne part qu'au branchement, alors que la pente de la batterie
+        # a besoin de plusieurs points. Sans appairage, la lecture rend None sans bruit.
+        "idevice_poll_seconds": 60,
+        "idevice_bin": "",              # vide = cherché dans le PATH puis dans Homebrew
     },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
