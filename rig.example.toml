@@ -18,6 +18,26 @@ apps = [
 settle_seconds = 2
 amphetamine_session = true   # start an anti-sleep session during bring-up
 
+[server]
+# Interface d'écoute du dashboard.
+#   "127.0.0.1" (défaut) → cette machine seulement.
+#   "0.0.0.0"            → ouvert au RÉSEAU LOCAL : la page est consultable depuis le
+#                          téléphone, et surtout le téléphone peut publier son propre
+#                          état (POST /api/phone, voir plus bas).
+# Il n'y a AUCUNE authentification, et le dashboard sait lancer et fermer des apps
+# (/api/fix, /api/quit-apps, /api/preflight). À n'ouvrir que sur un réseau de confiance.
+host = "127.0.0.1"
+# Âge au-delà duquel le dernier rapport du téléphone n'est plus cru (secondes).
+phone_stale_seconds = 300
+
+# Le téléphone publie son état lui-même — le Mac ne peut pas voir s'il est en charge :
+#   curl -X POST http://<mac>.local:8765/api/phone \
+#        -H 'Content-Type: application/json' \
+#        -d '{"charging": true, "battery": 87}'
+# Côté iPhone : Raccourcis → « Obtenir le niveau de la batterie » + « État de charge »
+# → « Obtenir le contenu de l'URL » (POST, JSON). Une automatisation « quand je branche
+# / débranche » suffit ; le check redevient « à confirmer » passé phone_stale_seconds.
+
 [checks]
 apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
 midi_required = ["Ableton Loopback"]      # MIDI input ports that MUST exist

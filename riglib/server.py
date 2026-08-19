@@ -2,12 +2,15 @@
 
 Pure stdlib (http.server). The page auto-refreshes the state (read-only checks);
 fixes and the full preflight are explicit POSTs triggered by buttons, and honour
-the dry-run toggle end to end. Bind to 127.0.0.1 only — never exposed off-machine.
+the dry-run toggle end to end. Binds to 127.0.0.1 by default; [server].host can widen
+that to the local network so the phone can publish its own state (POST /api/phone) —
+there is no authentication, so only on a network you trust.
 """
 
 from __future__ import annotations
 
 import json
+import socket
 import time
 import threading
 import webbrowser
@@ -34,6 +37,13 @@ _STATE: dict = {"data": None, "ts": 0.0}
 REFRESH_EVERY = 2.0
 _MODE = {"requested": None}    # None → use cfg default; else "auto"|"live"|"studio"
 _MANUAL = {"iphone_charge": False}  # manual confirmations (things the Mac can't detect)
+
+# Le dernier rapport du téléphone (POST /api/phone). Le Mac ne PEUT pas voir si l'iPhone
+# est en charge : il se charge sur son propre chargeur et ne parle au rig que par Wi-Fi.
+# Jusqu'ici on cochait donc une case à la main — une déclaration, pas une mesure, qui
+# reste cochée après avoir débranché le téléphone. Le téléphone, lui, connaît la réponse :
+# il la publie, et le check devient une vraie observation, horodatée.
+_PHONE: dict = {"ts": 0.0, "charging": None, "battery": None, "name": ""}
 
 _GROUP = {"app:": "Apps", "xapp:": "Apps en trop", "usb:": "Stream Deck",
           "kbd:": "Clavier & jeu",
@@ -64,10 +74,16 @@ def _soundcheck_result(cfg: dict, mode: str) -> checks.Result | None:
     if sev == checks.OFF:
         return None
     snap = _MON.snapshot()
-    items = [("Pédale", bool(snap["flags"].get("pedal_cc64"))),
-             ("Notes", snap["flags"].get("notes", 0) > 0)]
-    items += [(g["name"], bool(g.get("raw") and g.get("out"))) for g in snap.get("chain", [])]
-    missing = [n for n, ok in items if not ok]
+    # Une icône par geste : « 2 gestes pas encore reçus » ne dit pas LESQUELS, et même
+    # nommés, une liste de mots se lit mot à mot. Un pied, un clavier, un souffle se
+    # reconnaissent d'un coup d'œil — c'est ce qu'on demande à une ligne qu'on regarde
+    # entre deux morceaux. Les deux gestes universels sont ici ; ceux de la chaîne du
+    # breath portent la leur dans rig.toml, à côté de leur nom.
+    items = [{"name": "Pédale", "ok": bool(snap["flags"].get("pedal_cc64")), "icon": "🦶"},
+             {"name": "Notes", "ok": snap["flags"].get("notes", 0) > 0, "icon": "🎹"}]
+    items += [{"name": g["name"], "ok": bool(g.get("raw") and g.get("out")),
+               "icon": g.get("icon") or ""} for g in snap.get("chain", [])]
+    missing = [p["name"] for p in items if not p["ok"]]
     if not missing:
         return checks.Result("sc:play", "Soundcheck joué", checks.OK,
                              f"{len(items)} gestes vérifiés", parts=items)
@@ -81,11 +97,28 @@ def _soundcheck_result(cfg: dict, mode: str) -> checks.Result | None:
                          parts=items)
 
 
+def phone_snapshot(cfg: dict) -> dict:
+    """Le dernier rapport du téléphone, avec son âge et sa fraîcheur déjà tranchée.
+
+    `fresh` est calculée ici et pas chez l'appelant : sans elle, chaque surface
+    redécide ce qu'est « récent » et deux d'entre elles finissent par se contredire.
+    """
+    if not _PHONE["ts"]:
+        return {"seen": False, "fresh": False, "age": None,
+                "charging": None, "battery": None, "name": ""}
+    age = round(time.time() - _PHONE["ts"], 1)
+    stale = float(cfg.get("server", {}).get("phone_stale_seconds", 300))
+    return {"seen": True, "fresh": age <= stale, "age": age,
+            "charging": _PHONE["charging"], "battery": _PHONE["battery"],
+            "name": _PHONE["name"]}
+
+
 def build_state(cfg: dict, with_audio: bool = True) -> dict:
     requested = _MODE["requested"] or cfg.get("mode", {}).get("default", "auto")
     mode = checks.resolve_mode(cfg, requested)
     # checks.run_all caches the slow system_profiler call internally, so polling is cheap.
-    results = checks.run_all(cfg, mode, with_audio=with_audio, manual=_MANUAL)
+    results = checks.run_all(cfg, mode, with_audio=with_audio, manual=_MANUAL,
+                             phone=phone_snapshot(cfg))
     sc = _soundcheck_result(cfg, mode)
     if sc:
         results.append(sc)
@@ -201,6 +234,8 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             self.wfile.write(png)
+        elif self.path.startswith("/api/phone"):
+            self._json(phone_snapshot(self.cfg))
         elif self.path.startswith("/api/midi"):
             self._json(_MON.snapshot())
         else:
@@ -218,6 +253,22 @@ class _Handler(BaseHTTPRequestHandler):
             if key in _MANUAL:
                 _MANUAL[key] = bool(body.get("value", False))
             self._json({"ok": True, key: _MANUAL.get(key)})
+        elif self.path == "/api/phone":
+            # Publié par le téléphone lui-même (un raccourci iOS, une automatisation),
+            # pas par le dashboard. Tout est optionnel : ce qui manque reste inconnu
+            # plutôt que d'être supposé faux. L'horodatage, lui, est posé ICI — l'heure
+            # du téléphone n'a pas à être crue, et c'est la fraîcheur qui compte.
+            if "charging" in body:
+                _PHONE["charging"] = bool(body.get("charging"))
+            if "battery" in body:
+                try:
+                    _PHONE["battery"] = max(0, min(100, int(float(body["battery"]))))
+                except (TypeError, ValueError):
+                    pass
+            if body.get("name"):
+                _PHONE["name"] = str(body["name"])[:40]
+            _PHONE["ts"] = time.time()
+            self._json({"ok": True, **phone_snapshot(self.cfg)})
         elif self.path == "/api/audiolevel":
             # Mesure de signal à la demande — jamais dans la boucle de rafraîchissement :
             # chaque appel crée un tap CoreAudio natif d'environ 1,5 s. Voir le README de
@@ -230,7 +281,6 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": True})
         elif self.path == "/api/midi/stop":
             _MON.stop()
-            self._json({"ok": True})
             self._json({"ok": True})
         elif self.path == "/api/fix":
             rem = remedy.resolve_key(self.cfg, body.get("key", ""))
@@ -297,12 +347,41 @@ def _state_loop(cfg: dict) -> None:
         time.sleep(REFRESH_EVERY)
 
 
-def serve(cfg: dict, port: int = 8765, open_browser: bool = True) -> None:
+def _lan_ip() -> str | None:
+    """L'adresse IPv4 de cette machine sur son réseau, sans rien émettre.
+
+    Un socket UDP « connecté » ne fait que choisir une route : aucun paquet ne part.
+    L'adresse visée est dans TEST-NET-1 (192.0.2.0/24, RFC 5737), qui n'est routée nulle
+    part — impossible de joindre quoi que ce soit par accident.
+    """
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("192.0.2.1", 1))
+            return s.getsockname()[0]
+    except Exception:
+        return None
+
+
+def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
+          host: str | None = None) -> None:
+    host = host or str(cfg.get("server", {}).get("host", "127.0.0.1"))
     threading.Thread(target=_state_loop, args=(cfg,), daemon=True).start()
     handler = type("Handler", (_Handler,), {"cfg": cfg})
-    httpd = ThreadingHTTPServer(("127.0.0.1", port), handler)
+    httpd = ThreadingHTTPServer((host, port), handler)
+    # Le navigateur local passe toujours par la boucle locale, même quand on écoute plus
+    # large : c'est l'adresse qui marche à coup sûr, y compris hors réseau.
     url = f"http://127.0.0.1:{port}/"
     print(f"Dashboard rig → {url}  (Ctrl-C pour arrêter)")
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        # Ouvert au réseau : dire OÙ, sinon il faut aller chercher son IP à la main pour
+        # configurer le téléphone. Et dire ce que ça implique — il n'y a pas de mot de
+        # passe, quiconque est sur ce réseau peut déclencher les actions du dashboard.
+        for label, u in (("nom", f"http://{socket.gethostname()}:{port}/"),
+                         ("IP ", f"http://{_lan_ip()}:{port}/" if _lan_ip() else None)):
+            if u:
+                print(f"  réseau local ({label}) → {u}")
+        print("  ⚠ ouvert au réseau local, sans authentification — réseau de confiance "
+              "uniquement (le dashboard lance et ferme des apps).")
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:

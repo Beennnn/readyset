@@ -71,14 +71,27 @@ class Result:
     # mais il énumérait alors ses manquants dans son texte, où toute surface étroite les
     # tronque (« … : Pédale, Notes, Souff… »). Détaillés ici, ceux qui ont la place les
     # déplient au lieu de les couper. None quand le check n'a rien à détailler.
-    parts: list[tuple[str, bool]] | None = None
+    # Chacun : {"name": str, "ok": bool, "icon": str} — l'icône illustre le GESTE à faire,
+    # et se lit avant le mot ; elle est facultative, un nom seul reste parfaitement lisible.
+    parts: list[dict] | None = None
 
     def to_dict(self) -> dict:
         d = {"key": self.key, "label": self.label,
              "status": self.status, "detail": self.detail}
         if self.parts is not None:
-            d["parts"] = [{"name": n, "ok": ok} for n, ok in self.parts]
+            d["parts"] = [{"name": p["name"], "ok": bool(p.get("ok")),
+                           "icon": p.get("icon") or ""} for p in self.parts]
         return d
+
+
+def _ago(seconds: float | None) -> str:
+    """« il y a 12 s » / « il y a 4 min » — l'âge d'une observation, en toutes lettres.
+
+    Un horodatage brut oblige à faire la soustraction de tête, juste avant de jouer.
+    """
+    if seconds is None:
+        return "?"
+    return f"{int(seconds)} s" if seconds < 90 else f"{int(seconds // 60)} min"
 
 
 def _hint(observed: str, advice: str) -> str:
@@ -508,13 +521,28 @@ def check_mac_power(cfg: dict, mode: str) -> Result:
     return Result("sys:macpower", "Alimentation Mac", OK, f"branché ({pct})")
 
 
-def check_iphone_charge(cfg: dict, mode: str, acked: bool = False) -> Result | None:
-    """iPhone charging — NOT detectable from the Mac (the iPhone charges on a separate
-    charger and talks to Bome over Wi-Fi, so it never appears here). Manual confirm:
-    tick it before playing. Unconfirmed → fail on stage, mere info at the desk."""
+def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
+                       phone: dict | None = None) -> Result | None:
+    """iPhone charging — not detectable from the Mac (the iPhone charges on a separate
+    charger and talks to Bome over Wi-Fi, so it never appears here).
+
+    Two ways to know, in order of trust: the PHONE says so (POST /api/phone, a shortcut
+    on the phone — a real observation, timestamped, that stops being true on its own), or
+    you tick it by hand (a declaration, which survives unplugging the phone). Neither →
+    fail on stage, mere info at the desk.
+    """
     sev = cfg["modes"][mode].get("iphone_power_severity", "warn")
     if sev == OFF:
         return None
+    if phone and phone.get("fresh") and phone.get("charging") is not None:
+        batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
+        if phone["charging"]:
+            return Result("sys:iphonecharge", "iPhone en charge", OK,
+                          f"le téléphone le dit{batt} — il y a {_ago(phone['age'])}")
+        return Result("sys:iphonecharge", "iPhone en charge", sev,
+                      _hint(f"le téléphone dit qu'il n'est PAS en charge{batt}",
+                            "le brancher sur SON chargeur (pas sur le Mac : il puiserait "
+                            "dans les 90 W du dock). La ligne verdit seule, sans rien cocher"))
     if acked:
         return Result("sys:iphonecharge", "iPhone en charge", OK, "confirmé manuellement")
     # En live c'est BLOQUANT tant que ce n'est pas coché, et la ligne doit le dire :
@@ -749,7 +777,7 @@ def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
 
 
 def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
-            manual: dict | None = None) -> list[Result]:
+            manual: dict | None = None, phone: dict | None = None) -> list[Result]:
     manual = manual or {}
     m = cfg["modes"][mode]
     results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
@@ -759,7 +787,8 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += [check_bome_iphone(cfg), check_vpn(cfg)]
     results += check_unexpected_apps(cfg, mode)
     results += [check_mac_power(cfg, mode),
-                check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")))]
+                check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")),
+                                    phone=phone)]
     if m.get("require_amphetamine", True):
         results.append(check_amphetamine(cfg))
     if with_audio:

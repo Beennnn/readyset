@@ -143,7 +143,7 @@ def cmd_monitor(cfg: dict, args) -> int:
 def cmd_serve(cfg: dict, args) -> int:
     if getattr(args, "mode", None):
         server._MODE["requested"] = args.mode
-    server.serve(cfg, port=args.port, open_browser=not args.no_open)
+    server.serve(cfg, port=args.port, open_browser=not args.no_open, host=args.host)
     return 0
 
 
@@ -257,6 +257,11 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("serve", help="dashboard web d'état + fix/relaunch")
     s.add_argument("--port", type=int, default=8765, help="port local (défaut 8765)")
+    # Défaut None et pas "127.0.0.1" : sans ça le drapeau écraserait [server].host de
+    # rig.toml à chaque lancement, et l'ouverture au réseau ne tiendrait jamais.
+    s.add_argument("--host", default=None,
+                   help="interface d'écoute (défaut : [server].host de rig.toml, "
+                        "127.0.0.1) ; 0.0.0.0 = ouvert au réseau local")
     s.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
     _add_mode(s)
 
