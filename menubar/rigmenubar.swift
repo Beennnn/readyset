@@ -79,8 +79,9 @@ struct Problem {
     let key, label, status, detail, glyph: String
     let remedy: String?
     /// Les sous-éléments d'un check composite (le soundcheck et ses gestes), tels que
-    /// `/api/state` les donne. Vide pour un check ordinaire.
-    let parts: [(name: String, ok: Bool)]
+    /// `/api/state` les donne. Vide pour un check ordinaire. L'icône illustre le geste
+    /// à faire et se lit avant le mot ; elle peut être absente.
+    let parts: [(name: String, ok: Bool, icon: String)]
 }
 
 // ---------------------------------------------------------------------------
@@ -292,7 +293,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         let st = (it["status"] as? String) ?? "ok"
                         guard st == "fail" || st == "warn" else { continue }
                         let parts = (it["parts"] as? [[String: Any]] ?? []).map {
-                            (name: ($0["name"] as? String) ?? "?", ok: ($0["ok"] as? Bool) ?? false)
+                            (name: ($0["name"] as? String) ?? "?",
+                             ok: ($0["ok"] as? Bool) ?? false,
+                             icon: ($0["icon"] as? String) ?? "")
                         }
                         probs.append(Problem(
                             key: (it["key"] as? String) ?? "", label: (it["label"] as? String) ?? "?",
@@ -567,7 +570,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien
             // à cliquer — d'où des lignes indentées sous leur check, sans action.
             for m in missing {
-                let sub = NSMenuItem(title: "◦ \(m.name)", action: nil, keyEquivalent: "")
+                // L'icône du geste devant son nom — « ◦ » quand le moteur n'en donne pas,
+                // pour que la colonne reste alignée d'une ligne à l'autre.
+                let sub = NSMenuItem(title: "\(m.icon.isEmpty ? "◦" : m.icon)  \(m.name)",
+                                     action: nil, keyEquivalent: "")
                 sub.indentationLevel = 1; sub.isEnabled = false
                 sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
                 menu.addItem(sub)
