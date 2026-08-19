@@ -20,7 +20,7 @@ import sys
 import time
 from datetime import datetime
 
-from riglib import alerts, apps, checks, config, launch, server, vpn, windows
+from riglib import alerts, apps, checks, config, launch, liveaudio, server, vpn, windows
 
 
 def _hr() -> str:
@@ -72,6 +72,15 @@ def cmd_preflight(cfg: dict, args) -> int:
     tag = " (DRY-RUN — rien n'est lancé)" if dry else ""
     print(f"[{_hr()}] Mise en place du rig — mode {mode}{tag}\n")
     launch.bring_up(cfg, log=print, dry_run=dry)
+
+    # La sortie d'Ableton est APPLIQUÉE, pas vérifiée. À la mise en place on ne sait pas ce
+    # que la session précédente a laissé — et le journal de Live ne le dit pas de façon
+    # fiable, puisqu'il n'écrit qu'au changement. Poser la valeur coûte deux clics et
+    # supprime la question ; la vérification qui suit devient alors concluante au lieu de
+    # se prononcer sur une trace périmée.
+    ok, msg = liveaudio.apply(cfg, mode, dry)
+    print(f"  {'✔' if ok else '✖'} Sortie Ableton — {msg}")
+
     print(f"\n[{_hr()}] Vérification finale…\n")
     results = checks.run_all(cfg, mode, with_audio=True)
     _print_results(results)
