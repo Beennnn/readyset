@@ -37,6 +37,19 @@ DEFAULTS: dict = {
         "settle_seconds": 2,   # grace after an app launches before polling readiness
         "amphetamine_session": True,   # start an anti-sleep session during bring-up
     },
+    "server": {
+        # Interface d'écoute du dashboard. "127.0.0.1" = cette machine seulement.
+        # "0.0.0.0" l'ouvre au réseau LOCAL — c'est ce qui permet au téléphone de
+        # publier son état (POST /api/phone) et de consulter la page depuis la scène.
+        # À ne faire QUE sur un réseau de confiance : le serveur expose aussi /api/fix,
+        # /api/quit-apps, /api/windows et /api/preflight, qui LANCENT et FERMENT des
+        # choses sur le Mac. Il n'y a pas d'authentification — le pare-feu du réseau
+        # est la seule barrière.
+        "host": "127.0.0.1",
+        # Au-delà, le dernier rapport du téléphone est considéré périmé : il décrit un
+        # état d'il y a trop longtemps pour qu'on parie dessus avant de jouer.
+        "phone_stale_seconds": 300,
+    },
     "checks": {
         # label -> regex matched against the full process command line (pgrep -f).
         "apps": {
