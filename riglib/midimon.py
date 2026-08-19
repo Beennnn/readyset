@@ -350,7 +350,8 @@ class MidiMonitor:
                 "flags": dict(self.flags),
                 "head": self._head(),
                 "stamp": list(self.stamp),
-                "chain": [{"name": g["name"], **self.chain_seen.get(g["name"], {"raw": False, "out": False})}
+                "chain": [{"name": g["name"], "icon": g.get("icon", ""),
+                           **self.chain_seen.get(g["name"], {"raw": False, "out": False})}
                           for g in self.chain.get("gestures", [])],
                 "events": self.events[:36],
             }
