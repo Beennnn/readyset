@@ -66,9 +66,19 @@ class Result:
     def ok(self) -> bool:
         return self.status == OK
 
+    # Le contenu d'un check COMPOSITE : ses sous-éléments, chacun vu ou pas encore.
+    # Un check reste UNE ligne — c'est ce qui garde la liste lisible d'un coup d'œil —
+    # mais il énumérait alors ses manquants dans son texte, où toute surface étroite les
+    # tronque (« … : Pédale, Notes, Souff… »). Détaillés ici, ceux qui ont la place les
+    # déplient au lieu de les couper. None quand le check n'a rien à détailler.
+    parts: list[tuple[str, bool]] | None = None
+
     def to_dict(self) -> dict:
-        return {"key": self.key, "label": self.label,
-                "status": self.status, "detail": self.detail}
+        d = {"key": self.key, "label": self.label,
+             "status": self.status, "detail": self.detail}
+        if self.parts is not None:
+            d["parts"] = [{"name": n, "ok": ok} for n, ok in self.parts]
+        return d
 
 
 def _hint(observed: str, advice: str) -> str:
