@@ -557,6 +557,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let detail = missing.isEmpty ? shortProblem(p)
                        : shorten(p.detail.components(separatedBy: " : ").first ?? p.detail, 52)
             var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shortItem(p)) — \(detail)"
+            // Les icônes des manquants sur la ligne du check aussi : elle se lit seule
+            // quand le regard s'arrête au décompte, et elle reste juste quand la liste
+            // en dessous défile hors de vue. Rien à ajouter si aucun n'a d'icône.
+            let icons = missing.map { $0.icon }.filter { !$0.isEmpty }
+            if !icons.isEmpty { title += "   " + icons.joined(separator: " ") }
             if let rem = p.remedy { title += "   🔧 \(shorten(rem, 24))" }
             // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : une
             // ligne sans action, macOS la grise — or c'est la lisibilité qu'on vient chercher.
