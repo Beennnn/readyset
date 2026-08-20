@@ -292,12 +292,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let t = s.trimmingCharacters(in: .whitespaces)
         return t.count <= n ? t : String(t.prefix(n - 1)) + "…"
     }
-    private func shortItem(_ p: Problem) -> String {   // strip parentheticals/quotes, cap length
-        var s = p.label
-        for sep in [" (", " «", " —", " :"] { if let r = s.range(of: sep) { s = String(s[..<r.lowerBound]) } }
-        return shorten(s, 34)
-    }
-    private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 52) }
+
+    /// Largeur visée pour une ligne de la section « problèmes », en caractères. Au-delà,
+    /// macOS élargit le menu jusqu'à sa limite puis tronque — et c'est la fin de la ligne,
+    /// donc l'explication, qui saute. Ce qui ne rentre pas passe en info-bulle.
+    private let menuTitleBudget = 56
     /// Range des libellés courts sur le moins de lignes possible sans dépasser `width`
     /// caractères. Sert aux gestes du soundcheck : les huit tiennent en deux lignes au
     /// lieu de huit, et le menu ne se déroule plus sur tout l'écran pour deux mots par
@@ -636,17 +635,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // ouvrent une section à eux, et une section au milieu couperait les autres en deux.
         for p in probs.filter({ $0.parts.isEmpty }) + probs.filter({ !$0.parts.isEmpty }) {
             let missing = p.parts.filter { !$0.ok }
-            // Un composite énumère déjà ses manquants dans son texte — coupés faute de
-            // place, c'est justement ce qui a motivé la section. On tronque avant les deux
-            // points : la liste juste en dessous les donne en entier.
-            let detail = missing.isEmpty ? shortProblem(p)
-                       : shorten(p.detail.components(separatedBy: " : ").first ?? p.detail, 52)
-            var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shortItem(p)) — \(detail)"
-            // Les icônes des manquants sur la ligne du check aussi : elle se lit seule
-            // quand le regard s'arrête au décompte, et elle reste juste quand la liste
-            // en dessous défile hors de vue. Rien à ajouter si aucun n'a d'icône.
-            let icons = missing.map { $0.icon }.filter { !$0.isEmpty }
-            if !icons.isEmpty { title += "   " + icons.joined(separator: " ") }
+            // La ligne ne porte plus QUE le nom du check (2026-08-20) : le détail la
+            // faisait déborder, et macOS tronquait — en coupant justement la fin, donc
+            // l'explication. Il vit désormais dans l'info-bulle SEULE, où rien ne le
+            // tronque. Les icônes des manquants sont parties avec : 24 caractères pour
+            // répéter la liste packée qui les donne AVEC leur nom, deux lignes plus bas.
+            var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shorten(p.label, menuTitleBudget - 4))"
             if let rem = p.remedy { title += "   🔧 \(shorten(rem, 24))" }
             // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : une
             // ligne sans action, macOS la grise — or c'est la lisibilité qu'on vient chercher.
@@ -655,13 +649,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                 action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
                                 keyEquivalent: "")
             mi.target = self; mi.representedObject = p.key
-            mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label) — \(p.detail)"
+            // L'info-bulle ne tronque rien et va à la ligne : c'est là que vit le texte
+            // complet du moteur, « → les jouer une fois… » compris.
+            mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label)\n\(p.detail)"
             menu.addItem(mi)
             // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien
             // à cliquer — d'où des lignes indentées sous leur check, sans action. Plusieurs
             // par ligne : à huit gestes, une ligne chacun faisait à lui seul la moitié du
             // menu, pour deux mots par ligne.
-            for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" }, width: 72) {
+            for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" }, width: menuTitleBudget) {
                 let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
                 sub.indentationLevel = 1; sub.isEnabled = false
                 sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
