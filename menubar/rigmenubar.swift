@@ -581,10 +581,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
 
-        // Les actions d'abord. Le détail des problèmes descend TOUT en bas (2026-08-20) :
-        // sa longueur varie — huit gestes de soundcheck manquants, et il poussait les
-        // actions hors de portée. En bas, chaque action garde la même place d'un soir à
-        // l'autre, et le diagnostic reste à un coup d'œil sous la liste.
+        // Les actions d'abord, le détail des problèmes en bas (2026-08-20) : sa longueur
+        // varie — huit gestes de soundcheck manquants, et il poussait les actions hors de
+        // portée. Sous elles, chaque action garde la même place d'un soir à l'autre.
+        // Réglages et Quitter restent tout en dernier, à la place que macOS leur donne
+        // partout ailleurs : le détail se glisse AU-DESSUS d'eux, pas après.
         // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
         // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
         // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
@@ -614,14 +615,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Une seule entrée pour la fenêtre web : le journal des actions vit dans la même
         // page que le dashboard, donc deux lignes ouvraient exactement la même URL.
         add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
-        menu.addItem(.separator())
-        let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
-                                  action: #selector(showSettings), keyEquivalent: ",")
-        settings.target = self; menu.addItem(settings)
-        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
 
-        // Puis le détail : une ligne par problème, son correctif dans le titre —
-        // cliquer la ligne le lance.
+        // Puis le détail, juste au-dessus de Réglages/Quitter : une ligne par problème,
+        // son correctif dans le titre — cliquer la ligne le lance.
         menu.addItem(.separator())
         let probs = Pref.on(Pref.warnings, default: true) ? problems : problems.filter { $0.status == "fail" }
         if probs.isEmpty {
@@ -669,6 +665,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if probs.contains(where: { $0.remedy != nil }) {
             add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
         }
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
+                                  action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; menu.addItem(settings)
+        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
     }
 
     // ---- Settings window (classic macOS look) ------------------------------
