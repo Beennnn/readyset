@@ -297,9 +297,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 52) }
     /// Range des libellés courts sur le moins de lignes possible sans dépasser `width`
-    /// caractères. Sert aux gestes du soundcheck : huit d'entre eux tiennent en trois
-    /// lignes au lieu de huit, et le menu ne se déroule plus sur tout l'écran pour deux
-    /// mots par ligne. Le compte de caractères vaut ce qu'il vaut avec une police
+    /// caractères. Sert aux gestes du soundcheck : les huit tiennent en deux lignes au
+    /// lieu de huit, et le menu ne se déroule plus sur tout l'écran pour deux mots par
+    /// ligne. La largeur est calée sur la ligne du check juste au-dessus (~75 caractères,
+    /// titre + décompte + icônes) : au-delà, ce sont ces lignes-ci qui décideraient de la
+    /// largeur du menu. Le compte de caractères vaut ce qu'il vaut avec une police
     /// proportionnelle — on ne cherche pas l'alignement, juste à ne pas déborder.
     private func packed(_ items: [String], width: Int) -> [String] {
         var rows: [String] = []
@@ -657,7 +659,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // à cliquer — d'où des lignes indentées sous leur check, sans action. Plusieurs
             // par ligne : à huit gestes, une ligne chacun faisait à lui seul la moitié du
             // menu, pour deux mots par ligne.
-            for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" }, width: 44) {
+            for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" }, width: 72) {
                 let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
                 sub.indentationLevel = 1; sub.isEnabled = false
                 sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
