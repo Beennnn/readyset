@@ -296,6 +296,22 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return shorten(s, 34)
     }
     private func shortProblem(_ p: Problem) -> String { shorten(p.detail.isEmpty ? "—" : p.detail, 52) }
+    /// Range des libellés courts sur le moins de lignes possible sans dépasser `width`
+    /// caractères. Sert aux gestes du soundcheck : huit d'entre eux tiennent en trois
+    /// lignes au lieu de huit, et le menu ne se déroule plus sur tout l'écran pour deux
+    /// mots par ligne. Le compte de caractères vaut ce qu'il vaut avec une police
+    /// proportionnelle — on ne cherche pas l'alignement, juste à ne pas déborder.
+    private func packed(_ items: [String], width: Int) -> [String] {
+        var rows: [String] = []
+        var cur = ""
+        for it in items {
+            if cur.isEmpty { cur = it }
+            else if cur.count + 3 + it.count <= width { cur += "   " + it }
+            else { rows.append(cur); cur = it }
+        }
+        if !cur.isEmpty { rows.append(cur) }
+        return rows
+    }
 
     // ---- Poll --------------------------------------------------------------
     func refresh() {
@@ -531,8 +547,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }.resume()
     }
 
-    @objc func openJournal() { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
-
     private func runFix(_ key: String) {
         guard !key.isEmpty, let u = URL(string: fixURL) else { return }
         var req = URLRequest(url: u); req.httpMethod = "POST"
@@ -565,8 +579,48 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
 
-        // Le détail d'abord : c'est ce qu'on vient chercher quand quelque chose cloche.
-        // Une ligne par problème, son correctif dans le titre — cliquer la ligne le lance.
+        // Les actions d'abord. Le détail des problèmes descend TOUT en bas (2026-08-20) :
+        // sa longueur varie — huit gestes de soundcheck manquants, et il poussait les
+        // actions hors de portée. En bas, chaque action garde la même place d'un soir à
+        // l'autre, et le diagnostic reste à un coup d'œil sous la liste.
+        // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
+        // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
+        // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
+        // surfaces ; c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
+        let mode = NSMenuItem(title: T("menu.mode", "Mode"), action: nil, keyEquivalent: "")
+        let sub = NSMenu()
+        for (title, sel, key) in [(T("mode.auto", "🅰 Auto"), #selector(setModeAuto), "auto"),
+                                  (T("mode.live", "🎤 Live"), #selector(setModeLive), "live"),
+                                  (T("mode.studio", "🎧 Studio"), #selector(setModeStudio), "studio")] {
+            let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
+            mi.target = self; mi.state = (requestedMode == key) ? .on : .off
+            sub.addItem(mi)
+        }
+        // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
+        // action resterait grisé — et macOS masque alors sa flèche.
+        mode.submenu = sub; mode.isEnabled = true; menu.addItem(mode)
+        menu.addItem(.separator())
+
+        add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
+        menu.addItem(.separator())
+
+        add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
+        add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
+        addStreamDeckItem(menu)
+        menu.addItem(.separator())
+
+        // Une seule entrée pour la fenêtre web : le journal des actions vit dans la même
+        // page que le dashboard, donc deux lignes ouvraient exactement la même URL.
+        add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
+        menu.addItem(.separator())
+        let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
+                                  action: #selector(showSettings), keyEquivalent: ",")
+        settings.target = self; menu.addItem(settings)
+        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
+
+        // Puis le détail : une ligne par problème, son correctif dans le titre —
+        // cliquer la ligne le lance.
+        menu.addItem(.separator())
         let probs = Pref.on(Pref.warnings, default: true) ? problems : problems.filter { $0.status == "fail" }
         if probs.isEmpty {
             let none = NSMenuItem(title: problems.isEmpty ? "Tout est ok 🎉"
@@ -600,12 +654,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label) — \(p.detail)"
             menu.addItem(mi)
             // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien
-            // à cliquer — d'où des lignes indentées sous leur check, sans action.
-            for m in missing {
-                // L'icône du geste devant son nom — « ◦ » quand le moteur n'en donne pas,
-                // pour que la colonne reste alignée d'une ligne à l'autre.
-                let sub = NSMenuItem(title: "\(m.icon.isEmpty ? "◦" : m.icon)  \(m.name)",
-                                     action: nil, keyEquivalent: "")
+            // à cliquer — d'où des lignes indentées sous leur check, sans action. Plusieurs
+            // par ligne : à huit gestes, une ligne chacun faisait à lui seul la moitié du
+            // menu, pour deux mots par ligne.
+            for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" }, width: 44) {
+                let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
                 sub.indentationLevel = 1; sub.isEnabled = false
                 sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
                 menu.addItem(sub)
@@ -614,42 +667,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         if probs.contains(where: { $0.remedy != nil }) {
             add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
         }
-        menu.addItem(.separator())
-        // Puis les actions. Les réglages descendent en bas, avec Quitter — on y touche
-        // une fois puis plus jamais, ils n'ont rien à faire au-dessus des actions du soir.
-        // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
-        // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
-        // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
-        // surfaces ; c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
-        let mode = NSMenuItem(title: T("menu.mode", "Mode"), action: nil, keyEquivalent: "")
-        let sub = NSMenu()
-        for (title, sel, key) in [(T("mode.auto", "🅰 Auto"), #selector(setModeAuto), "auto"),
-                                  (T("mode.live", "🎤 Live"), #selector(setModeLive), "live"),
-                                  (T("mode.studio", "🎧 Studio"), #selector(setModeStudio), "studio")] {
-            let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
-            mi.target = self; mi.state = (requestedMode == key) ? .on : .off
-            sub.addItem(mi)
-        }
-        // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
-        // action resterait grisé — et macOS masque alors sa flèche.
-        mode.submenu = sub; mode.isEnabled = true; menu.addItem(mode)
-        menu.addItem(.separator())
-
-        add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
-        menu.addItem(.separator())
-
-        add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
-        add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
-        addStreamDeckItem(menu)
-        menu.addItem(.separator())
-
-        add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
-        add(menu, T("menu.journal", "📜 Action journal"), #selector(openJournal))
-        menu.addItem(.separator())
-        let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
-                                  action: #selector(showSettings), keyEquivalent: ",")
-        settings.target = self; menu.addItem(settings)
-        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
     }
 
     // ---- Settings window (classic macOS look) ------------------------------

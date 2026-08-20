@@ -72,7 +72,6 @@
 "menu.sdUnset"      = "🔌 Stream Deck — lancer « sd-power detect »";
 "alerts.streamDeck.title" = "Afficher la coupure d\'alimentation du Stream Deck";
 "alerts.streamDeck.hint"  = "Ajoute une entrée qui coupe le port USB portant le Stream Deck — et tout ce qui est branché dessus. Le port est désigné par un numéro qui change dès qu\'on rebranche ailleurs : relancer « sd-power detect » après un déplacement. La coupure reste réservée au studio.";
-"menu.journal"     = "📜 Journal des actions";
 
 /* --- Confirmation avant de fermer des applis (la seule action qui peut faire
        perdre du travail, donc la seule qui pose une question) --- */
