@@ -65,13 +65,14 @@
 "menu.prepare"     = "✨ Tout préparer";
 "menu.charge"      = "🔋 Confirmer que l'iPhone charge";
 "menu.quitOthers"  = "🧹 Quitter les autres applis…";
-"menu.sdCut"        = "🔌 Couper le Stream Deck";
-"menu.sdRestore"    = "🔌 Rallumer le Stream Deck";
-"menu.sdStudioOnly" = "🔌 Stream Deck — coupure réservée au studio";
-"menu.sdModeUnknown" = "mode inconnu";
-"menu.sdUnset"      = "🔌 Stream Deck — lancer « sd-power detect »";
-"alerts.streamDeck.title" = "Afficher la coupure d\'alimentation du Stream Deck";
-"alerts.streamDeck.hint"  = "Ajoute une entrée qui coupe le port USB portant le Stream Deck — et tout ce qui est branché dessus. Le port est désigné par un numéro qui change dès qu\'on rebranche ailleurs : relancer « sd-power detect » après un déplacement. La coupure reste réservée au studio.";
+"sd.cut"         = "Couper";
+"sd.restore"     = "Rallumer";
+"sd.studioOnly"  = "Studio seulement";
+"sd.modeUnknown" = "mode inconnu";
+"sd.unset"       = "Lancer « sd-power detect »";
+"sd.off"         = "Désactivé";
+"alerts.streamDeck.title" = "Alimentation du Stream Deck";
+"alerts.streamDeck.hint"  = "Coupe le port USB portant le Stream Deck — et tout ce qui est branché dessus. Le port est désigné par un numéro qui change dès qu\'on rebranche ailleurs : relancer « sd-power detect » après un déplacement. La coupure reste réservée au studio ; l\'interrupteur active le sondage dont le bouton a besoin.";
 
 /* --- Confirmation avant de fermer des applis (la seule action qui peut faire
        perdre du travail, donc la seule qui pose une question) --- */

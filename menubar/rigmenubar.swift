@@ -224,6 +224,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     /// plus. Dans les trois cas on n'offre aucune action plutôt que d'en offrir une qui
     /// échouerait en silence.
     var streamDeckPowered: Bool?
+    /// Le bouton des Réglages, gardé pour pouvoir réécrire son libellé à chaque sondage.
+    private var sdButton: NSButton?
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var settingsWin: NSWindow?                    // the classic Settings window
@@ -609,7 +611,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
         add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
-        addStreamDeckItem(menu)
         menu.addItem(.separator())
 
         // Une seule entrée pour la fenêtre web : le journal des actions vit dans la même
@@ -718,13 +719,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   "iRig relaunches apps and ports on its own, without asking — including mid-song. "
                   + "Leave this off on stage."),
                 Pref.autofix, false, warning: true, { self.maybeAutoFix() }),
-            Row("powerplug", T("alerts.streamDeck.title", "Show the Stream Deck power entry"),
+            Row("powerplug", T("alerts.streamDeck.title", "Stream Deck power"),
                 T("alerts.streamDeck.hint",
-                  "Adds a menu entry that cuts the USB port carrying the Stream Deck — and "
-                  + "everything plugged into it. The port is designated by a number that "
-                  + "changes when you move the cable, so re-run `sd-power detect` after "
-                  + "replugging. Cutting stays studio-only."),
-                Pref.streamDeck, false, warning: true, { self.refreshStreamDeck() }),
+                  "Cuts the USB port carrying the Stream Deck — and everything plugged into "
+                  + "it. The port is designated by a number that changes when you move the "
+                  + "cable, so re-run `sd-power detect` after replugging. Cutting stays "
+                  + "studio-only; the switch enables the polling the button needs."),
+                Pref.streamDeck, false, warning: true,
+                extra: { self.makeStreamDeckButton() }, { self.refreshStreamDeck() }),
         ]))
 
         let screens = NSViewController()
@@ -781,10 +783,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct Row {
         let icon: String, label: String, hint: String, key: String, def: Bool
         let warning: Bool, onChange: () -> Void
+        /// Un contrôle POSÉ À GAUCHE de la bascule, pour un réglage qui commande aussi une
+        /// action immédiate — l'alimentation du Stream Deck, seul cas à ce jour. Deux
+        /// lignes séparées diraient moins bien qu'il s'agit d'une seule chose : la bascule
+        /// autorise le pilotage, le bouton l'exerce.
+        let extra: (() -> NSView)?
         init(_ icon: String, _ label: String, _ hint: String, _ key: String, _ def: Bool,
-             warning: Bool = false, _ onChange: @escaping () -> Void) {
+             warning: Bool = false, extra: (() -> NSView)? = nil, _ onChange: @escaping () -> Void) {
             self.icon = icon; self.label = label; self.hint = hint; self.key = key
-            self.def = def; self.warning = warning; self.onChange = onChange
+            self.def = def; self.warning = warning; self.extra = extra; self.onChange = onChange
         }
     }
 
@@ -837,7 +844,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             sw.target = self; sw.action = #selector(switchToggled(_:))
             // yPlacement est porté par la LIGNE, pas par la colonne : sans ça l'interrupteur
             // se cale en haut du bloc titre+hint au lieu d'être centré en face.
-            grid.addRow(with: [badge, text, sw]).yPlacement = .center
+            let control: NSView
+            if let extra = row.extra {
+                let pair = NSStackView(views: [extra(), sw])
+                pair.orientation = .horizontal; pair.alignment = .centerY; pair.spacing = 10
+                control = pair
+            } else {
+                control = sw
+            }
+            grid.addRow(with: [badge, text, control]).yPlacement = .center
         }
         grid.column(at: 0).xPlacement = .center
         grid.column(at: 2).xPlacement = .trailing
@@ -948,6 +963,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // même pas.
         guard Pref.on(Pref.streamDeck, default: false) else {
             streamDeckPowered = nil
+            updateStreamDeckButton()
             return
         }
         sdPower("status") { [weak self] out in
@@ -957,42 +973,48 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             if out.contains("État : on")       { self?.streamDeckPowered = true }
             else if out.contains("État : off") { self?.streamDeckPowered = false }
             else                               { self?.streamDeckPowered = nil }
+            self?.updateStreamDeckButton()
         }
     }
 
-    /// Le libellé PORTE l'état et la permission : pas d'action séparée couper/rallumer,
-    /// pas de boîte de dialogue. Un menu se lit d'un coup d'œil en montant sur scène.
-    private func addStreamDeckItem(_ menu: NSMenu) {
-        // Absente, pas grisée : une entrée grisée en permanence occupe une ligne du menu
-        // et laisse croire à une panne, là où l'absence dit simplement « pas activé ».
-        guard Pref.on(Pref.streamDeck, default: false) else { return }
-        let mi: NSMenuItem
+    /// Le bouton PORTE l'état et la permission : pas d'action séparée couper/rallumer,
+    /// pas de boîte de dialogue. Il vit dans les Réglages et nulle part ailleurs
+    /// (2026-08-20) — le menu se lit en montant sur scène, et couper l'alimentation d'un
+    /// port USB n'est pas un geste de scène. La bascule d'à côté commande le sondage ;
+    /// sans elle, aucun état n'est connu et le bouton n'a rien à proposer.
+    private func makeStreamDeckButton() -> NSView {
+        let b = NSButton(title: "", target: self, action: #selector(toggleStreamDeck))
+        b.bezelStyle = .rounded
+        b.controlSize = .regular
+        sdButton = b
+        updateStreamDeckButton()
+        return b
+    }
+
+    /// Rejoué à chaque sondage : la fenêtre Réglages n'est construite qu'une fois, donc
+    /// sans ça le bouton garderait le libellé qu'il avait à son ouverture.
+    private func updateStreamDeckButton() {
+        guard let b = sdButton else { return }
+        guard Pref.on(Pref.streamDeck, default: false) else {
+            b.title = T("sd.off", "Disabled"); b.isEnabled = false; return
+        }
         switch streamDeckPowered {
         case .some(false):
             // Rallumer n'est JAMAIS bloqué : ni hors studio, ni moteur injoignable. Le
             // garde-fou protège le geste risqué, pas le retour à l'état sûr — refuser un
             // rallumage laisserait le Stream Deck mort sans issue.
-            mi = NSMenuItem(title: T("menu.sdRestore", "🔌 Restore the Stream Deck"),
-                            action: #selector(toggleStreamDeck), keyEquivalent: "")
-            mi.target = self
+            b.title = T("sd.restore", "Restore"); b.isEnabled = true
         case .some(true) where effectiveMode == "studio":
-            mi = NSMenuItem(title: T("menu.sdCut", "🔌 Cut the Stream Deck"),
-                            action: #selector(toggleStreamDeck), keyEquivalent: "")
-            mi.target = self
+            b.title = T("sd.cut", "Cut"); b.isEnabled = true
         case .some(true):
             // Couper en live, c'est perdre le pilotage du set au pire moment. Un mode
             // inconnu compte comme un refus : on ne peut alors PAS prouver qu'on n'est
             // pas en live, et le doute doit pencher du côté qui ne casse pas le concert.
-            let m = effectiveMode ?? T("menu.sdModeUnknown", "mode unknown")
-            mi = NSMenuItem(title: T("menu.sdStudioOnly", "🔌 Stream Deck — studio only")
-                                   + " (\(m))", action: nil, keyEquivalent: "")
-            mi.isEnabled = false
+            let m = effectiveMode ?? T("sd.modeUnknown", "mode unknown")
+            b.title = T("sd.studioOnly", "Studio only") + " (\(m))"; b.isEnabled = false
         case .none:
-            mi = NSMenuItem(title: T("menu.sdUnset", "🔌 Stream Deck — run `sd-power detect`"),
-                            action: nil, keyEquivalent: "")
-            mi.isEnabled = false
+            b.title = T("sd.unset", "Run `sd-power detect`"); b.isEnabled = false
         }
-        menu.addItem(mi)
     }
 
     @objc func toggleStreamDeck() {
