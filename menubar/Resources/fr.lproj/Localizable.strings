@@ -62,6 +62,9 @@
 "mode.auto"        = "🅰 Auto";
 "mode.live"        = "🎤 Live";
 "mode.studio"      = "🎧 Studio";
+"mode.resolved"        = "→ actuellement";
+"mode.resolvedUnknown" = "→ mode non prouvé";
+"mode.resolvedHint"    = "C\'est Auto qui l\'a choisi — les trois entrées au-dessus le forcent à la place";
 "menu.prepare"     = "✨ Tout préparer";
 "menu.charge"      = "🔋 Confirmer que l'iPhone charge";
 "menu.quitOthers"  = "🧹 Quitter les autres applis…";

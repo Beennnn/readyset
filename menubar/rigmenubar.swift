@@ -583,15 +583,22 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
 
+        // Le dashboard en premier (2026-08-20) : c'est la sortie vers TOUT le reste — les
+        // détails qu'une ligne de menu tronque, le journal, les courbes. Une seule entrée
+        // pour la fenêtre web, d'ailleurs : le journal des actions vit dans la même page,
+        // donc deux lignes ouvraient exactement la même URL.
+        add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
+        menu.addItem(.separator())
+
         // Les actions d'abord, le détail des problèmes en bas (2026-08-20) : sa longueur
         // varie — huit gestes de soundcheck manquants, et il poussait les actions hors de
         // portée. Sous elles, chaque action garde la même place d'un soir à l'autre.
         // Réglages et Quitter restent tout en dernier, à la place que macOS leur donne
         // partout ailleurs : le détail se glisse AU-DESSUS d'eux, pas après.
-        // Le menu porte les MÊMES actions que la barre du dashboard, en sections :
-        // d'abord le mode, puis LA seule action à connaître, puis les gestes ponctuels,
-        // enfin ce qui ouvre une fenêtre. Ce découpage est le même dans les deux
-        // surfaces ; c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
+        // Le menu porte les MÊMES actions que la barre du dashboard, en sections : d'abord
+        // le mode, puis LA seule action à connaître, puis ce qui cloche, puis les gestes
+        // ponctuels qui y répondent. Ce découpage est le même dans les deux surfaces ;
+        // c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
         let mode = NSMenuItem(title: T("menu.mode", "Mode"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for (title, sel, key) in [(T("mode.auto", "🅰 Auto"), #selector(setModeAuto), "auto"),
@@ -600,6 +607,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
             mi.target = self; mi.state = (requestedMode == key) ? .on : .off
             sub.addItem(mi)
+            // « Auto » coché ne dit pas OÙ il a atterri, et c'est pourtant la seule chose
+            // qui compte avant de brancher : le rig résout tout seul vers live ou studio.
+            // La ligne se colore aux mêmes teintes que le dashboard (bleu = studio, ambre
+            // = live) pour que la couleur veuille dire la même chose sur les deux surfaces.
+            if key == "auto" && requestedMode == "auto" {
+                sub.addItem(resolvedModeItem())
+            }
         }
         // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
         // action resterait grisé — et macOS masque alors sa flèche.
@@ -607,15 +621,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
-        menu.addItem(.separator())
-
-        add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
-        add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
-        menu.addItem(.separator())
-
-        // Une seule entrée pour la fenêtre web : le journal des actions vit dans la même
-        // page que le dashboard, donc deux lignes ouvraient exactement la même URL.
-        add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
 
         // Puis le détail, juste au-dessus de Réglages/Quitter : une ligne par problème,
         // son correctif dans le titre — cliquer la ligne le lance.
@@ -667,6 +672,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
         }
         menu.addItem(.separator())
+
+        // Les deux gestes ponctuels APRÈS la liste (2026-08-20) : ce sont des réponses à
+        // ce qu'on vient d'y lire — « iPhone pas en charge », « une app de trop est
+        // ouverte ». Au-dessus, on les lisait avant de savoir s'il y avait lieu de les
+        // faire ; en dessous, la main descend de la ligne rouge vers son geste.
+        add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
+        add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
+        menu.addItem(.separator())
+
         let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
                                   action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
@@ -1030,6 +1044,34 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         sdPower(streamDeckPowered == false ? "on" : "off") { [weak self] _ in
             self?.refreshStreamDeck()
         }
+    }
+
+    /// La ligne « voici où Auto a atterri ». Désactivée — il n'y a rien à cliquer, le mode
+    /// se choisit par les trois entrées au-dessus. La couleur passe par un attributedTitle :
+    /// un item désactivé est gris par défaut, et gris se lirait « indisponible » alors que
+    /// c'est l'information la plus utile du sous-menu.
+    private func resolvedModeItem() -> NSMenuItem {
+        // Mêmes teintes que le dashboard (--accent / --warn) : la couleur doit vouloir dire
+        // la même chose sur les deux surfaces, sinon elle n'apprend rien.
+        let studio = NSColor(red: 0.29, green: 0.62, blue: 1.00, alpha: 1)   // #4a9eff
+        let live   = NSColor(red: 0.96, green: 0.73, blue: 0.26, alpha: 1)   // #f4b942
+        let text: String, colour: NSColor
+        switch effectiveMode {
+        case "studio": text = T("mode.resolved", "→ currently") + "  " + T("mode.studio", "🎧 Studio"); colour = studio
+        case "live":   text = T("mode.resolved", "→ currently") + "  " + T("mode.live", "🎤 Live");     colour = live
+        // Moteur injoignable : le mode n'est pas prouvé. Gris, et c'est juste — là,
+        // l'information EST « on ne sait pas ».
+        default:       text = T("mode.resolvedUnknown", "→ currently unknown"); colour = .secondaryLabelColor
+        }
+        let mi = NSMenuItem(title: text, action: nil, keyEquivalent: "")
+        mi.attributedTitle = NSAttributedString(string: text, attributes: [
+            .foregroundColor: colour,
+            .font: NSFont.menuFont(ofSize: NSFont.systemFontSize(for: .small)),
+        ])
+        mi.indentationLevel = 1
+        mi.isEnabled = false
+        mi.toolTip = T("mode.resolvedHint", "Auto picked this one — the three entries above force it instead")
+        return mi
     }
 
     // ---- Menu helper -------------------------------------------------------
