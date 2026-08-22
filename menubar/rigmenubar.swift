@@ -642,89 +642,58 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false; menu.addItem(none)
         }
-        // Les lignes sont GROUPÉES par domaine (2026-08-22) : à plat, on ne voyait pas
-        // sur QUOI le geste du dessous allait porter — un réglage système, une app à
-        // lancer et un geste à jouer se suivaient sans rien qui les distingue. Le groupe
-        // vient du moteur (`group` dans /api/state), celui-là même qui découpe le
-        // dashboard en zones : deux surfaces, un seul découpage à retenir.
-        // Les checks composites (le soundcheck) restent en fin de liste : ils ouvrent une
-        // section à eux, et une section au milieu couperait les autres en deux.
+        // DEUX SECTIONS, par NATURE D'ACTION (2026-08-22, demande de Benoît) — et non
+        // plus par domaine. Grouper par domaine disait de quoi ça parle ; ça ne disait
+        // pas qui doit bouger, qui est la seule question qu'on se pose en ouvrant ce
+        // menu. Les deux sections répondent chacune à un geste : cliquer le bouton, ou
+        // se lever. Le domaine n'est pas perdu pour autant — il passe en préfixe gris
+        // sur la ligne, où il coûte zéro ligne de menu.
+        //
+        // Le bouton vit DANS la section qu'il répare : c'est ce qui le rend lisible d'un
+        // coup d'œil (« voilà ce qu'il va faire, et le voilà »). S'il n'y a rien
+        // d'automatique à faire, la section n'existe pas, donc le bouton non plus — un
+        // « Tout préparer » sous une liste de gestes humains ne promettrait rien.
         let ordered = probs.filter { $0.parts.isEmpty } + probs.filter { !$0.parts.isEmpty }
-        var groups: [String] = []
-        for p in ordered where !groups.contains(p.group) { groups.append(p.group) }
-        for group in groups {
-            if !group.isEmpty { menu.addItem(sectionHead(group)) }
-            for p in ordered where p.group == group {
-                let missing = p.parts.filter { !$0.ok }
-                // La ligne ne porte plus QUE le nom du check (2026-08-20) : le détail la
-                // faisait déborder, et macOS tronquait — en coupant justement la fin, donc
-                // l'explication. Il vit désormais dans l'info-bulle SEULE, où rien ne le
-                // tronque.
-                var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shorten(p.label, menuTitleBudget - 8))"
-                // 🔧 = le bouton sait le faire ; ✋ = la ligne ouvre la porte, le geste
-                // reste à toi. Deux symboles pour deux natures d'action, dans la liste
-                // comme dans le récapitulatif — ils se comptent l'un l'autre.
-                if let rem = p.remedy { title += "   \(p.manual ? "✋" : "🔧") \(shorten(rem, 24))" }
-                // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte :
-                // une ligne sans action, macOS la grise — or c'est la lisibilité qu'on
-                // vient chercher.
-                let mi = NSMenuItem(title: title,
-                                    action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
-                                    keyEquivalent: "")
-                mi.target = self; mi.representedObject = p.key
-                mi.indentationLevel = group.isEmpty ? 0 : 1
-                // L'info-bulle ne tronque rien et va à la ligne : c'est là que vit le
-                // texte complet du moteur, « → les jouer une fois… » compris.
-                mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label)\n\(p.detail)"
-                menu.addItem(mi)
-                // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et
-                // rien à cliquer — d'où des lignes indentées sous leur check, sans action.
-                // Plusieurs par ligne : à huit gestes, une ligne chacun faisait à lui seul
-                // la moitié du menu, pour deux mots par ligne.
-                for row in packed(missing.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" },
-                                  width: menuTitleBudget - 4) {
-                    let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
-                    sub.indentationLevel = mi.indentationLevel + 1; sub.isEnabled = false
-                    sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
-                    menu.addItem(sub)
-                }
-            }
-        }
-        // UN SEUL geste, et seulement s'il y a lieu (2026-08-22, demande de Benoît).
-        // « Tout préparer » lance les apps PUIS applique tous les correctifs : « Lancer
-        // tous les correctifs » était donc un sous-ensemble du bouton d'à côté — deux
-        // noms, deux portées, une seule décision. Fusionnés. Et sur un rig déjà vert, la
-        // ligne disparaît : proposer de préparer ce qui est prêt, c'est inviter à un
-        // geste qui ne peut que déranger (il relance des apps et range des fenêtres).
-        if !problems.isEmpty {
-            let auto = problems.filter { $0.remedy != nil && !$0.manual }.count
-            let hand = problems.count - auto
-            // Isolé entre deux séparateurs et en gras (2026-08-22) : posé à la suite de la
-            // liste, il se lisait comme une ligne de problème de plus et se perdait sous
-            // les gestes indentés du soundcheck. Un geste ne doit pas avoir l'air d'un
-            // constat.
-            menu.addItem(.separator())
-            // Ce que le bouton peut VRAIMENT faire, écrit avant qu'on le clique : une
-            // partie des lignes rouges ne se règle pas depuis ici (l'autorisation macOS
-            // se donne dans les Réglages Système, les gestes du soundcheck se jouent, une
-            // lampe éteinte s'allume). Annoncer « tout » sans le dire, c'est la promesse
-            // verte du 22/08 qui recouvrait un silence total.
-            var recap: [String] = []
-            if auto > 0 { recap.append(String(format: T("menu.recap.auto", "🔧 %d fixable here"), auto)) }
-            if hand > 0 { recap.append(String(format: T("menu.recap.hand", "✋ %d up to you"), hand)) }
-            let line = NSMenuItem(title: recap.joined(separator: "   ·   "), action: nil, keyEquivalent: "")
-            line.isEnabled = false; menu.addItem(line)
-            let go = NSMenuItem(title: T("menu.prepare", "✨ Prepare everything"),
-                                action: #selector(prepareAll), keyEquivalent: "")
+        let fixable = ordered.filter { $0.remedy != nil && !$0.manual }
+        let byHand  = ordered.filter { $0.remedy == nil || $0.manual }
+
+        if fixable.isEmpty {
+            // « Rien à réparer » se DIT, sinon la section disparaît sans qu'on sache si
+            // elle est vide ou si le menu a oublié quelque chose — et c'est la bonne
+            // nouvelle du soir : tout ce qui pouvait se régler tout seul l'est déjà.
+            let none = NSMenuItem(title: T("menu.autoOk", "✅ Automatic settings are fine"),
+                                  action: nil, keyEquivalent: "")
+            none.isEnabled = false; menu.addItem(none)
+        } else {
+            menu.addItem(sectionHead(T("menu.sec.fixable", "Fixable automatically")))
+            for p in fixable { addProblem(menu, p) }
+            // Le bouton PORTE SON COMPTE (2026-08-22, demande de Benoît) : « Tout
+            // préparer » avait l'air d'un geste à faire même quand il n'avait rien à
+            // faire. « Réparer 2 points » dit ce qui va se passer, et le fait qu'il
+            // n'apparaisse plus du tout quand ce compte tombe à zéro n'est alors plus
+            // une disparition mystérieuse mais la suite logique.
+            let label = String(format: fixable.count == 1 ? T("menu.fixOne", "✨ Fix %d point")
+                                                          : T("menu.fixN", "✨ Fix %d points"),
+                               fixable.count)
+            let go = NSMenuItem(title: label, action: #selector(prepareAll), keyEquivalent: "")
             go.target = self
-            go.attributedTitle = NSAttributedString(
-                string: T("menu.prepare", "✨ Prepare everything"),
-                attributes: [.font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
+            // Indenté avec les lignes qu'il répare, et en gras : un geste, sous ce qu'il
+            // fait. Posé hors section, il se lisait comme un constat de plus (22/08).
+            go.indentationLevel = 1
+            go.attributedTitle = NSAttributedString(string: label, attributes: [
+                .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
             go.toolTip = T("menu.prepare.tip", """
                            Launches the rig apps, opens the set, tidies the windows, then applies \
                            every fix it can — and re-checks everything. The ✋ lines stay yours to do.
                            """)
             menu.addItem(go)
+        }
+
+        if !byHand.isEmpty {
+            menu.addItem(.separator())
+            menu.addItem(sectionHead(String(format: T("menu.sec.byHand", "Up to you (%d)"),
+                                            byHand.count)))
+            for p in byHand { addProblem(menu, p) }
         }
         menu.addItem(.separator())
 
@@ -1130,6 +1099,49 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Menu helper -------------------------------------------------------
+    /// Une ligne de problème, telle qu'elle apparaît dans l'une ou l'autre section.
+    /// Extraite le 2026-08-22 quand la liste s'est scindée en deux : le même rendu des
+    /// deux côtés est la seule chose qui permette de comparer les deux colonnes d'un
+    /// coup d'œil.
+    private func addProblem(_ menu: NSMenu, _ p: Problem) {
+        // Le domaine en préfixe GRIS plutôt qu'en intertitre : il dit de quoi ça parle
+        // sans consommer une ligne de menu, et sans concurrencer la question qui structure
+        // désormais le menu — qui doit bouger.
+        let dot = p.status == "fail" ? "🔴" : "🟠"
+        let lead = p.group.isEmpty ? "" : "\(p.group) · "
+        // Le titre ne porte plus que le nom du check : le détail débordait et macOS le
+        // tronquait par la fin, donc par l'explication. Il vit dans l'info-bulle, où rien
+        // ne le coupe.
+        var title = "\(dot) \(lead)\(shorten(p.label, menuTitleBudget - lead.count - 8))"
+        // 🔧 = le bouton sait le faire ; ✋ = la ligne ouvre la porte, le geste reste à toi.
+        if let rem = p.remedy { title += "   \(p.manual ? "✋" : "🔧") \(shorten(rem, 22))" }
+        // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : macOS
+        // grise une ligne sans action, or c'est la lisibilité qu'on vient chercher.
+        let mi = NSMenuItem(title: title,
+                            action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
+                            keyEquivalent: "")
+        mi.target = self; mi.representedObject = p.key
+        mi.indentationLevel = 1
+        if !lead.isEmpty {
+            let a = NSMutableAttributedString(string: title)
+            a.addAttribute(.foregroundColor, value: NSColor.secondaryLabelColor,
+                           range: NSRange(location: dot.count + 1, length: lead.count))
+            mi.attributedTitle = a
+        }
+        mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label)\n\(p.detail)"
+        menu.addItem(mi)
+        // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien à
+        // cliquer — d'où des lignes indentées sous leur check, sans action. Plusieurs par
+        // ligne : à huit gestes, une ligne chacun faisait la moitié du menu pour deux mots.
+        for row in packed(p.parts.filter { !$0.ok }.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" },
+                          width: menuTitleBudget - 4) {
+            let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
+            sub.indentationLevel = 2; sub.isEnabled = false
+            sub.toolTip = T("menu.gestureHint", "Play it once — the check is passive, nothing to tick")
+            menu.addItem(sub)
+        }
+    }
+
     /// L'intertitre d'un domaine : petit, gris, non cliquable — il structure sans
     /// prétendre être une action. Les groupes viennent du moteur, donc ils portent déjà
     /// les mots du dashboard.
