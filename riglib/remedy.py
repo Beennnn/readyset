@@ -22,6 +22,12 @@ from . import apps, launch, liveaudio, vpn
 class Remedy:
     label: str                                  # button text, e.g. "Relancer Bome"
     run: Callable[[bool], tuple[bool, str]]     # run(dry_run) -> (ok, message)
+    # Ce remède RÈGLE-t-il le problème, ou ouvre-t-il seulement la porte à un geste
+    # humain ? « Ouvrir le réglage Accessibilité » réussit toujours — il ouvre un
+    # panneau — et le check reste rouge derrière : seul un humain peut cocher la case.
+    # Sans cette distinction, une surface qui compte les remèdes annonce « 1 réglable
+    # ici » pour quelque chose qu'elle ne sait pas régler.
+    hands_on: bool = False
 
 
 def _launch_app(path: str, dry: bool) -> tuple[bool, str]:

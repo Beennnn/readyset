@@ -82,6 +82,12 @@ struct Problem {
     /// `/api/state` les donne. Vide pour un check ordinaire. L'icône illustre le geste
     /// à faire et se lit avant le mot ; elle peut être absente.
     let parts: [(name: String, ok: Bool, icon: String)]
+    /// Le remède ne fait qu'OUVRIR la porte — le geste reste humain (l'autorisation
+    /// d'accessibilité s'accorde dans les Réglages Système, et rien d'autre ne peut la
+    /// donner). Un remède pareil réussit toujours et laisse le check rouge : le compter
+    /// parmi « ce que le bouton sait régler » serait un mensonge de plus au moment où
+    /// on cherche justement à savoir ce qui restera à faire.
+    let manual: Bool
 }
 
 // ---------------------------------------------------------------------------
@@ -344,7 +350,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                             key: (it["key"] as? String) ?? "", label: (it["label"] as? String) ?? "?",
                             status: st, detail: (it["detail"] as? String) ?? "",
                             glyph: (it["glyph"] as? String) ?? "•", remedy: it["remedy"] as? String,
-                            parts: parts))
+                            parts: parts, manual: (it["manual"] as? Bool) ?? false))
                     }
                     probs.sort { (($0.status == "fail" ? 0 : 1), $0.label) < (($1.status == "fail" ? 0 : 1), $1.label) }
                 }
@@ -380,7 +386,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    @objc func fixAll() { for p in problems where p.remedy != nil { runFix(p.key) } }
 
     // ---- Menu-bar glyph ----------------------------------------------------
     private func applyGlyph() {
@@ -436,10 +441,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         summary.font = .systemFont(ofSize: 14, weight: .bold); summary.textColor = .white
         bar.stack.addArrangedSubview(summary)
 
-        if problems.contains(where: { $0.remedy != nil }) {
-            bar.stack.addArrangedSubview(barButton("bolt.fill", "Tout corriger",
-                                                   "Lancer tous les correctifs", #selector(fixAll), green: true))
-        }
+        // Le MÊME geste unique que le menu (2026-08-22) : deux surfaces qui proposaient
+        // deux verbes et deux portées, c'était une hésitation de plus au moment où il en
+        // faut zéro. La barre ne s'affiche que quand ça cloche — la condition est acquise.
+        bar.stack.addArrangedSubview(barButton("wand.and.stars", "Tout préparer",
+                                               "Lancer les apps, appliquer tous les correctifs, re-vérifier",
+                                               #selector(prepareAll), green: true))
         bar.stack.addArrangedSubview(barButton("arrow.up.forward.square", nil,
                                                T("pill.openWeb", "Open the web dashboard (details)"), #selector(open)))
         bar.stack.addArrangedSubview(barButton("list.bullet", nil,
@@ -617,12 +624,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
         // action resterait grisé — et macOS masque alors sa flèche.
         mode.submenu = sub; mode.isEnabled = true; menu.addItem(mode)
-        menu.addItem(.separator())
 
-        add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll))
-
-        // Puis le détail, juste au-dessus de Réglages/Quitter : une ligne par problème,
-        // son correctif dans le titre — cliquer la ligne le lance.
+        // CE QUI RESTE À PRÉPARER D'ABORD, le geste qui le fera ensuite (2026-08-22) :
+        // une ligne par problème, son correctif dans le titre — cliquer la ligne le lance.
+        // Le bouton était au-dessus ; on le lisait donc avant de savoir s'il y avait lieu
+        // de le cliquer, et il restait proposé sur un rig déjà prêt.
         menu.addItem(.separator())
         let probs = Pref.on(Pref.warnings, default: true) ? problems : problems.filter { $0.status == "fail" }
         if probs.isEmpty {
@@ -641,7 +647,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // tronque. Les icônes des manquants sont parties avec : 24 caractères pour
             // répéter la liste packée qui les donne AVEC leur nom, deux lignes plus bas.
             var title = "\(p.status == "fail" ? "🔴" : "🟠") \(shorten(p.label, menuTitleBudget - 4))"
-            if let rem = p.remedy { title += "   🔧 \(shorten(rem, 24))" }
+            // 🔧 = le bouton sait le faire ; ✋ = la ligne ouvre la porte, le geste reste
+            // à toi. Deux symboles pour deux natures d'action, dans la liste comme dans
+            // le récapitulatif juste en dessous — ils se comptent l'un l'autre.
+            if let rem = p.remedy { title += "   \(p.manual ? "✋" : "🔧") \(shorten(rem, 24))" }
             // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : une
             // ligne sans action, macOS la grise — or c'est la lisibilité qu'on vient chercher.
             if !missing.isEmpty { menu.addItem(.separator()) }
@@ -664,8 +673,30 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 menu.addItem(sub)
             }
         }
-        if probs.contains(where: { $0.remedy != nil }) {
-            add(menu, T("menu.fixAll", "⚡ Run every fix"), #selector(fixAll))
+        // UN SEUL geste, et seulement s'il y a lieu (2026-08-22, demande de Benoît).
+        // « Tout préparer » lance les apps PUIS applique tous les correctifs : « Lancer
+        // tous les correctifs » était donc un sous-ensemble du bouton d'à côté — deux
+        // noms, deux portées, une seule décision. Fusionnés. Et sur un rig déjà vert, la
+        // ligne disparaît : proposer de préparer ce qui est prêt, c'est inviter à un
+        // geste qui ne peut que déranger (il relance des apps et range des fenêtres).
+        if !problems.isEmpty {
+            let auto = problems.filter { $0.remedy != nil && !$0.manual }.count
+            let hand = problems.count - auto
+            // Ce que le bouton peut VRAIMENT faire, écrit avant qu'on le clique : une
+            // partie des lignes rouges ne se règle pas depuis ici (l'autorisation macOS
+            // se donne dans les Réglages Système, les gestes du soundcheck se jouent, une
+            // lampe éteinte s'allume). Annoncer « tout » sans le dire, c'est la promesse
+            // verte du 22/08 qui recouvrait un silence total.
+            var recap: [String] = []
+            if auto > 0 { recap.append(String(format: T("menu.recap.auto", "🔧 %d fixable here"), auto)) }
+            if hand > 0 { recap.append(String(format: T("menu.recap.hand", "✋ %d up to you"), hand)) }
+            let line = NSMenuItem(title: recap.joined(separator: "   ·   "), action: nil, keyEquivalent: "")
+            line.isEnabled = false; menu.addItem(line)
+            add(menu, T("menu.prepare", "✨ Prepare everything"), #selector(prepareAll),
+                tip: T("menu.prepare.tip", """
+                       Launches the rig apps, opens the set, tidies the windows, then applies \
+                       every fix it can — and re-checks everything. The ✋ lines stay yours to do.
+                       """))
         }
         menu.addItem(.separator())
 
@@ -1071,8 +1102,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Menu helper -------------------------------------------------------
-    private func add(_ menu: NSMenu, _ title: String, _ sel: Selector) {
-        let mi = NSMenuItem(title: title, action: sel, keyEquivalent: ""); mi.target = self; menu.addItem(mi)
+    /// `tip` : ce que le geste fait vraiment, là où rien ne le tronque — un titre de menu,
+    /// macOS le coupe, et c'est toujours la fin qui saute, donc la nuance.
+    private func add(_ menu: NSMenu, _ title: String, _ sel: Selector, tip: String? = nil) {
+        let mi = NSMenuItem(title: title, action: sel, keyEquivalent: ""); mi.target = self
+        mi.toolTip = tip
+        menu.addItem(mi)
     }
 }
 
