@@ -23,7 +23,6 @@
 
 /* --- Menu de l'icône --- */
 "menu.dashboard"    = "🌐 Ouvrir le dashboard";
-"menu.fixAll"       = "⚡ Lancer tous les correctifs";
 "menu.detail"       = "🔍 Voir le détail des problèmes…";
 "menu.refresh"      = "↻ Rafraîchir maintenant";
 "menu.refreshShort" = "↻ Rafraîchir";
@@ -66,6 +65,9 @@
 "mode.resolvedUnknown" = "→ mode non prouvé";
 "mode.resolvedHint"    = "C\'est Auto qui l\'a choisi — les trois entrées au-dessus le forcent à la place";
 "menu.prepare"     = "✨ Tout préparer";
+"menu.prepare.tip" = "Lance les applis du rig, ouvre le set, range les fenêtres, puis applique tous les correctifs qu'il peut — et re-vérifie tout. Les lignes ✋ restent à ta main.";
+"menu.recap.auto"  = "🔧 %d réglable(s) ici";
+"menu.recap.hand"  = "✋ %d à faire toi-même";
 "menu.charge"      = "🔋 Confirmer que l'iPhone charge";
 "menu.quitOthers"  = "🧹 Quitter les autres applis…";
 "sd.cut"         = "Couper";
