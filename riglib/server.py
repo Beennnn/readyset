@@ -229,6 +229,10 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
             # porter sur DEUX objets — « Bome Network ↔ iPhone » en montre les deux.
             "icons": gear.icons_for(cfg, r.key, r.label),
             "remedy": rem.label if (rem and r.status != checks.OK) else None,
+            # Le remède ouvre-t-il seulement la porte ? Les surfaces qui RÉSUMENT ce
+            # qu'un bouton va faire ont besoin de la nuance : sans elle, le menu-barre
+            # compte « Ouvrir le réglage Accessibilité » parmi ce qu'il sait régler.
+            "manual": bool(rem and rem.hands_on and r.status != checks.OK),
         })
     status = checks.worst(results)
     return {
