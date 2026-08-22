@@ -65,6 +65,11 @@
 "mode.resolvedUnknown" = "→ mode non prouvé";
 "mode.resolvedHint"    = "C\'est Auto qui l\'a choisi — les trois entrées au-dessus le forcent à la place";
 "menu.prepare"     = "✨ Tout préparer";
+"menu.sec.fixable" = "Réparable automatiquement";
+"menu.sec.byHand"  = "À faire toi-même (%d)";
+"menu.fixOne"      = "✨ Réparer %d point";
+"menu.fixN"        = "✨ Réparer %d points";
+"menu.autoOk"      = "✅ Réglages auto ok";
 "menu.prepare.tip" = "Lance les applis du rig, ouvre le set, range les fenêtres, puis applique tous les correctifs qu'il peut — et re-vérifie tout. Les lignes ✋ restent à ta main.";
 "menu.recap.auto"  = "🔧 %d réglable(s) ici";
 "menu.recap.hand"  = "✋ %d à faire toi-même";
