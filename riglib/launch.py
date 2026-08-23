@@ -79,7 +79,10 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         log("  (ouverture du set désactivée : [set].open_after_launch = false)")
         return
     project = cfg["set"]["project"]
-    app = cfg["set"]["ableton_app"]
+    # Deux noms de clé pour la même chose — voir windows.rig_apps() pour l'histoire.
+    # Ne lire que `ableton_app` faisait retomber sur le défaut codé en dur, qui pointe
+    # vers une install d'Ableton absente de cette machine : le set ne s'ouvrait pas.
+    app = cfg["set"].get("app") or cfg["set"]["ableton_app"]
     if dry_run:
         pe = "" if Path(project).exists() else "  (set introuvable !)"
         ae = "" if Path(app).exists() else "  (Ableton introuvable !)"
