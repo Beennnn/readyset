@@ -26,7 +26,7 @@ from datetime import datetime
 
 import mido
 
-from . import apps, vpn
+from . import apps, sysload, vpn
 
 # Quatre niveaux, du plus calme au plus grave. INFO est SOUS l'avertissement : il dit
 # « absent, et c'est normal » — un équipement facultatif qu'on n'a simplement pas branché
@@ -903,6 +903,113 @@ def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
             for a in apps.unexpected(cfg)]
 
 
+# ─────────────────────────── Charge système ───────────────────────────
+#
+# Trois checks, et l'ordre entre eux n'est pas décoratif : il dit la causalité.
+#
+# La mémoire d'abord, parce que c'est elle qui tombe en premier et qui fait tomber le
+# reste. Mesuré le 2026-08-23 sur un set qui « faisait exploser le CPU » : Live à 61 %
+# d'un cœur — rien — mais 119 Mo de RAM libre sur 32 Go, 8 Go de swap sur 9,2, et par
+# ricochet coreaudiod à 92 % et WindowServer à 93 %. Le CPU n'était pas la panne, il
+# en était le bruit. Un rig qui ne surveille que le CPU regarde la fumée, pas le feu.
+#
+# La charge ensuite, comme confirmation : un load average par cœur qui s'envole SANS
+# pression mémoire pointe ailleurs (un rendu, une indexation, une synchro).
+#
+# Les gloutons en dernier, parce que ce sont eux qu'on peut réellement fermer — et
+# c'est le seul des trois qui porte un bouton.
+
+
+def _load_cfg(cfg: dict) -> dict:
+    return cfg.get("checks", {}).get("load", {}) or {}
+
+
+def check_memory(cfg: dict, mode: str) -> Result | None:
+    """Pression mémoire et swap — la vraie cause des « CPU qui explosent »."""
+    sev = cfg["modes"][mode].get("memory_severity", FAIL if mode == "live" else WARN)
+    if sev == OFF:
+        return None
+
+    lc = _load_cfg(cfg)
+    swap_warn = float(lc.get("swap_warn_pct", 60))
+    swap_fail = float(lc.get("swap_fail_pct", 90))
+
+    snap = sysload.snapshot(cfg)
+    swap_pct = snap.swap_pct
+    used_gb, total_gb = snap.swap_used_mb / 1024, snap.swap_total_mb / 1024
+    detail = (f"pression {snap.pressure_label} · swap {used_gb:.1f}/{total_gb:.1f} Go "
+              f"({swap_pct:.0f} %)")
+
+    critical = snap.pressure == sysload._PRESSURE_CRITICAL or swap_pct >= swap_fail
+    elevated = snap.pressure == sysload._PRESSURE_WARN or swap_pct >= swap_warn
+
+    if critical:
+        return Result("sys:mem", "Mémoire", sev,
+                      _hint(detail, "le thread audio pagine — ferme les gloutons ci-dessous"))
+    if elevated:
+        # Jamais au-dessus de WARN quand ce n'est qu'« élevé » : la pression monte
+        # naturellement sur une machine qui travaille, et un rouge à chaque set
+        # apprendrait surtout à ne plus lire les rouges.
+        return Result("sys:mem", "Mémoire", WARN,
+                      _hint(detail, "ça tient, mais la marge est fine"))
+    return Result("sys:mem", "Mémoire", OK, detail)
+
+
+def check_load(cfg: dict, mode: str) -> Result | None:
+    """Load average rapporté au nombre de cœurs.
+
+    Rapporté au nombre de cœurs, sinon le chiffre ne veut rien dire : 8 est confortable
+    sur 10 cœurs et catastrophique sur 2. C'est un check de CONFIRMATION — il ne dit
+    jamais quoi faire, il dit si la machine peine, et croisé avec la mémoire il dit
+    laquelle des deux est en cause.
+    """
+    sev = cfg["modes"][mode].get("load_severity", WARN)
+    if sev == OFF:
+        return None
+
+    lc = _load_cfg(cfg)
+    warn_at = float(lc.get("load_warn_per_cpu", 2.0))
+    fail_at = float(lc.get("load_fail_per_cpu", 4.0))
+
+    snap = sysload.snapshot(cfg)
+    per_cpu = snap.load_per_cpu
+    if per_cpu is None:
+        return Result("sys:load", "Charge", INFO, "load average illisible")
+
+    detail = f"{snap.load1:.0f} sur {snap.cpus} cœurs ({per_cpu:.1f}/cœur)"
+    if per_cpu >= fail_at:
+        return Result("sys:load", "Charge", sev,
+                      _hint(detail, "la machine est saturée — regarde la mémoire d'abord"))
+    if per_cpu >= warn_at:
+        return Result("sys:load", "Charge", WARN, detail)
+    return Result("sys:load", "Charge", OK, detail)
+
+
+def check_ram_hogs(cfg: dict, mode: str) -> list[Result]:
+    """Apps non nécessaires au rig qui tiennent beaucoup de mémoire.
+
+    Distinct de `check_unexpected_apps`, qui compte les apps OUVERTES : ici on pèse.
+    Une app peut être tolérée par la liste d'exceptions et rester le problème parce
+    qu'elle tient neuf giga — c'était exactement le cas de Chrome le 2026-08-23.
+
+    Une ligne par app, chacune avec son bouton, comme pour les apps en trop : « 3 apps
+    lourdes » ne se clique pas, « Quitter Chrome (9,3 Go) » si.
+    """
+    default = WARN if mode == "live" else INFO
+    sev = cfg["modes"][mode].get("ram_hogs_severity", default)
+    if sev == OFF:
+        return []
+
+    lc = _load_cfg(cfg)
+    threshold = float(lc.get("hog_mb", 1500))
+    out = []
+    for a in sysload.hogs(cfg, min_mb=threshold):
+        gb = a["mb"] / 1024
+        out.append(Result(key=f"ramhog:{a['name']}", label=a["name"], status=sev,
+                          detail=f"{gb:.1f} Go de mémoire, et le rig n'en a pas besoin"))
+    return out
+
+
 def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
             manual: dict | None = None, phone: dict | None = None) -> list[Result]:
     manual = manual or {}
@@ -913,6 +1020,8 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += check_lamps(cfg, mode)
     results += [check_bome_iphone(cfg), check_vpn(cfg)]
     results += check_unexpected_apps(cfg, mode)
+    results += [check_memory(cfg, mode), check_load(cfg, mode)]
+    results += check_ram_hogs(cfg, mode)
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")),
                                     phone=phone)]

@@ -118,6 +118,28 @@ ignore = []
 # macOS relaunches it anyway.
 allow = ["Finder"]
 
+# --- system load: on a Mac, an "exploding CPU" is almost always a memory failure ------
+#
+# Measured on this rig on 2026-08-23, on a set that felt like the CPU was maxed out:
+# Live was using 61% of ONE core out of ten — nothing — while coreaudiod sat at 92%,
+# WindowServer at 93%, load average at 94, and 119 MB of RAM were free out of 32 GB,
+# with 8 GB of a 9.2 GB swap in use. The chain runs backwards from the intuition:
+#
+#     RAM runs out → macOS compresses, then pages to SSD → every memory access from
+#     the audio thread may trigger a decompression or a disk read → the thread misses
+#     its deadline → coreaudiod burns CPU trying to hold the buffer → we blame the CPU.
+#
+# So these checks weigh MEMORY first, load second, and never pretend to measure "Live's
+# CPU", which means nothing on its own. Set any of the severities to "off" to skip.
+[checks.load]
+swap_warn_pct = 60          # swap in use above this → warn: the margin is thin
+swap_fail_pct = 90          # above this the audio thread is paging — it will glitch
+load_warn_per_cpu = 2.0     # load average divided by core count
+load_fail_per_cpu = 4.0
+# A non-rig app has to weigh at least this much before it gets its own line and its own
+# "Quit" button. Below it, closing things is fussing rather than fixing.
+hog_mb = 1500
+
 # --- windows: everything RUNS, only the DAW is SEEN ----------------------------------
 # The rig apps (MIDI router, deck software, backing-track player) must run — they carry
 # the routing, the buttons and the tracks — but their windows are noise on a stage
@@ -148,9 +170,15 @@ iphone_power_severity = "fail"
 # un rig jamais joué n'est pas un rig vérifié. "off" pour ne pas l'exiger.
 soundcheck_severity = "fail"
 network_severity = "fail"   # covers BOTH stage_network and modem_host — same question
+memory_severity = "fail"    # paging on stage = audible dropouts, not a nuance
+load_severity = "warn"      # confirmation, not a verdict — see [checks.load]
+ram_hogs_severity = "warn"
 # (Mac plugged but battery still draining = always FAIL, both modes.)
 
 [modes.studio]
+memory_severity = "warn"    # at the desk, a browser eating RAM is a nuisance, not a fault
+load_severity = "warn"
+ram_hogs_severity = "info"
 keyboard_ok   = ["Piano"]
 keyboard_warn = ["microKey"]
 live_output   = ["MacBook", "USB Audio"]
