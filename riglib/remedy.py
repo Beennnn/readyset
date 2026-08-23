@@ -126,6 +126,18 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                           lambda dry: _launch_app(net, dry))
         return None
 
+    # Autorisation d'accessibilité : personne ne peut la donner à la place de l'humain —
+    # macOS exige le clic dans les Réglages Système, c'est le point même de la protection.
+    # Le correctif ouvre donc la BONNE page (deux niveaux de sous-menu, cherchés de tête
+    # sinon) et dit le geste qui reste. C'est le seul remède du lot qui ne répare rien
+    # lui-même, et il gagne quand même sa place : ce qu'il fait gagner, c'est de ne pas
+    # chercher où cliquer cinq minutes avant de jouer.
+    if key == "sys:accessibility":
+        # hands_on : l'autorisation se donne dans les Réglages Système, à la main, et
+        # ne prend effet qu'au RELANCEMENT du service — deux gestes qu'aucun correctif
+        # ne peut faire à la place de l'utilisateur.
+        return Remedy("Ouvrir le réglage Accessibilité", _open_accessibility_pane, hands_on=True)
+
     # Amphetamine: launch it if needed, then start an anti-sleep session.
     if key == "sys:amphetamine":
         return Remedy("Démarrer session Amphetamine", _amphetamine_session)
@@ -150,6 +162,18 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
     # Audio interface = hardware, and Live's output device is set inside Ableton —
     # nothing to relaunch here.
     return None
+
+
+def _open_accessibility_pane(dry: bool) -> tuple[bool, str]:
+    url = "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
+    todo = ("cocher le processus qui lance le dashboard, puis relancer l'agent : "
+            "launchctl kickstart -k gui/$UID/com.readyset.dashboard")
+    if dry:
+        return True, f"[dry-run] ouvrirait Réglages › Accessibilité — {todo}"
+    r = subprocess.run(["open", url], capture_output=True, text=True)
+    if r.returncode != 0:
+        return False, r.stderr.strip() or "ouverture des Réglages impossible"
+    return True, f"Réglages ouverts — {todo}"
 
 
 def _amphetamine_session(dry: bool) -> tuple[bool, str]:
