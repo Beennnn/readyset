@@ -27,6 +27,36 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+# macOS refuse de piloter une interface de trois façons différentes, et les trois sortent
+# ici sous forme d'un message AppleScript brut que personne ne peut interpréter à cinq
+# minutes du concert. Elles disent pourtant toutes la même chose : « ce processus-ci n'a
+# pas le droit ». Le 2026-08-22, la mise en place a rendu « 3960:4307: execution error:
+# Erreur dans System Events : osascript n'est pas autorisé à un accès d'aide. (-25211) »
+# — vrai, illisible, et surtout affiché à côté d'un « ✔ » puisque le préflight comptait
+# alors les échecs comme des correctifs appliqués.
+#
+# ⚠️ L'autorisation se donne PAR PROCESSUS APPELANT : un terminal autorisé ne donne rien
+# au service lancé par launchd, qui est un autre processus responsable. C'est exactement
+# le piège tombé le 2026-08-22 — la sortie se réglait à la main depuis un terminal, et le
+# même script échouait depuis le dashboard.
+_DENIED_MARKERS = (
+    "-25211", "accès d’aide", "accès d'aide", "assistive access",   # lecture d'interface
+    "(1002)", "envoyer de saisies", "envoyer des saisies", "send keystrokes",  # envoi de frappes
+    "-1743", "not allowed to send apple events", "envoyer des apple",    # automatisation
+)
+
+DENIED_HINT = ("le service n'a pas le droit de piloter Ableton — cocher le processus qui "
+               "lance le dashboard dans Réglages Système › Confidentialité et sécurité › "
+               "Accessibilité, puis relancer l'agent "
+               "(launchctl kickstart -k gui/$UID/com.readyset.dashboard)")
+
+
+def denied(text: str) -> bool:
+    """Ce message est-il un refus d'autorisation macOS (et pas un vrai échec du réglage) ?"""
+    low = (text or "").lower()
+    return any(m.lower() in low for m in _DENIED_MARKERS)
+
+
 # Cherché par chemin, comme sd-power : le script est installé, pas embarqué. Absent, tout
 # ici rend un message clair — le rig ne dépend pas de lui pour démarrer, il perd seulement
 # la capacité de corriger la sortie tout seul.
@@ -65,6 +95,13 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
         # 60 s est très large pour quelques clics : si on y arrive, c'est que Live ne
         # répond plus à l'accessibilité, pas que l'opération est longue.
         return False, "Live n'a pas répondu (accessibilité bloquée ?)"
-    out = (p.stdout or p.stderr).strip().splitlines()
+    # Les DEUX flux, pas l'un OU l'autre : `live-output` réémet l'erreur brute d'AppleScript
+    # sur stdout ET écrit sa traduction actionnable sur stderr. Prendre `stdout or stderr`
+    # gardait donc systématiquement le message illisible et jetait celui qui sert.
+    out = [l for l in ((p.stdout or "") + "\n" + (p.stderr or "")).splitlines() if l.strip()]
+    joined = "\n".join(out)
+    # code 4 = le script a lui-même reconnu le refus d'accessibilité (voir son README).
+    if p.returncode == 4 or denied(joined):
+        return False, DENIED_HINT
     msg = out[-1] if out else f"code {p.returncode}"
     return p.returncode == 0, msg

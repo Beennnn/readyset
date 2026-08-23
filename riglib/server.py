@@ -13,6 +13,7 @@ import json
 import socket
 import subprocess
 import time
+from pathlib import Path
 import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -415,21 +416,39 @@ class _Handler(BaseHTTPRequestHandler):
                                        or self.cfg.get("mode", {}).get("default", "auto"))
             todo = [r for r in checks.run_all(self.cfg, mode, manual=_MANUAL)
                     if r.status in (checks.FAIL, checks.WARN)]
-            fixed = 0
+            # Compter les TENTATIVES comme des réparations était le pire défaut de cette
+            # action : le 2026-08-22, tous les correctifs d'interface ont été refusés par
+            # macOS (autorisation d'accessibilité manquante) et la mise en place a
+            # néanmoins répondu « 🔧 2 correctif(s) appliqué(s) », ok: true, en vert.
+            # Ableton tournait alors sur « No Device » — silence complet, annoncé comme
+            # un succès. Un rapport qui se trompe dans CE sens-là est pire que pas de
+            # rapport : il empêche d'aller regarder.
+            fixed, failed = 0, []
             for r in todo:
                 rem = remedy.resolve(self.cfg, r)
                 if not rem:
                     continue
                 ok, msg = rem.run(dry)
-                fixed += 1
+                if ok:
+                    fixed += 1
+                else:
+                    failed.append(f"{rem.label} — {msg}")
                 logs.append(f"  {'✔' if ok else '✖'} {rem.label} — {msg}")
-            logs.append(f"  🔧 {fixed} correctif(s) appliqué(s)" if fixed
-                        else "  🔧 aucun correctif automatique à appliquer")
+            if fixed:
+                logs.append(f"  🔧 {fixed} correctif(s) appliqué(s)")
+            elif not failed:
+                logs.append("  🔧 aucun correctif automatique à appliquer")
+            # Le verdict passe EN TÊTE : c'est la première ligne lue, et souvent la seule.
+            if failed:
+                head = [f"⛔ {len(failed)} correctif(s) N'ONT PAS pu être appliqués :"]
+                head += [f"   • {f}" for f in failed]
+                head.append("")
+                logs[:0] = head
 
             # La fermeture des applis en trop n'est PAS ici : elle peut faire perdre un
             # document non enregistré, donc elle garde sa confirmation nommant chaque app.
             # Une action « magique » ne doit rien détruire sans qu'on l'ait vu venir.
-            self._json({"ok": True, "message": "\n".join(logs)})
+            self._json({"ok": not failed, "message": "\n".join(logs)})
         else:
             self._json({"ok": False, "message": "route inconnue"}, code=404)
 
