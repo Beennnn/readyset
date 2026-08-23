@@ -43,9 +43,20 @@ POLICIES = (HIDE, MINIMIZE, KEEP)
 
 
 def rig_apps(cfg: dict) -> list[str]:
-    """Toutes les apps du rig : celles du bring-up + Ableton (qui est à part dans [set])."""
+    """Toutes les apps du rig : celles du bring-up + Ableton (qui est à part dans [set]).
+
+    ⚠️ Deux noms de clé coexistent pour la même chose, et il faut lire les deux.
+    `rig.example.toml` documente `set.ableton_app` ; la config réelle du rig écrit
+    `set.app`. Tant que le code ne lisait que la première, il retombait sur le défaut
+    codé en dur — `Ableton Live 12 Suite.app`, sans le « 3 » de l'install de scène —
+    donc sur un chemin qui n'existe pas sur cette machine. Deux conséquences, toutes
+    deux constatées le 2026-08-23 : Ableton n'était jamais reconnu comme app DU rig,
+    donc il apparaissait dans la liste des « apps en trop » avec un bouton « Quitter »
+    — le geste le plus destructeur du dashboard, offert en un clic pendant un set.
+    Lire les deux clés est le correctif minimal ; aligner la config reste à faire.
+    """
     apps = list(cfg["launch"]["apps"])
-    ableton = cfg["set"].get("ableton_app", "")
+    ableton = cfg["set"].get("app") or cfg["set"].get("ableton_app", "")
     if ableton and ableton not in apps:
         apps.append(ableton)
     return apps
