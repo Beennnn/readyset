@@ -277,6 +277,37 @@ def _tail(path: str, nbytes: int = 200_000) -> str:
         return fh.read().decode("utf-8", "ignore")
 
 
+def _last_line_containing(path: str, needle: str, chunk: int = 256_000) -> str | None:
+    """La DERNIÈRE ligne du fichier qui contient `needle`, cherchée EN REMONTANT.
+
+    Pourquoi pas `_tail` : Live n'écrit « Output Device » qu'au CHANGEMENT, puis des
+    dizaines de milliers de lignes par-dessus pendant qu'il joue. Une fenêtre de fin de
+    taille fixe rate donc la ligne dès qu'une session bavarde est passée derrière — et le
+    check répondait « aucune sortie déclarée dans le journal » (jaune, vague, avec un
+    conseil inutile puisque la sortie AVAIT déjà été réglée un jour) alors que la dernière
+    valeur écrite était « No Device », c'est-à-dire un silence complet à annoncer en rouge.
+    Mesuré le 2026-08-22 : 6,8 Mo de journal, la ligne cherchée à 1,4 Mo de la fin.
+    """
+    needle_b = needle.encode()
+    size = os.path.getsize(path)
+    with open(path, "rb") as fh:
+        pos, carry = size, b""
+        while pos > 0:
+            step = min(chunk, pos)
+            pos -= step
+            fh.seek(pos)
+            lines = (fh.read(step) + carry).split(b"\n")
+            # La première tranche peut avoir coupé une ligne en deux : elle repart au tour
+            # suivant, recollée à ce qui la précède.
+            carry = lines.pop(0)
+            for line in reversed(lines):
+                if needle_b in line:
+                    return line.decode("utf-8", "ignore")
+        if needle_b in carry:
+            return carry.decode("utf-8", "ignore")
+    return None
+
+
 def check_live_output(cfg: dict, mode: str) -> Result:
     """Où sort le son d'Ableton — lu dans son Log.txt, pas demandé à Ableton.
 
@@ -304,14 +335,14 @@ def check_live_output(cfg: dict, mode: str) -> Result:
         return Result("audio:live", label, WARN, "log Ableton introuvable")
     dev, when_iso = None, None
     try:
-        for line in _tail(logs[0]).splitlines():
-            if "Audio In Out: Output Device:" in line:
-                dev = line.split("Output Device:", 1)[1].strip()
-                # Découpe sur « : » SUIVI D'UN ESPACE : l'horodatage en contient trois
-                # sans espace (23:38:16), donc un split sur le premier deux-points rendait
-                # « 2026-08-19T23 » — que fromisoformat accepte sans broncher, en lisant
-                # 23 h pile. L'écart mesuré devenait faux jusqu'à 59 minutes.
-                when_iso = line.split(": ", 1)[0]     # 2026-08-19T23:38:16.911624
+        line = _last_line_containing(logs[0], "Audio In Out: Output Device:")
+        if line:
+            dev = line.split("Output Device:", 1)[1].strip()
+            # Découpe sur « : » SUIVI D'UN ESPACE : l'horodatage en contient trois
+            # sans espace (23:38:16), donc un split sur le premier deux-points rendait
+            # « 2026-08-19T23 » — que fromisoformat accepte sans broncher, en lisant
+            # 23 h pile. L'écart mesuré devenait faux jusqu'à 59 minutes.
+            when_iso = line.split(": ", 1)[0]         # 2026-08-19T23:38:16.911624
     except Exception as exc:
         return Result("audio:live", label, WARN, f"lecture log: {exc}")
     if dev is None:
@@ -322,6 +353,19 @@ def check_live_output(cfg: dict, mode: str) -> Result:
 
     short = dev.split(" (")[0]
     ok = any(w.lower() in dev.lower() for w in wants)
+
+    # « No Device » n'est pas une sortie parmi d'autres : c'est l'absence de sortie, donc
+    # un silence garanti dès la première note. Live le RESTAURE au lancement sans rien
+    # réécrire dans le journal (vérifié le 2026-08-22 : lancé à 16:47, dernière ligne du
+    # 21/08 à 15:40 — et pas un son). Le raisonnement de fraîcheur ci-dessous vaut pour
+    # une sortie plausible qu'on n'a pas pu reconfirmer ; ici il n'y a rien à nuancer,
+    # la dernière volonté connue de Live est « aucun périphérique ». Rouge, et le
+    # correctif règle la sortie.
+    if short.lower().startswith("no device"):
+        stamp = (when_iso or "").replace("T", " ")[:16]
+        return Result("audio:live", label, FAIL,
+                      _hint(f"aucun périphérique de sortie (No Device{', du ' + stamp if stamp else ''})",
+                            "Live ne sortira aucun son tant que ce n'est pas réglé"))
 
     # LA LIGNE EST-ELLE DE CETTE SESSION ? Le Log.txt n'écrit « Output Device » qu'au
     # CHANGEMENT, et le même fichier couvre des mois : une ligne peut donc décrire la
@@ -846,6 +890,71 @@ def check_audio_devices(cfg: dict, mode: str) -> list[Result]:
     return out
 
 
+# Le droit de piloter une interface se demande à macOS, se donne PAR PROCESSUS APPELANT,
+# et peut disparaître à une mise à jour du binaire. On le MESURE donc, comme tout le reste :
+# le sonder coûte ~80 ms, on le garde une minute — il ne change qu'à un clic humain dans
+# les Réglages Système.
+_AX_CACHE: dict = {"at": 0.0, "ok": None, "detail": ""}
+_AX_TTL = 60.0
+
+
+def _accessibility_probe() -> tuple[bool, str]:
+    """Ce processus peut-il lire l'interface d'une AUTRE application ? Mesuré, pas supposé.
+
+    Le geste sondé est volontairement le plus inoffensif qui exerce la même autorisation
+    que les correctifs : compter les fenêtres du Finder. Aucun clic, aucune frappe, rien
+    qui bouge à l'écran — ce check tourne dans la boucle d'état, y compris en plein set.
+
+    ⚠️ macOS sépare la LECTURE d'interface (erreur -25211) de l'ENVOI DE FRAPPES
+    (erreur 1002), et un processus peut tenir la première sans la seconde — observé le
+    2026-08-22. Un vert ici prouve donc que le service est autorisé, pas que chaque geste
+    passera ; c'est pour ça que `liveaudio` retraduit AUSSI le refus au moment de l'appel
+    plutôt que de s'en remettre à ce check.
+    """
+    try:
+        p = subprocess.run(
+            ["osascript", "-e",
+             'tell application "System Events" to tell process "Finder" to count windows'],
+            capture_output=True, text=True, timeout=15,
+        )
+    except subprocess.TimeoutExpired:
+        return False, "System Events n'a pas répondu"
+    if p.returncode == 0:
+        return True, ""
+    lines = [l for l in ((p.stderr or "") + "\n" + (p.stdout or "")).splitlines() if l.strip()]
+    return False, (lines[-1] if lines else f"code {p.returncode}")
+
+
+def check_accessibility(cfg: dict) -> Result:
+    """Le service a-t-il le droit de RÉPARER ? Sans lui, la moitié des correctifs mentent.
+
+    Deux correctifs pilotent une interface : régler la sortie d'Ableton (`live-output`) et
+    ranger les fenêtres. Tous deux passent par `osascript`, donc par l'autorisation
+    d'accessibilité du processus qui les lance — le service launchd, pas le terminal où
+    ça marchait à la main.
+
+    Sans cette ligne, l'absence d'autorisation ne se découvrait qu'à l'instant du besoin,
+    c'est-à-dire pendant la mise en place : la sortie d'Ableton restait sur « No Device »,
+    le message d'erreur brut passait dans un journal que personne ne lit, et le rig se
+    déclarait prêt. Vécu le 2026-08-22, à 16:47. Une capacité non observée est exactement
+    ce que ce tableau existe pour refuser.
+    """
+    now = time.monotonic()
+    if _AX_CACHE["ok"] is None or now - _AX_CACHE["at"] > _AX_TTL:
+        ok, detail = _accessibility_probe()
+        _AX_CACHE.update(at=now, ok=ok, detail=detail)
+    label = "Autorisation de réparer (Accessibilité)"
+    # « à ce processus » et pas « au service » : la ligne dit vrai depuis le dashboard
+    # comme depuis un terminal, et le libellé rappelle au passage que la réponse peut
+    # différer d'un appelant à l'autre — c'est tout le piège.
+    if _AX_CACHE["ok"]:
+        return Result("sys:accessibility", label, OK, "accordée à ce processus")
+    return Result("sys:accessibility", label, FAIL,
+                  _hint(f"refusée à ce processus ({_AX_CACHE['detail']})",
+                        "sans elle, ni la sortie d'Ableton ni le rangement des fenêtres "
+                        "ne peuvent être réglés automatiquement"))
+
+
 def check_default_output(cfg: dict) -> Result:
     """The macOS default sound output must be the Mac itself (built-in), not an
     external / AirPlay / conferencing device."""
@@ -912,6 +1021,7 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += [check_stage_network(cfg, mode)]
     results += check_lamps(cfg, mode)
     results += [check_bome_iphone(cfg), check_vpn(cfg)]
+    results += [check_accessibility(cfg)]
     results += check_unexpected_apps(cfg, mode)
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")),
