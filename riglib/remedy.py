@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import apps, launch, liveaudio, vpn
+from . import apps, launch, liveaudio, sysload, vpn
 
 
 @dataclass
@@ -139,6 +139,26 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
             if a["name"] == name:
                 path = a["path"]
                 return Remedy(f"Quitter {name}", lambda dry: apps.quit_app(path, dry_run=dry))
+        return None
+
+    # App gourmande en mémoire → la fermer. Même geste que « app en trop », autre motif :
+    # ici on ne la ferme pas parce qu'elle est là, mais parce qu'elle tient de la RAM que
+    # le thread audio n'a plus. Le libellé porte le poids — « Quitter Chrome » ne dit pas
+    # pourquoi on cliquerait, « Quitter Chrome (9,3 Go) » si.
+    #
+    # Le chemin vient d'`apps.unexpected()`, jamais du nom seul : c'est ce qui garantit
+    # qu'aucune app DU rig ne peut se retrouver derrière ce bouton, quelle que soit la
+    # façon dont le check l'a nommée.
+    if key.startswith("ramhog:"):
+        name = key.split(":", 1)[1]
+        for a in apps.unexpected(cfg):
+            if a["name"] != name:
+                continue
+            path = a["path"]
+            mb = next((h["mb"] for h in sysload.hogs(cfg, min_mb=0) if h["path"] == path), 0)
+            weight = f" ({mb / 1024:.1f} Go)" if mb else ""
+            return Remedy(f"Quitter {name}{weight}",
+                          lambda dry: apps.quit_app(path, dry_run=dry))
         return None
 
     # VPN actif → le couper. Pas un simple `scutil stop` : voir riglib/vpn.py (l'on-demand
