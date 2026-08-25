@@ -17,7 +17,10 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="$DIR/RigMenuBar.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-swiftc -O "$DIR/rigmenubar.swift" -o "$APP/Contents/MacOS/RigMenuBar"
+# Tous les .swift du dossier, pas seulement rigmenubar.swift : le fichier principal a
+# dépassé les 1 000 lignes, et ce qui a sa propre logique en sort (alarm.swift). Un
+# nouveau fichier est donc compilé sans que ce script ait à être retouché.
+swiftc -O "$DIR"/*.swift -o "$APP/Contents/MacOS/RigMenuBar"
 # Localisations: one .lproj per language, copied verbatim. English needs no file —
 # it is the default value baked into every T() call, so a bundle with zero .lproj
 # still runs, in English. A translation only overrides the keys it defines.

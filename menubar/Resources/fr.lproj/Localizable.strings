@@ -21,6 +21,12 @@
 "menu.gestureHint" = "Le jouer une fois — la vérification est passive, rien à cocher";
 "detail.noFix"     = "Pas de résolution automatique — à corriger à la main.";
 
+/* --- Alarme (quelque chose vient de lâcher) --- */
+"alarm.title"       = "⚠️  QUELQUE CHOSE VIENT DE LÂCHER";
+"alarm.hint"        = "menu 🎹 → Taire l'alarme";
+"menu.silence"      = "🔕 Taire l'alarme";
+"menu.silence.tip"  = "Arrête le clignotement pour ce qui est déjà cassé ; le liseré et la liste restent. Ce qui lâchera ENSUITE clignotera de nouveau.";
+
 /* --- Menu de l'icône --- */
 "menu.dashboard"    = "🌐 Ouvrir le dashboard";
 "menu.detail"       = "🔍 Voir le détail des problèmes…";
@@ -46,6 +52,8 @@
 /* --- Onglet Alertes --- */
 "alerts.warnings.title" = "Afficher les avertissements, pas que les erreurs";
 "alerts.warnings.hint"  = "Sinon seules les erreurs bloquantes (rouge) sont listées ; les avertissements orange restent masqués.";
+"alerts.alarm.title"    = "Faire clignoter l'écran sur une panne nouvelle";
+"alerts.alarm.hint"     = "Quand quelque chose lâche APRÈS que l'écran soit devenu propre — le Mac qui perd son alimentation, un port qui décroche — un bandeau rouge clignote jusqu'à ce que CETTE panne soit réparée. Il n'intercepte jamais un clic, et le menu 🎹 le tait.";
 "alerts.notify.title"   = "Une notification au changement d'état";
 "alerts.notify.hint"    = "Notification macOS quand la gravité empire (vert → orange → rouge), pas à chaque check.";
 "alerts.autofix.title"  = "Corriger automatiquement";
