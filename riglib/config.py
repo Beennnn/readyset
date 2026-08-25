@@ -144,6 +144,9 @@ DEFAULTS: dict = {
             "keyboard_ok": ["Piano"],              # your main keyboard's MIDI port name
             "keyboard_warn": [],
             "live_output": ["Piano"],              # Ableton's audio output device on stage
+            # Réglage HISTORIQUE, gardé pour les rig.toml qui ne connaissent que lui : il
+            # ne sait dire que « vérifié » ou « pas du tout vérifié ». La forme actuelle est
+            # `amphetamine_severity` (fail | warn | info | off) — voir checks.py.
             "require_amphetamine": True,
             "breath_severity": "fail",
             "interface_severity": "fail",
@@ -155,7 +158,7 @@ DEFAULTS: dict = {
             "keyboard_ok": ["Piano"],
             "keyboard_warn": ["microKey"],
             "live_output": ["MacBook", "USB Audio"],
-            "require_amphetamine": False,
+            "require_amphetamine": False,   # historique — cf. amphetamine_severity
             "breath_severity": "warn",
             "interface_severity": "warn",
             "mac_power_severity": "warn",
