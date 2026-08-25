@@ -14,9 +14,10 @@
 //     /api/fix, then the actions). Un panneau translucide tenait ce rôle jusqu'au
 //     2026-08-19 : illisible sur fond clair, et une seconde surface à tenir à jour en
 //     parallèle du menu. Un menu natif est opaque partout et n'existe qu'en un exemplaire.
-//   • Flashing alarm — a pulsing red banner the moment something breaks AFTER the screen
-//     was clean (see alarm.swift). Regression-triggered, click-through, stops when that
-//     failure is fixed; silenced from the menu.
+//   • Flashing alarm — a pulsing red FRAME the moment something breaks AFTER the screen
+//     was clean, around a panel that does NOT blink: type icon, what broke, what to do,
+//     and a ⚡ button that runs the remedy on the spot (see alarm.swift). Regression-
+//     triggered, click-through except on that button, stops when that failure is fixed.
 //   • One notification on change — a single silent banner the moment the status worsens
 //     into a problem (never repeats; stays in Notification Center until dismissed).
 //
@@ -223,7 +224,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var timer: Timer?
     var baseSymbol: NSImage?
     var borders: [(win: NSWindow, view: BorderView)] = []
-    var alarms: [(win: NSWindow, view: AlarmView)] = []
+    var alarms: [(win: NSPanel, view: AlarmView)] = []
     /// Ce qui a lâché depuis la dernière ardoise propre — voir alarm.swift.
     var alarm = AlarmState()
     var pills: [(win: NSPanel, bar: PillBar)] = []
@@ -293,15 +294,24 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let bv = BorderView(frame: NSRect(origin: .zero, size: screen.frame.size))
             bw.contentView = bv; borders.append((bw, bv))
 
-            // L'alarme a sa PROPRE fenêtre plutôt que d'enrichir le liseré : elle clignote,
-            // lui pas, et une animation d'opacité s'applique à toute la fenêtre. Les mêmes
-            // réglages que le liseré — transparente aux clics, au-dessus du plein écran,
-            // présente sur tous les bureaux : rien ne doit pouvoir la cacher ni l'intercepter.
-            let aw = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
-            aw.isOpaque = false; aw.backgroundColor = .clear; aw.hasShadow = false
-            aw.ignoresMouseEvents = true; aw.level = .screenSaver
-            aw.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            // L'alarme a sa PROPRE fenêtre plutôt que d'enrichir le liseré : le cadre y
+            // clignote, le panneau y reste fixe, et elle porte un bouton — trois choses que
+            // le liseré ne fait pas.
+            //
+            // Un PANNEAU NON ACTIVANT, comme la pastille, et pour la même raison : cliquer
+            // « Corriger » ne doit PAS passer Ableton au second plan. Une fenêtre ordinaire
+            // aurait activé l'app à chaque clic — et sur scène, perdre le premier plan
+            // d'Ableton coûte plus cher que la panne qu'on répare.
+            //
+            // `ignoresMouseEvents` reste FAUX (le bouton doit recevoir son clic) : c'est
+            // `hitTest` de la vue qui rend `nil` partout ailleurs, donc tout ce qui n'est pas
+            // le bouton traverse la vitre comme s'il n'y avait rien.
+            let aw = NSPanel(contentRect: screen.frame, styleMask: [.nonactivatingPanel, .borderless],
+                             backing: .buffered, defer: false)
+            configureFloatingPanel(aw)
+            aw.hasShadow = false
             let av = AlarmView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            av.card.onFix = { [weak self] in self?.fixAlarm() }
             aw.contentView = av; alarms.append((aw, av))
 
             let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
@@ -454,8 +464,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard showAlarm && allowedScreen(i) else {
                 a.view.stopPulsing(); a.win.orderOut(nil); continue
             }
-            a.view.labels = alarm.labels
-            a.view.level = alarm.level
+            a.view.show(alarm.items, fixable: alarm.fixable, level: alarm.level)
             a.win.orderFrontRegardless()
             a.view.startPulsing()
         }
@@ -1003,6 +1012,14 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func silenceAlarm() { alarm.silence(); applyOverlay() }
+
+    /// Le bouton du panneau : lance le remède de CHAQUE panne de l'alarme, et d'elles
+    /// seules. Pas `/api/preflight` (« Tout préparer ») — celui-là relance des apps et
+    /// rouvre le set, ce qu'on ne veut pas d'un bouton pressé en plein morceau parce que
+    /// l'alimentation a sauté. On répare ce qui vient de casser, rien de plus.
+    @objc func fixAlarm() {
+        for p in alarm.fixable { runFix(p.key) }
+    }
 
     @objc func refreshNow() { refresh() }
     @objc func open() { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
