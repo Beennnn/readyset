@@ -14,6 +14,9 @@
 //     /api/fix, then the actions). Un panneau translucide tenait ce rôle jusqu'au
 //     2026-08-19 : illisible sur fond clair, et une seconde surface à tenir à jour en
 //     parallèle du menu. Un menu natif est opaque partout et n'existe qu'en un exemplaire.
+//   • Flashing alarm — a pulsing red banner the moment something breaks AFTER the screen
+//     was clean (see alarm.swift). Regression-triggered, click-through, stops when that
+//     failure is fixed; silenced from the menu.
 //   • One notification on change — a single silent banner the moment the status worsens
 //     into a problem (never repeats; stays in Notification Center until dismissed).
 //
@@ -102,6 +105,8 @@ enum Pref {
     static let pill = "pref.floatingPill"
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
+    /// Le clignotement quand quelque chose LÂCHE alors que l'écran était propre (alarm.swift).
+    static let alarm = "pref.alarmFlash"
     /// Coupure d'alimentation du Stream Deck — OFF par défaut, et c'est délibéré : le
     /// port se désigne par un identifiant (« 32-2 2 ») dérivé de l'énumération USB, qui
     /// change dès qu'on rebranche ailleurs. Constaté le 2026-08-19 : le hub est passé du
@@ -218,6 +223,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var timer: Timer?
     var baseSymbol: NSImage?
     var borders: [(win: NSWindow, view: BorderView)] = []
+    var alarms: [(win: NSWindow, view: AlarmView)] = []
+    /// Ce qui a lâché depuis la dernière ardoise propre — voir alarm.swift.
+    var alarm = AlarmState()
     var pills: [(win: NSPanel, bar: PillBar)] = []
     var current: RigStatus = .ok
     var curWarns = 0, curFails = 0
@@ -240,7 +248,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var settingsWin: NSWindow?                    // the classic Settings window
 
-    let url = "http://127.0.0.1:8765"
+    /// L'adresse du moteur. Surchargeable par RIG_URL — c'est ce qui rend une ALERTE
+    /// vérifiable : on la pointe vers un faux moteur qui passe du vert au rouge à la
+    /// demande, au lieu de devoir casser le vrai rig pour voir si le signal part.
+    let url = ProcessInfo.processInfo.environment["RIG_URL"] ?? "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
     var fixURL: String { url + "/api/fix" }
 
@@ -272,6 +283,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // ---- Overlay windows (border + pill per screen) ------------------------
     @objc func rebuildOverlays() {
         borders.forEach { $0.win.orderOut(nil) }; borders.removeAll()
+        alarms.forEach { $0.win.orderOut(nil) }; alarms.removeAll()
         pills.forEach { $0.win.orderOut(nil) }; pills.removeAll()
         for screen in NSScreen.screens {
             let bw = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
@@ -280,6 +292,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             bw.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
             let bv = BorderView(frame: NSRect(origin: .zero, size: screen.frame.size))
             bw.contentView = bv; borders.append((bw, bv))
+
+            // L'alarme a sa PROPRE fenêtre plutôt que d'enrichir le liseré : elle clignote,
+            // lui pas, et une animation d'opacité s'applique à toute la fenêtre. Les mêmes
+            // réglages que le liseré — transparente aux clics, au-dessus du plein écran,
+            // présente sur tous les bureaux : rien ne doit pouvoir la cacher ni l'intercepter.
+            let aw = NSWindow(contentRect: screen.frame, styleMask: .borderless, backing: .buffered, defer: false)
+            aw.isOpaque = false; aw.backgroundColor = .clear; aw.hasShadow = false
+            aw.ignoresMouseEvents = true; aw.level = .screenSaver
+            aw.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+            let av = AlarmView(frame: NSRect(origin: .zero, size: screen.frame.size))
+            aw.contentView = av; alarms.append((aw, av))
 
             let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
                              styleMask: [.nonactivatingPanel, .borderless], backing: .buffered, defer: false)
@@ -374,6 +397,13 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let old = current
         current = status; curWarns = warns; curFails = fails; self.problems = problems
 
+        // Ce que l'alarme surveille : les bloquants toujours, les avertissements seulement
+        // si on a demandé à les voir. Le même réglage commande donc les deux surfaces —
+        // masquer les oranges dans la liste et se les prendre en plein écran serait une
+        // contradiction, et c'est la surface la plus voyante qui perdrait la confiance.
+        let watched = problems.filter { $0.status == "fail" || Pref.on(Pref.warnings, default: true) }
+        alarm.update(status: status, problems: watched)
+
         applyGlyph(); applyOverlay()
         if status.rank > old.rank, status.showsOverlay { maybeNotify() }
         maybeAutoFix()
@@ -415,9 +445,19 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyOverlay() {
         let showBorder = Pref.on(Pref.border, default: true) && current.showsOverlay
         let showPill = Pref.on(Pref.pill, default: true) && current.showsOverlay
+        let showAlarm = Pref.on(Pref.alarm, default: true) && alarm.firing
         for (i, b) in borders.enumerated() {
             b.view.status = current
             if showBorder && allowedScreen(i) { b.win.orderFrontRegardless() } else { b.win.orderOut(nil) }
+        }
+        for (i, a) in alarms.enumerated() {
+            guard showAlarm && allowedScreen(i) else {
+                a.view.stopPulsing(); a.win.orderOut(nil); continue
+            }
+            a.view.labels = alarm.labels
+            a.view.level = alarm.level
+            a.win.orderFrontRegardless()
+            a.view.startPulsing()
         }
         for (i, p) in pills.enumerated() where i < NSScreen.screens.count {
             if showPill && allowedScreen(i) {
@@ -598,6 +638,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         // détails qu'une ligne de menu tronque, le journal, les courbes. Une seule entrée
         // pour la fenêtre web, d'ailleurs : le journal des actions vit dans la même page,
         // donc deux lignes ouvraient exactement la même URL.
+        // L'extinction de l'alarme passe en TÊTE, au-dessus même du dashboard : c'est la
+        // seule entrée qu'on cherche à tâtons pendant que l'écran clignote, et elle
+        // n'existe que dans ce cas-là.
+        if alarm.firing {
+            add(menu, T("menu.silence", "🔕 Silence the alarm"), #selector(silenceAlarm),
+                tip: T("menu.silence.tip",
+                       "Stops the flashing for what is already broken; the border and the "
+                       + "list stay. Anything that breaks LATER flashes again."))
+            menu.addItem(.separator())
+        }
+
         add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
         menu.addItem(.separator())
 
@@ -748,6 +799,12 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 T("alerts.warnings.hint",
                   "Otherwise only blocking errors (red) are listed; orange warnings stay hidden."),
                 Pref.warnings, true, { self.applyOverlay() }),
+            Row("light.beacon.max", T("alerts.alarm.title", "Flash the screen on a new failure"),
+                T("alerts.alarm.hint",
+                  "When something breaks AFTER the screen was clean — the Mac losing power, "
+                  + "a port dropping — a red banner flashes until that failure is fixed. It "
+                  + "never catches a click, and the 🎹 menu silences it."),
+                Pref.alarm, true, { self.applyOverlay() }),
             Row("bell", T("alerts.notify.title", "One notification when the state changes"),
                 T("alerts.notify.hint",
                   "A macOS notification when severity gets worse (green → orange → red), not on every check."),
@@ -944,6 +1001,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         p.arguments = ["bootout", "gui/\(getuid())/com.readyset.menubar"]
         try? p.run()
     }
+
+    @objc func silenceAlarm() { alarm.silence(); applyOverlay() }
 
     @objc func refreshNow() { refresh() }
     @objc func open() { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }
@@ -1163,8 +1222,22 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-let app = NSApplication.shared
-app.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
-let delegate = Delegate()
-app.delegate = delegate
-app.run()
+// Point d'entrée. `@main` plutôt que des instructions au premier niveau : dès qu'on
+// compile plus d'un fichier, Swift ne les accepte QUE dans un fichier nommé `main.swift`
+// — et renommer celui-ci aurait périmé tous les chemins qui le citent (build.sh, les
+// deux CLAUDE.md, le README). Un type @main dit exactement la même chose sous n'importe
+// quel nom de fichier.
+@main
+enum RigMenuBarApp {
+    /// Retenu ici, et pas en variable locale : `NSApplication.delegate` ne possède pas son
+    /// délégué. En local il ne survivait que par accident — `run()` ne rend jamais la main,
+    /// donc la pile ne se dépile pas. Une propriété statique le garantit au lieu de l'espérer.
+    private static let delegate = Delegate()
+
+    static func main() {
+        let app = NSApplication.shared
+        app.setActivationPolicy(.accessory)   // menu bar only, no Dock icon
+        app.delegate = delegate
+        app.run()
+    }
+}
