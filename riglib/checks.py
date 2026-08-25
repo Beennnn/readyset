@@ -226,20 +226,49 @@ def check_breath(cfg: dict, mode: str) -> Result | None:
                   "absent" if sev == FAIL else "absent (optionnel en studio)")
 
 
-def check_amphetamine(cfg: dict) -> Result:
+def _amphetamine_severity(cfg: dict, mode: str) -> str:
+    """Sévérité de l'anti-veille dans ce mode — "fail" sur scène, et ce n'est pas négociable.
+
+    Un Mac qui s'endort au deuxième morceau, c'est le set qui s'arrête : en live, une
+    session Amphetamine absente est une ERREUR, au même titre qu'un clavier débranché.
+    La règle est écrite ici plutôt que déduite d'un booléen pour qu'elle se lise dans la
+    config (`amphetamine_severity = "fail"`) au lieu de se deviner.
+
+    `require_amphetamine` (booléen) reste lu pour les rig.toml qui ne connaissent que lui,
+    mais il ne sait dire que « vérifié » ou « pas vérifié » — d'où le piège qu'il portait :
+    le mettre à false en live ne baissait pas la sévérité, il FAISAIT DISPARAÎTRE la ligne.
+    Un rig sans anti-veille ressemblait alors à un rig sans problème.
+    """
+    m = cfg["modes"].get(mode, {})
+    if "amphetamine_severity" in m:
+        return m["amphetamine_severity"]
+    return FAIL if m.get("require_amphetamine", True) else OFF
+
+
+def check_amphetamine(cfg: dict, mode: str = "live") -> Result | None:
     """Amphetamine must be running AND holding an active anti-sleep session. A live
     session shows up as an '(Amphetamine)' power assertion in `pmset -g assertions`."""
+    sev = _amphetamine_severity(cfg, mode)
+    if sev == OFF:
+        return None
     if not _pgrep("Amphetamine.app/Contents/MacOS/Amphetamine"):
-        return Result("sys:amphetamine", "Amphetamine (anti-veille)", FAIL, "pas lancé")
+        return Result("sys:amphetamine", "Amphetamine (anti-veille)", sev,
+                      _hint("pas lancé", "le Mac s'endormira pendant le set — le lancer, "
+                                         "puis démarrer une session (le bouton le fait)"))
     try:
         out = subprocess.run(["pmset", "-g", "assertions"],
                              capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
+        # On ne SAIT pas : ni vert (rien n'a été observé), ni rouge (rien ne prouve la
+        # panne). L'avertissement est le seul niveau honnête ici.
         return Result("sys:amphetamine", "Amphetamine (anti-veille)", WARN, f"pmset: {exc}")
     active = "(Amphetamine)" in out
     return Result("sys:amphetamine", "Amphetamine (anti-veille)",
-                  OK if active else FAIL,
-                  "session active" if active else "lancé, aucune session active")
+                  OK if active else sev,
+                  "session active" if active
+                  else _hint("lancé, aucune session active",
+                             "l'app tourne mais ne retient rien : démarrer une session "
+                             "anti-veille (le bouton le fait)"))
 
 
 def _process_age(pattern: str) -> float | None:
@@ -1015,7 +1044,6 @@ def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
 def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
             manual: dict | None = None, phone: dict | None = None) -> list[Result]:
     manual = manual or {}
-    m = cfg["modes"][mode]
     results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
     results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
     results += [check_stage_network(cfg, mode)]
@@ -1026,8 +1054,7 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results += [check_mac_power(cfg, mode),
                 check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")),
                                     phone=phone)]
-    if m.get("require_amphetamine", True):
-        results.append(check_amphetamine(cfg))
+    results.append(check_amphetamine(cfg, mode))
     if with_audio:
         results += [check_default_output(cfg), check_audio(cfg, mode)]
         results += check_audio_devices(cfg, mode)
