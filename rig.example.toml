@@ -139,7 +139,11 @@ default = "auto"    # boots live; flips to studio when studio_router answers
 keyboard_ok   = ["Piano"]             # your main keyboard's MIDI port (green if present)
 keyboard_warn = []                    # fallback keyboards (yellow if only these)
 live_output   = ["Piano"]            # Ableton must output here on stage
-require_amphetamine = true
+# Anti-veille : sur scène, un Mac qui s'endort arrête le set — donc "fail", au même
+# titre qu'un clavier débranché. Niveaux : fail | warn | info | off ("off" = la ligne
+# n'apparaît pas). Remplace l'ancien booléen `require_amphetamine`, qui ne pouvait que
+# FAIRE DISPARAÎTRE la ligne — un rig sans anti-veille ressemblait à un rig sans problème.
+amphetamine_severity = "fail"
 breath_severity = "fail"
 interface_severity = "fail"
 mac_power_severity = "fail"
@@ -154,7 +158,7 @@ network_severity = "fail"   # covers BOTH stage_network and modem_host — same 
 keyboard_ok   = ["Piano"]
 keyboard_warn = ["microKey"]
 live_output   = ["MacBook", "USB Audio"]
-require_amphetamine = false
+amphetamine_severity = "off"   # au bureau le Mac peut dormir : la question n'a pas d'objet
 breath_severity = "warn"
 interface_severity = "warn"
 mac_power_severity = "warn"
