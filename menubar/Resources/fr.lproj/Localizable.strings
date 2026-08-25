@@ -22,7 +22,11 @@
 "detail.noFix"     = "Pas de résolution automatique — à corriger à la main.";
 
 /* --- Alarme (quelque chose vient de lâcher) --- */
-"alarm.title"       = "⚠️  QUELQUE CHOSE VIENT DE LÂCHER";
+"alarm.title"       = "QUELQUE CHOSE VIENT DE LÂCHER";
+"alarm.more"        = "+%d autre(s)";
+"alarm.fix"         = "Corriger maintenant";
+"alarm.fixAll"      = "Corriger ces %d maintenant";
+"alarm.manualOnly"  = "Pas de correctif automatique — celle-ci demande tes mains.  ·  menu 🎹 → Taire l'alarme";
 "alarm.hint"        = "menu 🎹 → Taire l'alarme";
 "menu.silence"      = "🔕 Taire l'alarme";
 "menu.silence.tip"  = "Arrête le clignotement pour ce qui est déjà cassé ; le liseré et la liste restent. Ce qui lâchera ENSUITE clignotera de nouveau.";
