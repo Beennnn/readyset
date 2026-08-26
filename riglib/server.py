@@ -20,7 +20,8 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from urllib.parse import parse_qs, urlparse
 
-from . import apps, audiolevel, checks, gear, idevice, launch, midimon, remedy, spectrum, windows
+from . import (apps, audiolevel, cascade, checks, gear, idevice, launch, midimon,
+               remedy, spectrum, windows)
 
 _MON = midimon.MidiMonitor()   # shared live MIDI monitor for the soundcheck page
 
@@ -76,6 +77,28 @@ def _phone_save() -> None:
         _PHONE_FILE.write_text(json.dumps(_PHONE))
     except Exception:
         pass                        # un rapport non persisté vaut mieux qu'un 500
+
+# Le pictogramme de TYPE d'un check. Il ne remplace pas les vignettes de `gear.icons_for`
+# (l'icône macOS réelle, le dessin de l'appareil) : celles-là se servent en HTTP et n'ont
+# pas de sens là où l'on ne peut pas charger d'image — le panneau d'alarme est dessiné en
+# AppKit et n'affichait, faute de mieux, qu'une puce « • » sur chacune de ses lignes.
+# D'abord la clé exacte, ensuite le préfixe : l'alimentation du Mac mérite sa prise, et
+# elle vit dans le même « sys: » que le VPN.
+_GLYPH_KEY = {"sys:macpower": "🔌", "sys:vpn": "🛡", "sys:output": "🔊",
+              "sys:accessibility": "🔓", "sys:iphonecharge": "🔋", "audio:live": "🎚"}
+_GLYPH = {"app:": "🖥", "xapp:": "🖥", "usb:": "🎛", "kbd:": "🎹", "net:": "🌐",
+          "lamp:": "💡", "sys:": "⚙️", "midi": "🎚", "audio": "🔊", "sc:": "🎤",
+          "link:": "🔗"}
+
+
+def _glyph_of(key: str) -> str:
+    if key in _GLYPH_KEY:
+        return _GLYPH_KEY[key]
+    for prefix, g in _GLYPH.items():
+        if key.startswith(prefix):
+            return g
+    return "•"
+
 
 _GROUP = {"app:": "Apps", "xapp:": "Apps en trop", "usb:": "Stream Deck",
           "kbd:": "Clavier & jeu",
@@ -225,6 +248,7 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
         items.append({
             **r.to_dict(),
             "group": _group_of(r.key),
+            "glyph": _glyph_of(r.key),
             # Les vignettes d'un check : l'icône macOS réelle pour une app, un dessin
             # pour du matériel (voir riglib/gear.py). Liste, parce qu'un check peut
             # porter sur DEUX objets — « Bome Network ↔ iPhone » en montre les deux.
@@ -235,6 +259,9 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
             # compte « Ouvrir le réglage Accessibilité » parmi ce qu'il sait régler.
             "manual": bool(rem and rem.hands_on and r.status != checks.OK),
         })
+    # Erreurs LIÉES : qui explique qui. Posé APRÈS que tous les items existent — un lien
+    # se juge sur l'état de la chaîne entière, pas check par check (riglib/cascade.py).
+    cascade.annotate(cfg, mode, items)
     status = checks.worst(results)
     return {
         "status": status,

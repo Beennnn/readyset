@@ -26,8 +26,13 @@
 "alarm.more"        = "+%d autre(s)";
 "alarm.fix"         = "Corriger maintenant";
 "alarm.fixAll"      = "Corriger ces %d maintenant";
-"alarm.manualOnly"  = "Pas de correctif automatique — celle-ci demande tes mains.  ·  menu 🎹 → Taire l'alarme";
-"alarm.hint"        = "menu 🎹 → Taire l'alarme";
+"alarm.manualOnly"  = "Pas de correctif automatique — celle-ci demande tes mains.";
+"alarm.hint"        = "L'alarme s'arrête d'elle-même dès que c'est réparé.";
+"alarm.snooze"      = "Plus tard";
+/* Erreurs liées : la ligne portée par la CAUSE, puis celle de chaque panne qu'elle entraîne. */
+"alarm.causes"      = "⛓  entraîne aussi : %@";
+"alarm.knockOn"     = "erreur liée — %@";
+"alarm.knockOnBare" = "erreur liée";
 "menu.silence"      = "🔕 Taire l'alarme";
 "menu.silence.tip"  = "Arrête le clignotement pour ce qui est déjà cassé ; le liseré et la liste restent. Ce qui lâchera ENSUITE clignotera de nouveau.";
 

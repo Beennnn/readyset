@@ -96,6 +96,47 @@ struct Problem {
     /// Vient du moteur, et c'est le MÊME découpage que les zones du dashboard : deux
     /// surfaces, une seule carte mentale à retenir.
     let group: String
+    /// ERREUR LIÉE — la panne AMONT qui explique celle-ci, quand le moteur en connaît
+    /// une (riglib/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
+    /// breath : quand son câble saute, ces trois-là tombent avec lui sans être en cause.
+    /// `nil` = panne autonome, celle qui demande vraiment un geste à elle.
+    let causedBy: String?
+    /// Le lien, en toutes lettres : « alimenté par le Stream Deck Plus ». C'est lui qui
+    /// dit OÙ regarder — un numéro de clé ne fait aller chercher personne.
+    let causedWhy: String
+    /// Les pannes que celle-ci explique, par leur libellé. Non vide = c'est LA cause, et
+    /// elle passe devant tout le reste : la réparer éteint les autres d'un coup.
+    let causes: [String]
+
+    var isConsequence: Bool { causedBy != nil }
+    var isCause: Bool { !causes.isEmpty }
+}
+
+/// L'ordre dans lequel des pannes se LISENT — et il n'est pas celui dans lequel elles
+/// arrivent.
+///
+/// Trois règles, dans cet ordre : la cause d'abord (elle explique les autres, et son
+/// geste les répare toutes), puis les bloquants, puis l'alphabet pour que deux relevés
+/// successifs ne fassent pas danser la liste sous les yeux. Chaque conséquence est
+/// ensuite collée SOUS sa cause : entre les deux, la moindre ligne étrangère casse le
+/// lien qu'on cherche justement à rendre visible.
+///
+/// Une conséquence dont la cause n'est pas dans la liste (elle est orange et les
+/// avertissements sont masqués, par exemple) redevient une panne ordinaire — sans quoi
+/// elle disparaîtrait purement et simplement de l'affichage.
+func orderedByCause(_ probs: [Problem]) -> [Problem] {
+    let present = Set(probs.map(\.key))
+    let rank: (Problem) -> (Int, Int, String) = {
+        ($0.isCause ? 0 : 1, $0.status == "fail" ? 0 : 1, $0.label)
+    }
+    let heads = probs.filter { $0.causedBy == nil || !present.contains($0.causedBy!) }
+                     .sorted { rank($0) < rank($1) }
+    var out: [Problem] = []
+    for h in heads {
+        out.append(h)
+        out += probs.filter { $0.causedBy == h.key }.sorted { rank($0) < rank($1) }
+    }
+    return out
 }
 
 // ---------------------------------------------------------------------------
@@ -312,6 +353,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             aw.hasShadow = false
             let av = AlarmView(frame: NSRect(origin: .zero, size: screen.frame.size))
             av.card.onFix = { [weak self] in self?.fixAlarm() }
+            av.card.onSnooze = { [weak self] in self?.silenceAlarm() }
             aw.contentView = av; alarms.append((aw, av))
 
             let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
@@ -383,14 +425,19 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                              ok: ($0["ok"] as? Bool) ?? false,
                              icon: ($0["icon"] as? String) ?? "")
                         }
+                        let causes = (it["causes"] as? [[String: Any]] ?? [])
+                            .compactMap { $0["label"] as? String }
                         probs.append(Problem(
                             key: (it["key"] as? String) ?? "", label: (it["label"] as? String) ?? "?",
                             status: st, detail: (it["detail"] as? String) ?? "",
                             glyph: (it["glyph"] as? String) ?? "•", remedy: it["remedy"] as? String,
                             parts: parts, manual: (it["manual"] as? Bool) ?? false,
-                            group: (it["group"] as? String) ?? ""))
+                            group: (it["group"] as? String) ?? "",
+                            causedBy: it["caused_by"] as? String,
+                            causedWhy: (it["caused_why"] as? String) ?? "",
+                            causes: causes))
                     }
-                    probs.sort { (($0.status == "fail" ? 0 : 1), $0.label) < (($1.status == "fail" ? 0 : 1), $1.label) }
+                    probs = orderedByCause(probs)
                 }
             }
             DispatchQueue.main.async {
