@@ -185,3 +185,32 @@ insecure = false         # set true only if your LAN does SSL interception (self
 port    = "rig-alert"
 channel = 15
 note    = 60
+
+# ---------------------------------------------------------------------------------
+# Erreurs LIÉES — ce qui tombe AVEC quoi (riglib/cascade.py).
+#
+# À ne pas confondre avec [diagram] : celui-là dessine le flux MIDI et audio, celui-ci
+# décrit les DÉPENDANCES — le plus souvent l'alimentation. Les deux ne se recouvrent pas :
+# un clavier peut envoyer son MIDI à Ableton tout en tirant son courant d'un hub, et c'est
+# le courant qui décide de qui tombe avec qui.
+#
+# Sans ces blocs, un hub débranché produit quatre pannes également urgentes, dont trois
+# sont des symptômes ; l'écran d'alarme les aligne et laisse chercher laquelle réparer.
+# Avec eux, la CAUSE passe en tête et les autres se rangent dessous, grisées, chacune
+# disant en une ligne pourquoi elle est tombée.
+#
+#   on    = la clé du check qui, en tombant, entraîne les autres
+#   keys  = les clés qui en dépendent (elles ne sont « liées » que si `on` est LUI AUSSI
+#           en panne — un appareil débranché pendant que sa source va bien reste une
+#           panne à part entière, et le cacher serait pire que ne rien relier)
+#   why   = le lien en toutes lettres ; c'est lui qui dit où aller regarder
+#   modes = facultatif — le lien ne vaut que dans ces modes (au bureau, la moitié du rig
+#           n'est simplement pas branchée, et un lien qui ne vaut pas ce soir ment)
+#
+# Les chaînes se remontent : si A alimente B et B alimente C, la cause affichée est A.
+#
+# [[depends]]
+# on    = "usb:Plus"
+# keys  = ["usb:XL", "kbd:keyboard"]
+# why   = "alimenté par le Stream Deck Plus"
+# modes = ["live"]

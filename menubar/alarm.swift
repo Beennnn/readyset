@@ -109,8 +109,12 @@ final class FlashFrameView: NSView {
         guard layer?.animation(forKey: "pulse") == nil else { return }
         let a = CABasicAnimation(keyPath: "opacity")
         a.fromValue = 1.0
-        a.toValue = 0.10
-        a.duration = 0.55
+        // Pas jusqu'à l'extinction. Un cadre qui disparaît la moitié du temps se voit
+        // MOINS bien qu'un cadre qui bat : entre deux battements, il n'y a plus rien à
+        // accrocher du coin de l'œil, et l'œil retourne à Ableton. Le plancher garde une
+        // présence rouge permanente ; c'est le battement par-dessus qui fait l'alerte.
+        a.toValue = 0.34
+        a.duration = 0.42          // plus nerveux que la seconde : on veut « alarme », pas « respiration »
         a.autoreverses = true
         a.repeatCount = .infinity
         a.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
@@ -119,9 +123,30 @@ final class FlashFrameView: NSView {
 
     func stopPulsing() { layer?.removeAnimation(forKey: "pulse") }
 
+    /// Un trait épais, DOUBLÉ d'un halo qui se fond vers l'intérieur.
+    ///
+    /// Le trait seul ne tenait pas sa promesse : sur un grand écran, dix-huit points
+    /// collés au bord, c'est une bordure de fenêtre de plus — l'œil, occupé au centre, ne
+    /// l'attrape pas. Le halo change ça sans rien voler à la surface utile : il s'éteint
+    /// en une centaine de points, mais il donne au battement une SURFACE, et une surface
+    /// se voit en vision périphérique là où une ligne ne se voit pas.
+    ///
+    /// Quatre bandes plutôt qu'un dégradé de couronne : NSGradient ne dessine que du
+    /// linéaire et du radial, et un radial éclaire le centre — l'exact contraire de ce
+    /// qu'on veut. Les quatre se recouvrent dans les coins, qui s'en trouvent plus
+    /// lumineux : c'est un accident, et il tombe bien, les coins sont ce que la vision
+    /// périphérique attrape en premier.
     override func draw(_ dirty: NSRect) {
-        let thickness: CGFloat = 18
-        tint.withAlphaComponent(0.95).setStroke()
+        let thickness: CGFloat = 30
+        let glow: CGFloat = 120
+        if let g = NSGradient(starting: tint.withAlphaComponent(0.40),
+                              ending: tint.withAlphaComponent(0.0)) {
+            g.draw(in: NSRect(x: 0, y: bounds.maxY - glow, width: bounds.width, height: glow), angle: -90)
+            g.draw(in: NSRect(x: 0, y: 0, width: bounds.width, height: glow), angle: 90)
+            g.draw(in: NSRect(x: 0, y: 0, width: glow, height: bounds.height), angle: 0)
+            g.draw(in: NSRect(x: bounds.maxX - glow, y: 0, width: glow, height: bounds.height), angle: 180)
+        }
+        tint.withAlphaComponent(0.98).setStroke()
         let frame = NSBezierPath(rect: bounds.insetBy(dx: thickness / 2, dy: thickness / 2))
         frame.lineWidth = thickness
         frame.stroke()
@@ -138,11 +163,23 @@ final class AlarmCard: NSView {
     private let stack = NSStackView()
     private let title = NSTextField(labelWithString: "")
     private let fixButton = NSButton(title: "", target: nil, action: nil)
+    /// Le report. Il double une entrée de menu qui existait déjà — et ce doublon est le
+    /// sujet : sur scène, « ouvrir le menu 🎹 puis chercher la bonne ligne » est un geste
+    /// qu'on ne fait pas entre deux morceaux. Une panne qu'on ne peut pas réparer tout de
+    /// suite ne doit pas condamner l'écran pour le reste du set, et le geste qui la met
+    /// en attente doit coûter le même clic que celui qui la répare.
+    private let snoozeButton = NSButton(title: "", target: nil, action: nil)
+    /// Les deux boutons sur une seule rangée : ils répondent à la même question (« et
+    /// maintenant ? ») et se lisent ensemble — réparer, ou plus tard.
+    private let buttons = NSStackView()
     private let hint = NSTextField(labelWithString: "")
-    private var rows: [NSView] = []
     /// Ce que le bouton déclenche. Posé par le délégué : la carte ne sait pas parler au
     /// moteur, et n'a pas à le savoir.
     var onFix: (() -> Void)?
+    /// Idem pour le report — c'est `silence()` de l'état d'alarme, pas une minuterie : un
+    /// réveil programmé retomberait au milieu d'un morceau, ce qui est exactement le
+    /// moment où l'on avait demandé le silence. Ce qui rallume, c'est une panne NEUVE.
+    var onSnooze: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -154,12 +191,22 @@ final class AlarmCard: NSView {
         title.font = .systemFont(ofSize: 27, weight: .heavy)
         title.lineBreakMode = .byTruncatingTail
 
-        fixButton.bezelStyle = .regularSquare
-        fixButton.controlSize = .large
-        fixButton.target = self
-        fixButton.action = #selector(fixTapped)
-        fixButton.isBordered = true
-        fixButton.setButtonType(.momentaryPushIn)
+        for (b, sel) in [(fixButton, #selector(fixTapped)), (snoozeButton, #selector(snoozeTapped))] {
+            b.bezelStyle = .regularSquare
+            b.controlSize = .large
+            b.target = self
+            b.action = sel
+            b.isBordered = true
+            b.setButtonType(.momentaryPushIn)
+            b.font = .systemFont(ofSize: 17, weight: .semibold)
+            b.contentTintColor = .white
+        }
+        snoozeButton.title = "🔕  " + T("alarm.snooze", "Later")
+        buttons.orientation = .horizontal
+        buttons.alignment = .centerY
+        buttons.spacing = 10
+        buttons.addArrangedSubview(fixButton)
+        buttons.addArrangedSubview(snoozeButton)
 
         hint.font = .systemFont(ofSize: 12)
         hint.textColor = NSColor.white.withAlphaComponent(0.5)
@@ -179,17 +226,36 @@ final class AlarmCard: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) non utilisé") }
 
     @objc private func fixTapped() { onFix?() }
+    @objc private func snoozeTapped() { onSnooze?() }
 
     /// Le bouton est le SEUL endroit qui prend un clic. Partout ailleurs `hitTest` rend
     /// `nil`, donc la fenêtre laisse passer l'événement vers ce qu'il y a dessous — un
     /// panneau d'alerte n'a pas à s'interposer entre le doigt et Ableton.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard !fixButton.isHidden else { return nil }
-        let inButton = fixButton.convert(fixButton.bounds, to: self).contains(convert(point, from: superview))
-        return inButton ? fixButton : nil
+        let local = convert(point, from: superview)
+        for b in [fixButton, snoozeButton] where !b.isHidden && b.superview != nil {
+            if b.convert(b.bounds, to: self).contains(local) { return b }
+        }
+        return nil
     }
 
-    func show(_ items: [Problem], fixable: [Problem], tint: NSColor, width: CGFloat) {
+    /// Remplit le panneau — et s'arrête quand la page est pleine, pas à un compte fixe.
+    ///
+    /// La règle d'avant plafonnait à trois pannes, sur un raisonnement qui tenait : une
+    /// quatrième ligne ne change pas le geste, puisque le bouton les répare toutes. Il
+    /// manquait juste l'autre moitié — savoir CE QUI est tombé n'a pas pour seul usage
+    /// d'appuyer sur un bouton. Sur un 27 pouces, dix lignes tiennent sans effort et
+    /// disent d'un coup l'étendue des dégâts ; les plafonner à trois, c'est jeter une
+    /// information gratuite. Le vrai plafond n'est donc pas un nombre, c'est la HAUTEUR
+    /// disponible, et elle change d'un écran à l'autre.
+    ///
+    /// L'ordre de remplissage suit l'ordre d'utilité, et c'est là qu'il se joue quelque
+    /// chose : d'abord toutes les pannes AUTONOMES — chacune demande son propre geste —
+    /// puis seulement, s'il reste de la place, les pannes LIÉES, glissées sous celle qui
+    /// les explique. Une conséquence n'apprend rien qu'on ne sache déjà en lisant sa
+    /// cause ; elle ne doit pas prendre la ligne d'un problème que personne n'a encore vu.
+    func show(_ items: [Problem], fixable: [Problem], tint: NSColor, width: CGFloat,
+              maxHeight: CGFloat) {
         layer?.borderColor = tint.cgColor
         title.stringValue = T("alarm.title", "SOMETHING JUST BROKE")
         title.textColor = tint
@@ -199,28 +265,101 @@ final class AlarmCard: NSView {
         // tout premier affichage, quand le titre n'y était pas encore. Retirer de la
         // hiérarchie retire aussi de la liste, sans rien supposer de l'état d'avant.
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        rows.removeAll()
-
         stack.addArrangedSubview(title)
-        // Trois pannes au plus : au-delà, le panneau devient un mur de texte qu'on ne lit
-        // pas — et une quatrième ligne ne change pas le geste (le bouton les répare toutes).
-        for p in items.prefix(3) {
-            let row = makeRow(p, width: width - 48)
-            rows.append(row)
-            stack.addArrangedSubview(row)
+
+        // Le pied de page se prépare AVANT les lignes, pour qu'on sache la place qu'il
+        // prendra. Sans cette réservation, la dernière panne ajoutée pousserait le bouton
+        // de réparation hors de l'écran — le panneau serait complet et inutilisable.
+        prepareFooter(fixable: fixable)
+        let footer = buttons.fittingSize.height + hint.fittingSize.height + stack.spacing * 2
+        let budget = maxHeight - footer
+
+        let rowWidth = width - 48
+        let present = Set(items.map(\.key))
+        // Une conséquence dont la cause n'est PAS affichée redevient une panne comme les
+        // autres : sinon elle serait reléguée au second tour au nom d'un lien que rien à
+        // l'écran ne montre.
+        func follows(_ p: Problem) -> Bool { p.causedBy.map(present.contains) ?? false }
+
+        var shown: [String] = []            // clés affichées, dans l'ordre du stack
+
+        func fits() -> Bool {
+            stack.layoutSubtreeIfNeeded()
+            return stack.fittingSize.height <= budget
         }
-        if items.count > 3 {
-            let more = NSTextField(labelWithString: String(format: T("alarm.more", "+%d more"), items.count - 3))
+        /// Ajoute une ligne à l'index demandé et la RETIRE si elle déborde — mesurer
+        /// après coup est la seule façon honnête : la hauteur d'un texte qui s'enroule ne
+        /// se devine pas, elle se constate.
+        func place(_ p: Problem, follower: Bool, at index: Int) -> Bool {
+            let row = makeRow(p, width: rowWidth, follower: follower)
+            stack.insertArrangedSubview(row, at: index)
+            if fits() { shown.insert(p.key, at: index - 1); return true }
+            row.removeFromSuperview()
+            return false
+        }
+        func drop(_ key: String) {
+            guard let i = shown.firstIndex(of: key) else { return }
+            stack.arrangedSubviews[i + 1].removeFromSuperview()
+            shown.remove(at: i)
+        }
+
+        let heads = items.filter { !follows($0) }
+        for p in heads where !place(p, follower: false, at: shown.count + 1) { break }
+
+        // Les liées, groupe par groupe et TOUT OU RIEN. Une seule conséquence sur trois,
+        // choisie par ce qui restait de place, dirait « le clavier est tombé » et tairait
+        // le XL — donnant à croire qu'il va bien. Or la ligne « ⛓ entraîne aussi » les
+        // nomme déjà toutes les trois : mieux vaut la laisser faire seule que la
+        // contredire à moitié.
+        for cause in heads where !cause.causes.isEmpty {
+            let group = items.filter { $0.causedBy == cause.key }
+            // +1 pour le titre, +1 pour se placer APRÈS la cause : coller la conséquence
+            // à sa cause est tout l'intérêt — une ligne étrangère entre les deux et le
+            // lien cesse de se voir.
+            guard !group.isEmpty, let at = shown.firstIndex(of: cause.key) else { continue }
+            var placed: [String] = []
+            var complete = true
+            for p in group {
+                if !place(p, follower: true, at: at + 2 + placed.count) { complete = false; break }
+                placed.append(p.key)
+            }
+            guard complete else { placed.forEach(drop); continue }
+            // Les trois lignes sont là, sous leur cause : « entraîne aussi : Stream Deck
+            // XL, Clavier, Breath controller » nommerait une deuxième fois ce qu'on lit
+            // juste en dessous. Le résumé n'existe QUE pour l'écran où elles ne tiennent
+            // pas ; ici il s'efface, et la place qu'il libère revient au panneau.
+            stack.arrangedSubviews[at + 1].removeFromSuperview()
+            stack.insertArrangedSubview(makeRow(cause, width: rowWidth, follower: false,
+                                                withCauses: false), at: at + 1)
+        }
+
+        // « +N » ne compte QUE les pannes autonomes restées dehors. Une liée non dépliée
+        // n'est pas une panne cachée : son nom est sur la ligne de sa cause, deux lignes
+        // plus haut. La compter ici ferait craindre des dégâts qu'on a déjà sous les yeux.
+        let skipped = heads.count - shown.filter { key in heads.contains { $0.key == key } }.count
+
+        if skipped > 0 {
+            let more = NSTextField(labelWithString: String(format: T("alarm.more", "+%d more"), skipped))
             more.font = .systemFont(ofSize: 13)
             more.textColor = NSColor.white.withAlphaComponent(0.6)
-            rows.append(more)
             stack.addArrangedSubview(more)
         }
+        stack.addArrangedSubview(buttons)
+        stack.addArrangedSubview(hint)
 
-        // Le bouton nomme LE geste quand il n'y en a qu'un (« Démarrer session
-        // Amphetamine » se comprend sans rien ouvrir), et les compte quand il y en a
-        // plusieurs. Sans remède, pas de bouton du tout : en offrir un qui ne ferait rien
-        // est pire que de dire honnêtement que la main doit s'en mêler.
+        frame.size = NSSize(width: width, height: stack.fittingSize.height)
+        layoutSubtreeIfNeeded()
+        needsDisplay = true
+    }
+
+    /// Les deux boutons et la ligne d'aide — leur contenu, pas leur place dans le stack.
+    ///
+    /// Le bouton de réparation nomme LE geste quand il n'y en a qu'un (« Démarrer session
+    /// Amphetamine » se comprend sans rien ouvrir), et les compte quand il y en a
+    /// plusieurs. Sans remède, pas de bouton du tout : en offrir un qui ne ferait rien est
+    /// pire que de dire honnêtement que la main doit s'en mêler. Le report, lui, est
+    /// TOUJOURS là — c'est même quand rien ne peut être réparé qu'on en a le plus besoin.
+    private func prepareFooter(fixable: [Problem]) {
         if let only = fixable.first, fixable.count == 1 {
             fixButton.isHidden = false
             fixButton.title = "⚡  " + (only.remedy ?? T("alarm.fix", "Fix it now"))
@@ -230,52 +369,72 @@ final class AlarmCard: NSView {
         } else {
             fixButton.isHidden = true
         }
-        if !fixButton.isHidden {
-            fixButton.font = .systemFont(ofSize: 17, weight: .semibold)
-            fixButton.contentTintColor = .white
-            stack.addArrangedSubview(fixButton)
-        }
-
         hint.stringValue = fixable.isEmpty
-            ? T("alarm.manualOnly", "No automatic fix — this one needs your hands.  ·  menu 🎹 → Silence the alarm")
-            : T("alarm.hint", "menu 🎹 → Silence the alarm")
-        stack.addArrangedSubview(hint)
-
-        frame.size = NSSize(width: width, height: stack.fittingSize.height)
-        layoutSubtreeIfNeeded()
-        needsDisplay = true
+            ? T("alarm.manualOnly", "No automatic fix — this one needs your hands.")
+            : T("alarm.hint", "The alarm stops on its own once it is fixed.")
     }
 
     /// Une panne : son icône de TYPE à gauche (celle que le moteur donne — 🔌 pour
     /// l'alimentation, 🎛 pour un port MIDI…), et à droite ce qu'on voit puis ce qu'on fait.
-    private func makeRow(_ p: Problem, width: CGFloat) -> NSView {
-        let icon = NSTextField(labelWithString: p.glyph.isEmpty ? "•" : p.glyph)
-        icon.font = .systemFont(ofSize: 30)
+    ///
+    /// Une panne LIÉE se lit autrement, et se dessine autrement : pas de constat, pas de
+    /// conseil, un cran de gris en plus. Elle n'est pas là pour être traitée — elle est là
+    /// pour qu'on comprenne pourquoi le clavier s'est tu sans avoir à se demander si c'est
+    /// un deuxième problème. La distinction visuelle EST l'information.
+    private func makeRow(_ p: Problem, width: CGFloat, follower: Bool,
+                         withCauses: Bool = true) -> NSView {
+        let icon = NSTextField(labelWithString: follower ? "↳" : (p.glyph.isEmpty ? "•" : p.glyph))
+        icon.font = .systemFont(ofSize: follower ? 20 : 30)
         icon.alignment = .center
+        icon.textColor = follower ? NSColor.white.withAlphaComponent(0.45) : .labelColor
         icon.widthAnchor.constraint(equalToConstant: 42).isActive = true
 
         let name = NSTextField(labelWithString: p.label)
-        name.font = .systemFont(ofSize: 20, weight: .bold)
-        name.textColor = p.status == "fail" ? .systemRed : .systemOrange
-
-        // Le constat et le conseil arrivent collés par un saut de ligne (checks._hint) :
-        // « ce que je vois » puis « → ce que tu peux faire ». On les sépare pour donner au
-        // second le ton d'une consigne, sans quoi les deux se lisent comme une seule phrase.
-        let parts = p.detail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-        let observed = parts.first.map(String.init) ?? ""
-        let advice = parts.count > 1 ? String(parts[1]) : ""
+        name.font = .systemFont(ofSize: follower ? 16 : 20, weight: follower ? .semibold : .bold)
+        name.textColor = follower
+            ? NSColor.white.withAlphaComponent(0.62)
+            : (p.status == "fail" ? .systemRed : .systemOrange)
 
         let texts = NSStackView(views: [name])
         texts.orientation = .vertical
         texts.alignment = .leading
         texts.spacing = 3
-        if !observed.isEmpty {
-            texts.addArrangedSubview(wrapped(observed, size: 15, color: .white, width: width - 54))
-        }
-        if !advice.isEmpty {
-            texts.addArrangedSubview(wrapped(advice, size: 14,
-                                             color: NSColor.white.withAlphaComponent(0.72),
+
+        if follower {
+            // Le lien en toutes lettres, parce que c'est lui qui dit où aller regarder :
+            // « alimenté par le Stream Deck Plus » envoie vers un câble, « conséquence »
+            // tout seul n'envoie nulle part.
+            let why = p.causedWhy.isEmpty
+                ? T("alarm.knockOnBare", "knock-on failure")
+                : String(format: T("alarm.knockOn", "knock-on — %@"), p.causedWhy)
+            texts.addArrangedSubview(wrapped(why, size: 13,
+                                             color: NSColor.white.withAlphaComponent(0.45),
                                              width: width - 54))
+        } else {
+            // Le constat et le conseil arrivent collés par un saut de ligne (checks._hint) :
+            // « ce que je vois » puis « → ce que tu peux faire ». On les sépare pour donner au
+            // second le ton d'une consigne, sans quoi les deux se lisent comme une seule phrase.
+            let parts = p.detail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+            let observed = parts.first.map(String.init) ?? ""
+            let advice = parts.count > 1 ? String(parts[1]) : ""
+            if !observed.isEmpty {
+                texts.addArrangedSubview(wrapped(observed, size: 15, color: .white, width: width - 54))
+            }
+            if !advice.isEmpty {
+                texts.addArrangedSubview(wrapped(advice, size: 14,
+                                                 color: NSColor.white.withAlphaComponent(0.72),
+                                                 width: width - 54))
+            }
+            // Ce que cette panne entraîne — sur la ligne de la CAUSE, et dès la première
+            // ligne du panneau. C'est ce qui permet à un écran étroit, où les lignes liées
+            // n'ont pas tenu, de dire quand même l'étendue de la panne : « le Plus a lâché,
+            // et avec lui le XL, le clavier et le breath ».
+            if !p.causes.isEmpty && withCauses {
+                let list = String(format: T("alarm.causes", "⛓  brings down: %@"),
+                                  p.causes.joined(separator: ", "))
+                texts.addArrangedSubview(wrapped(list, size: 14, color: .systemOrange,
+                                                 width: width - 54))
+            }
         }
 
         let row = NSStackView(views: [icon, texts])
@@ -299,6 +458,10 @@ final class AlarmCard: NSView {
 // L'assemblage : le cadre derrière, le panneau devant
 // ---------------------------------------------------------------------------
 final class AlarmView: NSView {
+    /// Ce qu'on laisse respirer en haut et en bas du panneau. Assez pour que le halo du
+    /// cadre reste visible derrière lui — sans quoi l'alerte la plus voyante de l'app
+    /// serait cachée par son propre texte.
+    static let margin: CGFloat = 100
     private let flash = FlashFrameView(frame: .zero)
     let card = AlarmCard(frame: .zero)
     private var items: [Problem] = []
@@ -341,16 +504,27 @@ final class AlarmView: NSView {
 
     private func rebuild() {
         let w = min(bounds.width - 140, 880)
-        let sig = items.map { "\($0.key)|\($0.status)|\($0.detail)|\($0.remedy ?? "")" }
-            .joined(separator: "¦") + "@\(Int(w))"
+        // La place que le panneau a le droit de prendre. Son HAUT est fixe (voir plus bas) :
+        // ce qui grandit descend, donc le budget est la distance de ce haut au bas de
+        // l'écran, moins une marge pour ne pas venir mourir sur le bord. Sur un portable
+        // cela fait quatre ou cinq pannes, sur un écran de bureau une bonne dizaine — et
+        // c'est très bien ainsi : le panneau montre autant que l'écran peut en porter.
+        // Centrée : le panneau grandit alors des DEUX côtés, donc la place disponible
+        // est la hauteur d'écran moins une marge haute et une marge basse.
+        let h = max(bounds.height - 2 * Self.margin, 220)
+        let sig = items.map { "\($0.key)|\($0.status)|\($0.detail)|\($0.remedy ?? "")|\($0.causedBy ?? "")" }
+            .joined(separator: "¦") + "@\(Int(w))x\(Int(h))"
         if sig != signature {
             signature = sig
-            card.show(items, fixable: fixable, tint: tint, width: w)
+            card.show(items, fixable: fixable, tint: tint, width: w, maxHeight: h)
         }
-        // Au tiers SUPÉRIEUR, jamais au centre : le centre de l'écran, c'est là que se
-        // lisent les pistes d'Ableton pendant le morceau. Le panneau ne prend pas les
-        // clics, mais il prend la place — et la place utile ne se reprend pas.
+        // AU CENTRE. Le panneau était au tiers supérieur pour épargner les pistes
+        // d'Ableton — un bon réflexe, sauf qu'il protégeait la mauvaise chose : quand
+        // l'écran annonce que quelque chose vient de lâcher, la question du moment n'est
+        // plus « où en est le morceau ». Ce qu'on lit alors, on doit le lire là où l'œil
+        // tombe, sans le chercher. Et le panneau ne prend toujours aucun clic : ce qui est
+        // dessous reste utilisable en le traversant.
         card.setFrameOrigin(NSPoint(x: bounds.midX - card.frame.width / 2,
-                                    y: bounds.height * 0.70 - card.frame.height))
+                                    y: bounds.midY - card.frame.height / 2))
     }
 }
