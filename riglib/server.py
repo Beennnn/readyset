@@ -611,6 +611,12 @@ PAGE = r"""<!doctype html>
   .grp{margin-top:22px} .grp h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
   .row{display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 13px;margin-bottom:6px}
   .row.ok{border-left-color:var(--ok)} .row.info{border-left-color:var(--info)} .row.warn{border-left-color:var(--warn)} .row.fail{border-left-color:var(--fail)}
+  /* Une panne LIÉE (riglib/cascade.py) : en retrait sous sa cause, et d'un gris qui dit
+     « rien à faire ici ». La distinction visuelle EST l'information — sans elle, un
+     symptôme se lit comme un deuxième problème à régler, au moment précis où l'on
+     n'a le temps que d'un seul geste. */
+  .row.follow{margin-left:26px;opacity:.6;padding-top:6px;padding-bottom:6px}
+  .row.follow .lab .t{font-weight:400}
   .allok{padding:14px;background:#123322;color:var(--ok);border-radius:10px;font-weight:600;text-align:center}
   #okwrap{margin-top:14px} #okwrap summary{cursor:pointer;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;list-style:none}
   #okwrap summary::-webkit-details-marker{display:none}
@@ -818,6 +824,23 @@ function paintBanner(){
 // checks au lieu des siens. La cause corrigée, la couleur peut redevenir juste.
 const SEV={ok:0,info:1,warn:2,fail:3},SEVN=["ok","info","warn","fail"];
 function worstOf(items){return SEVN[items.reduce((m,i)=>Math.max(m,SEV[i.status]??0),0)];}
+// Erreurs LIÉES (riglib/cascade.py) : la cause d'abord, ses conséquences collées SOUS
+// elle. Entre les deux, la moindre ligne étrangère casse le lien qu'on cherche justement
+// à rendre visible — c'est le même ordre que le menu de la barre (orderedByCause dans
+// menubar/rigmenubar.swift), pour n'avoir qu'une seule lecture à retenir.
+//
+// Une conséquence dont la cause n'est PAS dans la liste (elle est verte, ou elle vit
+// dans une autre zone) redevient une panne ordinaire : la reléguer au nom d'un lien que
+// rien à l'écran ne montre la ferait disparaître sans que personne ne l'ait réparée.
+function orderedByCause(items,cmp){
+  const present=new Set(items.map(i=>i.key));
+  const head=i=>!i.caused_by||!present.has(i.caused_by);
+  const out=[];
+  for(const h of items.filter(head).sort(cmp)){
+    out.push(h,...items.filter(i=>i.caused_by===h.key).sort(cmp));
+  }
+  return out;
+}
 const ZONETIP={
   "z-flow":"Le chemin du signal, de l'iPhone et du clavier jusqu'à la sortie audio.\nChaque bloc prend la couleur du pire de SES checks — survole un bloc pour voir lesquels.",
   "z-sc":"Ce qu'il faut avoir JOUÉ pour prouver que le rig répond : pédale, notes, souffle, morsure, inclinaisons de tête.\nRien ici n'est déclaratif — chaque case attend un vrai geste.\nUn réveil du Mac remet le tout à zéro : après une veille, l'USB peut avoir changé.",
@@ -1130,7 +1153,14 @@ async function refresh(){
   // lui qui fait rougir la barre de menus, la pastille et le liseré ; c'est seulement le
   // doublon à l'écran qu'on retire, pas le check.
   const shown=s.items.filter(it=>!it.key.startsWith("xapp:")&&it.key!=="sc:play");
-  const bad=shown.filter(it=>it.status!=="ok").sort((a,b)=>(RANK[a.status]??3)-(RANK[b.status]??3));
+  // Une CAUSE passe devant, même orange devant des rouges : c'est elle qui les explique,
+  // et son geste les éteint toutes. C'est le seul endroit où le tri fail > warn > info
+  // cède — et il ne cède que là, une cause étant toujours elle-même en panne.
+  const rank=(a,b)=>((a.causes?0:1)-(b.causes?0:1))||((RANK[a.status]??3)-(RANK[b.status]??3));
+  const bad=orderedByCause(shown.filter(it=>it.status!=="ok"),rank);
+  // Ce qui est réellement à l'écran : c'est ce qui décide qu'une ligne est une
+  // conséquence AFFICHABLE comme telle, et non le seul champ du moteur.
+  const badKeys=new Set(bad.map(it=>it.key));
   const good=shown.filter(it=>it.status==="ok");
   const prob=document.getElementById("problems");
   if(!bad.length){prob.innerHTML='<div class="allok">✅ Tout est vert — rien à corriger.</div>';}
@@ -1140,21 +1170,34 @@ async function refresh(){
     prob.innerHTML = bad.some(it=>it.status!=="info") ? ""
       : '<div class="allok">✅ Rien à corriger — seulement de l\'optionnel non branché.</div>';
     for(const it of bad){
-    const row=document.createElement("div");row.className="row "+it.status;
+    // Conséquence = sa cause est là, deux lignes plus haut. Elle se lit autrement et se
+    // dessine autrement : pas de constat, pas de correctif, un cran de gris en plus.
+    const follow=!!(it.caused_by&&badKeys.has(it.caused_by));
+    const row=document.createElement("div");row.className="row "+it.status+(follow?" follow":"");
     row.title=`${it.label}\n${TIP[it.status]||""}`
       +(it.detail?`\n\n${it.detail.replace(/\n→ /g,"\n→ ")}`:"")
-      +(it.remedy?`\n\nCorrectif proposé : ${it.remedy}`:"");
+      +(!follow&&it.remedy?`\n\nCorrectif proposé : ${it.remedy}`:"");
     // Les vraies vignettes quand on en a une, l'emoji de famille sinon : un check sans
     // objet matériel ni app (l'alimentation, le réseau) n'a rien de mieux à montrer.
-    const vign=(it.icons&&it.icons.length)
+    // Une conséquence, elle, porte la flèche du lien plutôt que son propre objet : ce
+    // qu'on va aller regarder n'est pas ELLE, c'est le câble nommé sur sa ligne.
+    const vign=follow?"↳":((it.icons&&it.icons.length)
       ? it.icons.map(u=>`<img src="${u}" alt="" class="gic" loading="lazy">`).join("")
-      : iconFor(it.key);
+      : iconFor(it.key));
+    // Le lien en toutes lettres, parce que c'est lui qui dit où aller regarder :
+    // « alimenté par le Stream Deck Plus » envoie vers un câble, « conséquence » tout
+    // seul n'envoie nulle part.
+    const sub=follow
+      ? `conséquence${it.caused_why?" — "+it.caused_why:""}`
+      : (it.detail||"");
     row.innerHTML=`<div class="ic">${vign}</div>
-      <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
+      <div class="lab"><div class="t">${it.label}</div>${sub?`<div class="d">${sub}</div>`:""}</div>
       <div class="dot ${it.status}"></div>`;
-    if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
+    // Aucun bouton sur une conséquence : le geste qui l'éteint est sur la ligne de sa
+    // cause, et en proposer un ici ferait croire à un second problème à régler.
+    if(it.remedy&&!follow){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
       btn.onclick=()=>fix(it.key,it.remedy);row.appendChild(btn);}
-    if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
+    if(it.key==="sys:iphonecharge"&&!follow){const b=document.createElement("button");b.className="fix";
       b.textContent="✓ Confirmer en charge";b.onclick=()=>manualSet("iphone_charge",true);row.appendChild(b);}
     prob.appendChild(row);
   }}
