@@ -19,6 +19,8 @@ from __future__ import annotations
 
 import ssl
 import subprocess
+import threading
+import time
 import urllib.request
 
 import mido
@@ -161,3 +163,45 @@ class Alerter:
                     port.send(mido.Message("control_change", channel=ch, control=cc, value=value))
         except Exception as exc:   # an alert must never take the monitor down
             self.log(f"  (jauge a échoué: {exc})")
+
+
+# La touche du rig sait dire « montre-moi » : appuyer dessus envoie ce CC sur le même
+# port d'alerte, et le tableau de bord s'ouvre. Le retour, dans l'autre sens, sur le
+# même câble — une surface de contrôle qui affiche un verdict sans pouvoir en montrer le
+# détail oblige à retourner au clavier, ce qui est précisément le geste qu'elle évite.
+#
+# CC 100 et non un des 111..121 : ceux-là PORTENT l'état, et une valeur d'affichage qui
+# déclencherait aussi une action serait un piège. 100 est en dehors du bloc, et en dehors
+# des 120..127 que le MIDI réserve aux messages de mode.
+CC_OPEN = 100
+
+
+def listen_for_open(cfg: dict, on_trigger, log=print) -> None:
+    """Ouvre le port d'alerte en écoute et appelle `on_trigger` sur CC_OPEN.
+
+    Le port peut ne pas exister au démarrage (le pilote IAC arrive parfois après nous) et
+    peut disparaître en cours de route : la boucle réessaie plutôt que d'abandonner une
+    fois pour toutes, sinon un ordre de branchement malheureux suffirait à retirer la
+    fonction jusqu'au prochain redémarrage.
+    """
+    mc = cfg["alerts"]["midi"]
+    cible, canal = mc["port"], int(mc.get("channel", 15)) - 1
+
+    def boucle() -> None:
+        while True:
+            nom = next((p for p in mido.get_input_names() if cible.lower() in p.lower()), None)
+            if nom is None:
+                time.sleep(5)
+                continue
+            try:
+                with mido.open_input(nom) as port:
+                    log(f"  (retour : à l'écoute de « {nom} » CC {CC_OPEN} canal {canal + 1})")
+                    for msg in port:
+                        if (msg.type == "control_change" and msg.channel == canal
+                                and msg.control == CC_OPEN and msg.value > 0):
+                            on_trigger()
+            except Exception as exc:      # le port a disparu, ou le backend a hoqueté
+                log(f"  (retour : écoute interrompue — {exc})")
+                time.sleep(5)
+
+    threading.Thread(target=boucle, daemon=True).start()
