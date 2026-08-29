@@ -20,22 +20,40 @@ message displays the value and switches image.
 
 ## Message spec
 
-| Event | MIDI message | Channel | CC | Value | Raw bytes |
-|---|---|---|---|---|---|
-| Rig healthy | Control Change | 15 | 111 | `0` | `BE 6F 00` |
-| N checks failing | Control Change | 15 | 111 | `N` | `BE 6F <N>` |
+Every send is a burst of ten Control Changes on channel 15: one total, then one per
+family of checks. Values are counts, clamped to 0..127 (a CC carries nothing wider).
 
-The value is the count, clamped to 0..127 (a CC carries nothing wider). Port, channel
-and CC number are config (`[alerts.midi]`). The channel is kept off the musical channels
-so the alert never collides with playing.
+| CC | Letter | Carries |
+|---|---|---|
+| **111** | — | total number of failing checks — `0` means all good |
+| 112 | **A** | applications of the rig that are not running |
+| 113 | **M** | missing MIDI ports |
+| 114 | **K** | keyboard, breath controller |
+| 115 | **S** | sound: interface, devices, Ableton's output |
+| 116 | **N** | stage network |
+| 117 | **D** | Stream Deck |
+| 118 | **L** | stage lamps |
+| 119 | **Y** | system: power, sleep, accessibility, the Mac's default output |
+| 120 | **X** | an application that should not be running |
 
-## A count, not a lamp
+The families are **the prefix check keys already carry** (`app:Ableton`, `midi:P-Series`,
+`sys:macpower`), so a new check joins its family by itself, with no table to keep in
+step. The *order* fixes the CC numbers and must never be re-sorted: a letter that moved
+to another CC between two versions would silently make a key display something else,
+which is worse than displaying nothing.
+
+Port, channel and the base CC are config (`[alerts.midi]`). The channel is kept off the
+musical channels so the alert never collides with playing.
+
+## Counts, not a lamp
 
 This replaces an earlier design that sent Note On / Note Off on note 60 — one lamp, lit
-or not. Two things were wrong with it, and both are what the count fixes:
+or not. Three things were wrong with it, and the counts fix all three:
 
 - **A lamp cannot say how bad it is.** One dead check and five dead checks looked
   identical, so the key never justified a glance at the laptop.
+- **Nor what broke.** Walking to the laptop was the only way to find out — which on
+  stage is the one thing you cannot do. The letters answer it from where you stand.
 - **An unlit lamp is ambiguous.** "Never lit", "recovered", and "the note-off was
   missed" all look the same. `0` says one thing only. MIDI has no acknowledgement, so
   an event-based protocol has no way to recover from a dropped message — a value-based
@@ -67,17 +85,35 @@ cc      = 111
 
    ```
    [(init){text:0}{state:0}]
-   [(cc:15,111,*){text:#@e_ccvalue#}{state:#IF(@e_ccvalue > 0, 1, 0)#}]
+   [(cc:15,111,*){@l_n:#@e_ccvalue#}{state:#IF(@e_ccvalue > 0, 1, 0)#}]
+   [(cc:15,112,*){@l_a:#IF(@e_ccvalue > 0, "A", "")#}]
+   [(cc:15,113,*){@l_m:#IF(@e_ccvalue > 0, "M", "")#}]
+   [(cc:15,114,*){@l_k:#IF(@e_ccvalue > 0, "K", "")#}]
+   [(cc:15,115,*){@l_s:#IF(@e_ccvalue > 0, "S", "")#}]
+   [(cc:15,116,*){@l_r:#IF(@e_ccvalue > 0, "N", "")#}]
+   [(cc:15,117,*){@l_d:#IF(@e_ccvalue > 0, "D", "")#}]
+   [(cc:15,118,*){@l_l:#IF(@e_ccvalue > 0, "L", "")#}]
+   [(cc:15,119,*){@l_y:#IF(@e_ccvalue > 0, "Y", "")#}]
+   [(cc:15,120,*){@l_x:#IF(@e_ccvalue > 0, "X", "")#}]
+   [(@l_n:*)(@l_a:*)(@l_m:*)(@l_k:*)(@l_s:*)(@l_r:*)(@l_d:*)(@l_l:*)(@l_y:*)(@l_x:*)
+      {text:#@l_n&"\n"&@l_a&@l_m&@l_k&@l_s&@l_r&@l_d&@l_l&@l_y&@l_x#}]
    ```
 
-   The script writes only the number — the word on the key comes from the image, the way
-   the held-notes key already works. And it drives the **state**, not the image: state 0
-   and state 1 carry the healthy and alert artwork, set once in the Stream Deck UI, so
-   changing an icon never means editing code.
+   The key then reads `3` over `AMN`: three checks down, one application, one MIDI port,
+   the stage network. The word RIG comes from the image, the way the held-notes key
+   already works.
+
+   The count's variable is `@l_n` and the network's letter lives in `@l_r`, on purpose:
+   `N` is the letter shown, but the name `@l_n` was already taken by the count, and two
+   meanings in one variable is how a display starts lying.
+
+   The script drives the **state**, not the image: state 0 and state 1 carry the healthy
+   and alert artwork, set once in the Stream Deck UI, so changing an icon never means
+   editing code.
 
 ## Test
 
 ```bash
-./rig alert-test --alerts midi   # → the key should read 3
+./rig alert-test --alerts midi   # → the key should read 3 over AMN
 ./rig monitor                    # → puts the real count back
 ```
