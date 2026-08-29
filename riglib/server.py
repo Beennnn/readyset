@@ -486,7 +486,18 @@ class _Handler(BaseHTTPRequestHandler):
 # permet à un tiers de conclure quelque chose du SILENCE. La touche elle-même ne le peut
 # pas : un script trevligaspel réagit à un message qui arrive, rien ne se déclenche quand
 # plus rien n'arrive. Le battement rend la surveillance POSSIBLE, il ne la fait pas.
-_GAUGE_BEAT = int(60 / REFRESH_EVERY)
+# En SECONDES, mesurées — pas en nombre de tours. Compter les tours partait du principe
+# qu'un tour dure REFRESH_EVERY ; il dure REFRESH_EVERY plus le temps des checks, et la
+# sonde audio ou un hôte réseau qui ne répond pas l'allongent sans prévenir. Le battement
+# dérivait donc silencieusement, ce qui est exactement ce qu'un battement ne doit pas faire.
+#
+# Quinze secondes, pas soixante. La cadence ne sert PAS à voir les changements — ceux-là
+# partent à l'instant où ils arrivent. Elle fixe deux choses : en combien de temps une
+# surface allumée en retard rattrape son affichage, et au bout de combien de silence un
+# guetteur peut conclure que plus personne n'émet. Une minute rendait ce verdict lent
+# alors qu'il ne coûte rien de l'accélérer : onze messages de trois octets sur un port
+# qui ne va nulle part.
+_GAUGE_BEAT_S = 15.0
 
 
 def _state_loop(cfg: dict) -> None:
@@ -497,14 +508,15 @@ def _state_loop(cfg: dict) -> None:
     # les notifications macOS et les push de « rig monitor ».
     jauge = alerts.Alerter(cfg, ["midi"], log=lambda m: print(f"[jauge]{m}", flush=True))
     vues: list[str] | None = None
+    dernier = 0.0
     while True:
         try:
             data = build_state(cfg)
             _STATE["data"], _STATE["ts"] = data, time.time()
             tombees = [it["key"] for it in data["items"] if it.get("status") == checks.FAIL]
-            if tombees != vues or ticks % _GAUGE_BEAT == 0:
+            if tombees != vues or time.time() - dernier >= _GAUGE_BEAT_S:
                 jauge.gauge(tombees)
-                vues = tombees
+                vues, dernier = tombees, time.time()
         except Exception as exc:                  # un check qui lève ne doit pas tuer la
             print(f"[state] {type(exc).__name__}: {exc}", flush=True)   # boucle entière
         ticks += 1
@@ -665,6 +677,17 @@ PAGE = r"""<!doctype html>
   #extra .app .mark{display:none}
   #extra .app.on{border-left-color:var(--accent)}
   #extra .acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  /* Le journal vit tout en bas de la page, sous toutes les sections : en cliquant
+     « corriger » dans « Configuration du rig », on écrivait le compte-rendu à un endroit
+     qui n'est pas à l'écran. D'où ce bandeau, qui vient au regard plutôt que l'inverse —
+     il NOMME l'action lancée, puis dit ce qu'elle a donné. Le journal reste l'historique. */
+  #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:60;
+    max-width:min(92vw,560px);padding:10px 16px;border-radius:10px;border:1px solid var(--line);
+    background:#0e1118;color:var(--fg);font-size:14px;line-height:1.4;display:none;
+    box-shadow:0 6px 24px #0009;text-align:center}
+  #toast.run{border-color:var(--mut)}
+  #toast.ok{border-color:var(--ok);color:var(--ok)}
+  #toast.ko{border-color:var(--fail);color:var(--fail)}
   #log{white-space:pre-wrap;background:#0a0c11;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:18px;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mut);max-height:200px;overflow:auto;display:none}
   /* Soundcheck intégré : des pastilles denses, pas les grandes tuiles de la page dédiée —
      elles doivent tenir sous les checks sans repousser le reste hors de l'écran. */
@@ -740,7 +763,12 @@ PAGE = r"""<!doctype html>
 </style></head><body>
 <header>
   <h1>🎹 Rig — état global</h1>
-  <div class="sub">Vue auto-rafraîchie (lecture seule). Les actions sont des clics explicites.</div>
+  <!-- #stamp : l'heure du dernier calcul. L'élément avait disparu d'une refonte alors que
+       refresh() continuait de l'écrire, et l'exception qui en résultait tombait juste
+       AVANT window.scrollTo(0,y) : la page perdait sa position de défilement à chaque
+       rafraîchissement, toutes les deux secondes, sans que rien ne dise pourquoi. -->
+  <div class="sub">Vue auto-rafraîchie (lecture seule). Les actions sont des clics explicites.
+    <span id="stamp" class="stamp"></span></div>
   <div id="banner" class="banner warn">…chargement</div>
   <div class="bar">
     <span class="seg" id="modeseg">
@@ -800,6 +828,7 @@ PAGE = r"""<!doctype html>
     </section>
   </div>
   <div id="log"></div></main>
+<div id="toast"></div>
 <script>
 const IC={ok:"✅",warn:"⚠️",fail:"❌"};
 // Le sens des couleurs, écrit UNE fois et réutilisé partout. C'est la question posée par
@@ -1107,6 +1136,14 @@ async function quitApps(){
   logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
   extraSel=null;setTimeout(refresh,900);
 }
+let toastT=null;
+// kind: "run" (en cours, reste affiché), "ok" (4 s), "ko" (9 s — un échec se lit).
+function toast(kind,text){
+  const el=document.getElementById("toast");
+  el.className=kind;el.textContent=text;el.style.display="block";
+  clearTimeout(toastT);
+  if(kind!=="run") toastT=setTimeout(()=>{el.style.display="none";},kind==="ko"?9000:4000);
+}
 function logline(t){const l=document.getElementById("log");l.style.display="block";l.textContent=(new Date().toLocaleTimeString()+"  "+t+"\n"+l.textContent).slice(0,4000);}
 async function refresh(){
   const y=window.scrollY;
@@ -1197,15 +1234,21 @@ async function refresh(){
 // relancé deux fois est exactement ce qu'on ne veut pas ici.
 async function fix(key,label,btn){
   logline(`→ ${label}…`);
+  toast("run","⏳ "+label+"…");
   if(btn){btn.disabled=true;btn.dataset.was=btn.textContent;btn.textContent="⏳ "+label;}
   try{
     const r=await(await fetch("/api/fix",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({key,dry:false})})).json();
-    logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+    const brut=(r.message||"").replace(/\n/g,"  |  ");
+    logline((r.ok?"✔ ":"✖ ")+brut);
+    // Le compte-rendu peut faire dix lignes ; le bandeau garde le NOM de l'action, qui
+    // est ce qu'on cherche à confirmer, et renvoie au journal pour le détail.
+    toast(r.ok?"ok":"ko",(r.ok?"✔ ":"✖ ")+label+(brut?" — "+brut.slice(0,120):""));
   }catch(e){
     // Sans ce filet, une requête qui échoue laissait le bouton grisé pour toujours et
     // ne disait rien : l'échec ressemblait à une attente qui dure.
     logline("✖ "+label+" — "+e);
+    toast("ko","✖ "+label+" — "+e);
   }finally{
     if(btn){btn.disabled=false;btn.textContent=btn.dataset.was;}
   }
@@ -1217,12 +1260,15 @@ async function fix(key,label,btn){
 // qui pouvait contredire le réglage. Pour tout ranger, Ableton compris : `rig tidy --all`.
 async function tidy(){
   logline(`🪟 rangement des fenêtres…`);
+  toast("run","⏳ Rangement des fenêtres…");
   const r=await(await fetch("/api/windows",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({all:false,dry:false})})).json();
   logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+  toast(r.ok?"ok":"ko",(r.ok?"✔ ":"✖ ")+"Rangement des fenêtres");
 }
 async function preflight(){
   logline(`▶ préflight…`);
+  toast("run","⏳ Préflight — mise en place du rig…");
   const r=await(await fetch("/api/preflight",{method:"POST",headers:{"Content-Type":"application/json"},
     body:JSON.stringify({dry:false})})).json();
   logline((r.message||"").replace(/\n/g,"  |  "));
