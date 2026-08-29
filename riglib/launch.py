@@ -7,6 +7,8 @@ binds to live ports instead of racing an app that is still booting.
 
 from __future__ import annotations
 
+import glob
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -189,6 +191,34 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     tidy_windows(cfg, log=log, dry_run=dry_run)
 
 
+def _attendre_chargement(motif: str, calme: float, plafond: float, log) -> bool:
+    """Attend que le DAW se taise. Rend faux s'il n'y a rien à observer.
+
+    Une durée fixe est un pari sur la taille du set, et elle se trompe des deux côtés :
+    trop courte, la scène part dans un set à moitié chargé ; trop longue, on regarde
+    l'écran sans rien faire pendant la mise en place. Le journal, lui, dit la vérité —
+    le DAW y écrit sans arrêt pendant qu'il charge, et cesse quand il a fini (mesuré :
+    silence quatre secondes après la dernière action).
+    """
+    fichiers = [f for f in glob.glob(os.path.expanduser(motif)) if os.path.exists(f)]
+    if not fichiers:
+        return False
+    f = max(fichiers, key=os.path.getmtime)
+    debut = time.monotonic()
+    mtime, dernier_ecrit = os.path.getmtime(f), time.monotonic()
+    while time.monotonic() - debut < plafond:
+        time.sleep(0.4)
+        m = os.path.getmtime(f)
+        if m != mtime:
+            mtime, dernier_ecrit = m, time.monotonic()
+        elif time.monotonic() - dernier_ecrit >= calme:
+            log(f"  ✔ set chargé — journal silencieux depuis {calme:.0f}s "
+                f"({time.monotonic() - debut:.0f}s d'attente)")
+            return True
+    log(f"  ⚠️  journal toujours actif après {plafond:.0f}s — on lance quand même")
+    return True
+
+
 def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
     """Lance une scène du set, une fois celui-ci chargé.
 
@@ -210,13 +240,18 @@ def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
         return                       # non configuré : rien à faire, et rien à dire
     canal = int(sc.get("channel", 1)) - 1
     num_cc, scene = int(sc.get("select_cc", 2)), int(sc.get("scene", 0))
-    note, attente = int(sc.get("trigger_note", 38)), float(sc.get("delay_seconds", 12))
+    note = int(sc.get("trigger_note", 38))
+    motif = sc.get("log_glob", "")
     if dry_run:
-        log(f"  [dry-run] attendrait {attente:.0f}s puis lancerait la scène {scene} "
+        log(f"  [dry-run] attendrait la fin du chargement puis lancerait la scène {scene} "
             f"(CC {num_cc} puis note {note}, canal {canal + 1}) sur « {port} »")
         return
-    log(f"  … {attente:.0f}s le temps que le set finisse de charger")
-    time.sleep(attente)
+    log("  … attente de la fin du chargement du set")
+    if not (motif and _attendre_chargement(motif, float(sc.get("quiet_seconds", 2)),
+                                           float(sc.get("max_seconds", 25)), log)):
+        attente = float(sc.get("delay_seconds", 12))
+        log(f"  (pas de journal à observer — attente fixe de {attente:.0f}s)")
+        time.sleep(attente)
     cible = next((p for p in mido.get_output_names() if port.lower() in p.lower()), None)
     if cible is None:
         log(f"  ✖ départ du set : port « {port} » absent")
