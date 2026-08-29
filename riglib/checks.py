@@ -157,20 +157,23 @@ def check_apps(cfg: dict) -> list[Result]:
     out = []
     for label, pattern in cfg["checks"]["apps"].items():
         cmds = _pgrep_cmds(pattern)
+        # Le libellé dit l'ÉTAT, pas l'attente. « Ableton lancé » écrit en rouge affirme
+        # le contraire de ce qui se passe : on lit le texte avant la couleur, et il faut
+        # une seconde pour comprendre qu'il faut le lire à l'envers. Sur scène cette
+        # seconde-là coûte cher.
         if not cmds:
-            status, detail = FAIL, "process introuvable"
+            status, titre, detail = FAIL, f"{label} non lancé", "process introuvable"
         elif len(cmds) > 1:
-            status = FAIL
+            status, titre = FAIL, f"{label} en double"
             detail = f"{len(cmds)} instances, il n'en faut qu'une : " + " · ".join(
                 Path(c.split("/Contents/")[0]).name for c in cmds)
         elif want and label.lower() in want_stem and not cmds[0].startswith(want):
-            status = FAIL
-            detail = (f"mauvaise installation : {Path(cmds[0].split('/Contents/')[0]).name} "
+            status, titre = FAIL, f"{label} : mauvaise installation"
+            detail = (f"{Path(cmds[0].split('/Contents/')[0]).name} "
                       f"— attendu {Path(want).name}")
         else:
-            status, detail = OK, ""
-        out.append(Result(key=f"app:{label}", label=f"{label} lancé",
-                          status=status, detail=detail))
+            status, titre, detail = OK, f"{label} lancé", ""
+        out.append(Result(key=f"app:{label}", label=titre, status=status, detail=detail))
     return out
 
 
@@ -418,7 +421,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
     # correctif règle la sortie.
     if short.lower().startswith("no device"):
         stamp = (when_iso or "").replace("T", " ")[:16]
-        return Result("audio:live", label, FAIL,
+        return Result("audio:live", "Ableton ne produit pas de son", FAIL,
                       _hint(f"aucun périphérique de sortie (No Device{', du ' + stamp if stamp else ''})",
                             "Live ne sortira aucun son tant que ce n'est pas réglé"))
 
@@ -457,7 +460,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
 
     if ok:
         return Result("audio:live", label, OK, short)
-    return Result("audio:live", label, FAIL,
+    return Result("audio:live", "Ableton ne produit pas de son", FAIL,
                   _hint(f"sort sur {short}",
                         "attendu : " + " ou ".join(wants) +
                         " — à changer dans Live > Préférences > Audio"))
@@ -883,16 +886,29 @@ def _audio_ready() -> bool:
 
 
 def check_audio(cfg: dict, mode: str = "live") -> Result | None:
-    want = cfg["checks"]["audio_interface"]
-    sev = cfg["modes"].get(mode, {}).get("interface_severity", "fail")
-    if sev == OFF:
+    # L'interface attendue est un réglage PAR MODE — le P-225 sur scène, rien au bureau —
+    # et le réglage global n'est qu'un repli pour un rig qui n'a qu'un mode. Lire le
+    # global d'abord était un bug silencieux de la même famille que [set].app : la config
+    # disait « P-225 », le moteur vérifiait « USB Audio », son propre défaut générique,
+    # et le studio affichait une ligne qu'il avait justement demandé à ne pas avoir.
+    m = cfg["modes"].get(mode, {})
+    # Dès qu'UN mode déclare son interface, ne rien déclarer devient un choix, pas un
+    # oubli : le studio veut justement qu'aucune interface ne soit exigée. Le repli
+    # global ne sert donc qu'aux rigs qui n'ont pas de modes du tout.
+    par_mode = any("audio_interface" in v for v in cfg["modes"].values() if isinstance(v, dict))
+    want = m.get("audio_interface") if par_mode else cfg["checks"].get("audio_interface")
+    sev = m.get("interface_severity", "fail")
+    if sev == OFF or not want:
         return None
     names = [it.get("_name", "") for it in _audio_items()]
     if not _audio_ready():
         return Result("audio", f"Interface audio « {want} »", INFO, "lecture CoreAudio en cours…")
     hit = any(want.lower() in n.lower() for n in names)
+    # Même principe que pour les applications : lu en rouge, « Interface audio « RME » »
+    # affirme une présence que la couleur dément. Le libellé dit ce qui EST.
     return Result(
-        key="audio", label=f"Interface audio « {want} »",
+        key="audio",
+        label=f"Interface audio « {want} »" if hit else f"Interface « {want} » introuvable",
         status=OK if hit else sev,
         detail="" if hit else ("non détectée" if sev == FAIL else "non détectée (OK en studio)"),
     )

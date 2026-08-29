@@ -42,6 +42,7 @@ FAMILIES = [
     ("lamp",  "L", "lampes de scène"),
     ("sys",   "Y", "système : alimentation, veille, accessibilité, sortie son du Mac"),
     ("xapp",  "X", "une application de trop tourne"),
+    ("sc",    "B", "balance : une étape du soundcheck n'est pas passée"),
 ]
 CC_FAMILY_BASE = 112     # CC 111 porte le total, 112..120 les neuf familles
 

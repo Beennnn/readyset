@@ -20,7 +20,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from urllib.parse import parse_qs, urlparse
 
-from . import (apps, audiolevel, cascade, checks, gear, idevice, launch, midimon,
+from . import (alerts, apps, audiolevel, cascade, checks, gear, idevice, launch, midimon,
                remedy, spectrum, windows)
 
 _MON = midimon.MidiMonitor()   # shared live MIDI monitor for the soundcheck page
@@ -480,13 +480,31 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "message": "route inconnue"}, code=404)
 
 
+# Un battement toutes les 60 s, en plus de chaque changement. Deux raisons distinctes :
+# le MIDI n'accuse pas réception, donc une surface allumée après le tableau de bord —
+# l'ordre habituel sur scène — n'aurait jamais rien reçu ; et un flux régulier est ce qui
+# permet à un tiers de conclure quelque chose du SILENCE. La touche elle-même ne le peut
+# pas : un script trevligaspel réagit à un message qui arrive, rien ne se déclenche quand
+# plus rien n'arrive. Le battement rend la surveillance POSSIBLE, il ne la fait pas.
+_GAUGE_BEAT = int(60 / REFRESH_EVERY)
+
+
 def _state_loop(cfg: dict) -> None:
     """Recalcule l'état sans fin, à cadence fixe, quoi que fassent les clients."""
     ticks = 0
+    # Publier ne relève pas du même geste qu'alerter : on force le seul backend « midi »
+    # plutôt que la liste de [monitor].alerts, sans quoi le tableau de bord doublerait
+    # les notifications macOS et les push de « rig monitor ».
+    jauge = alerts.Alerter(cfg, ["midi"], log=lambda m: print(f"[jauge]{m}", flush=True))
+    vues: list[str] | None = None
     while True:
         try:
             data = build_state(cfg)
             _STATE["data"], _STATE["ts"] = data, time.time()
+            tombees = [it["key"] for it in data["items"] if it.get("status") == checks.FAIL]
+            if tombees != vues or ticks % _GAUGE_BEAT == 0:
+                jauge.gauge(tombees)
+                vues = tombees
         except Exception as exc:                  # un check qui lève ne doit pas tuer la
             print(f"[state] {type(exc).__name__}: {exc}", flush=True)   # boucle entière
         ticks += 1
@@ -600,6 +618,9 @@ PAGE = r"""<!doctype html>
   button.primary{background:var(--accent);border-color:var(--accent);color:#03122b;font-weight:600}
   button.fix{background:transparent;border-color:var(--fail);color:var(--fail);padding:6px 12px;font-size:13px}
   button.fix:hover{background:var(--fail);color:#2a0009}
+  /* Un correctif en cours : le bouton dit qu'il travaille et refuse un second clic. */
+  button.fix:disabled{opacity:.55;cursor:progress}
+  button.fix:disabled:hover{background:transparent;color:var(--fail)}
   label.dry{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:13px;user-select:none}
   /* Pleine largeur : les 820 px dataient de la version en UNE colonne, où une ligne de
      texte trop longue devient illisible. Avec quatre zones côte à côte, la contrainte
@@ -1153,7 +1174,7 @@ async function refresh(){
       <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
-      btn.onclick=()=>fix(it.key,it.remedy);row.appendChild(btn);}
+      btn.onclick=()=>fix(it.key,it.remedy,btn);row.appendChild(btn);}
     if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
       b.textContent="✓ Confirmer en charge";b.onclick=()=>manualSet("iphone_charge",true);row.appendChild(b);}
     prob.appendChild(row);
@@ -1169,11 +1190,25 @@ async function refresh(){
   document.getElementById("stamp").textContent="maj "+new Date().toLocaleTimeString();
   window.scrollTo(0,y);
 }
-async function fix(key,label){
+// Le bouton se met lui-même en attente. Un correctif n'est pas instantané — ouvrir le
+// set attend jusqu'à 45 s que le port MIDI d'Ableton apparaisse — et pendant ce temps
+// la seule trace était une ligne dans le journal, qui n'est pas sous les yeux quand on
+// regarde la ligne en panne. Un bouton qui ne réagit pas se reclique, et un correctif
+// relancé deux fois est exactement ce qu'on ne veut pas ici.
+async function fix(key,label,btn){
   logline(`→ ${label}…`);
-  const r=await(await fetch("/api/fix",{method:"POST",headers:{"Content-Type":"application/json"},
-    body:JSON.stringify({key,dry:false})})).json();
-  logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+  if(btn){btn.disabled=true;btn.dataset.was=btn.textContent;btn.textContent="⏳ "+label;}
+  try{
+    const r=await(await fetch("/api/fix",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({key,dry:false})})).json();
+    logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+  }catch(e){
+    // Sans ce filet, une requête qui échoue laissait le bouton grisé pour toujours et
+    // ne disait rien : l'échec ressemblait à une attente qui dure.
+    logline("✖ "+label+" — "+e);
+  }finally{
+    if(btn){btn.disabled=false;btn.textContent=btn.dataset.was;}
+  }
   setTimeout(refresh,800);
 }
 // Ranger les fenêtres : les apps continuent de tourner, elles disparaissent juste de
