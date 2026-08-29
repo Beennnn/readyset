@@ -190,22 +190,30 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
 
 
 def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Envoie le CC « go » une fois le set chargé — typiquement, lancer la scène 1.
+    """Lance une scène du set, une fois celui-ci chargé.
+
+    Deux messages, dans cet ordre : un CC dont la VALEUR est le numéro de scène, puis
+    une note qui déclenche la scène sélectionnée. Ce couple n'est pas inventé ici — c'est
+    le protocole que la surface de contrôle du rig parle déjà (scène 0 = remise à zéro,
+    1 = arrêt, 3 et au-delà = les morceaux). Le réutiliser évite un second mapping dans
+    le DAW, et surtout évite deux vérités sur la même chose.
 
     Séparé de open_set volontairement : ouvrir un set et le faire JOUER sont deux
     décisions distinctes, et la seconde ne doit pas partir quand on rouvre le set en
-    cours de soirée pour vérifier un réglage. C'est la mise en place qui l'appelle,
-    après avoir posé la sortie audio — dans cet ordre, sinon les premières mesures
-    sortiraient sur la mauvaise interface.
+    cours de soirée pour vérifier un réglage. C'est la mise en place qui l'appelle, après
+    avoir posé la sortie audio — dans cet ordre, sinon les premières mesures sortiraient
+    sur l'interface qu'on vient de corriger.
     """
-    sc = cfg["set"].get("start_cc") or {}
+    sc = cfg["set"].get("start_scene") or {}
     port = sc.get("port", "")
     if not port:
         return                       # non configuré : rien à faire, et rien à dire
-    canal, num = int(sc.get("channel", 1)), int(sc.get("cc", 30))
-    valeur, attente = int(sc.get("value", 127)), float(sc.get("delay_seconds", 12))
+    canal = int(sc.get("channel", 1)) - 1
+    num_cc, scene = int(sc.get("select_cc", 2)), int(sc.get("scene", 0))
+    note, attente = int(sc.get("trigger_note", 38)), float(sc.get("delay_seconds", 12))
     if dry_run:
-        log(f"  [dry-run] attendrait {attente:.0f}s puis CC {num} canal {canal} sur « {port} »")
+        log(f"  [dry-run] attendrait {attente:.0f}s puis lancerait la scène {scene} "
+            f"(CC {num_cc} puis note {note}, canal {canal + 1}) sur « {port} »")
         return
     log(f"  … {attente:.0f}s le temps que le set finisse de charger")
     time.sleep(attente)
@@ -215,8 +223,10 @@ def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
         return
     try:
         with mido.open_output(cible) as out:
-            out.send(mido.Message("control_change", channel=canal - 1,
-                                  control=num, value=valeur))
-        log(f"  ▶ départ du set — CC {num} canal {canal} sur « {cible} »")
+            out.send(mido.Message("control_change", channel=canal,
+                                  control=num_cc, value=scene))
+            out.send(mido.Message("note_on", channel=canal, note=note, velocity=127))
+            out.send(mido.Message("note_off", channel=canal, note=note, velocity=0))
+        log(f"  ▶ scène {scene} lancée — CC {num_cc} puis note {note}, canal {canal + 1}")
     except Exception as exc:         # un démarrage raté ne doit pas couler la mise en place
         log(f"  ✖ départ du set : {exc}")
