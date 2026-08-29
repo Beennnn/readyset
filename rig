@@ -115,8 +115,8 @@ def cmd_monitor(cfg: dict, args) -> int:
         alerter.notify("🎹 Rig — démarrage KO", "En panne au lancement : " + ", ".join(broken), "fail")
     # Publish the count straight away: it also clears whatever stale number a
     # previous run left on the surface.
-    prev_fails = sum(1 for r in baseline if r.status == checks.FAIL)
-    alerter.gauge(prev_fails)
+    prev_keys = [r.key for r in baseline if r.status == checks.FAIL]
+    alerter.gauge(prev_keys)
     print()
     cycle = 1
     try:
@@ -141,13 +141,14 @@ def cmd_monitor(cfg: dict, args) -> int:
                     print(f"[{_hr()}] ⚠️  {r.label} ({r.detail})")
 
             status = checks.worst(results)
-            fails = sum(1 for r in results if r.status == checks.FAIL)
-            if fails != prev_fails:
-                alerter.gauge(fails)
-                prev_fails = fails
+            failing = [r.key for r in results if r.status == checks.FAIL]
+            fails = len(failing)
+            if failing != prev_keys:
+                alerter.gauge(failing)
+                prev_keys = failing
             if cycle % 12 == 0:   # heartbeat so silence never looks like a hang
                 icon = {"ok": "✅", "info": "ℹ️", "warn": "⚠️", "fail": "❌"}[status]
-                alerter.gauge(fails)   # re-assert, so a surface booted late catches up
+                alerter.gauge(failing)   # re-assert, so a surface booted late catches up
                 print(f"[{_hr()}] {icon} heartbeat — {len(results)} checks, {fails} en panne")
 
             cycle += 1
@@ -221,9 +222,11 @@ def cmd_alert_test(cfg: dict, args) -> int:
     print(f"[{_hr()}] Test des alertes: {', '.join(active)}{' (dry-run)' if dry else ''}")
     alerter = alerts.Alerter(cfg, active, dry_run=dry)
     alerter.notify("🎹 Rig — test", "Ceci est une alerte de test.", "warn")
-    alerter.gauge(3)   # a value, not a lamp: the key must read 3, not just light up
+    # Three failures in three different families: the key must read 3 and spell AMN,
+    # not merely light up.
+    alerter.gauge(["app:Ableton Live", "midi:P-Series", "net:stage"])
     print("Envoyé. Vérifie la notif / le téléphone / le bouton Stream Deck.")
-    print("Le bouton doit afficher 3. « rig monitor » y remettra la vraie valeur.")
+    print("Le bouton doit afficher 3 et les lettres AMN. « rig monitor » y remettra la vraie valeur.")
     return 0
 
 

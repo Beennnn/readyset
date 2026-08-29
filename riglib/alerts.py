@@ -9,9 +9,10 @@ the one-time button-side mapping is yours to set (see rig.example.toml).
 
   macos       — osascript banner + sound. Zero setup, but the laptop is closed on stage.
   push        — HTTP POST to ntfy.sh (stdlib, no install). Buzzes your phone anywhere.
-  midi        — MIDI CC to a virtual port → a feedback-configured key shows the
-                number of failing checks, and goes to its alert state when it is
-                not zero. A *count*, not an event: see Alerter.gauge().
+  midi        — MIDI CCs to a virtual port → a feedback-configured key shows the
+                number of failing checks AND which families they belong to, and
+                goes to its alert state when the total is not zero. *Counts*,
+                not events: see Alerter.gauge().
 """
 
 from __future__ import annotations
@@ -23,12 +24,29 @@ import urllib.request
 import mido
 
 
-class Alerter:
-    # Backends that speak in *counts* rather than events. Feeding them one
-    # message per transition would make the key flicker and lose the total,
-    # so notify() skips them; they publish through gauge() instead.
-    GAUGE_ONLY = ("midi",)
+# One letter per family of checks, and the order fixes the CC numbers: family i
+# is published on CC_FAMILY_BASE + i. It is therefore an ordering that must not be
+# re-sorted — a letter that changes CC between two versions would silently make a
+# key display something else, which is worse than displaying nothing.
+#
+# The families are not invented here: they are the prefix that check keys already
+# carry ("app:Ableton", "midi:P-Series", "sys:macpower"). Grouping by prefix means
+# a new check joins its family on its own, with no table to keep in step.
+FAMILIES = [
+    ("app",   "A", "une application du rig ne tourne pas"),
+    ("midi",  "M", "un port MIDI manque"),
+    ("kbd",   "K", "clavier ou contrôleur de souffle"),
+    ("audio", "S", "son : interface, périphérique, sortie d'Ableton"),
+    ("net",   "N", "réseau de scène"),
+    ("usb",   "D", "Stream Deck"),
+    ("lamp",  "L", "lampes de scène"),
+    ("sys",   "Y", "système : alimentation, veille, accessibilité, sortie son du Mac"),
+    ("xapp",  "X", "une application de trop tourne"),
+]
+CC_FAMILY_BASE = 112     # CC 111 porte le total, 112..120 les neuf familles
 
+
+class Alerter:
     def __init__(self, cfg: dict, active: list[str], log=print, dry_run: bool = False):
         self.cfg = cfg
         self.active = active
@@ -93,27 +111,43 @@ class Alerter:
         urllib.request.urlopen(req, timeout=5, context=ctx).read()
 
     # -- gauge (counts, not events) ---------------------------------------
-    def gauge(self, failing: int) -> None:
-        """Publish how many checks are failing RIGHT NOW, as a MIDI CC value.
+    def gauge(self, failing_keys: list[str]) -> None:
+        """Publish WHAT is failing right now: a total, and a count per family.
 
-        Replaces the old note-on/note-off alert (a single lamp): a count says
-        *how bad* it is, and 0 is unambiguously "all good" — a lamp that never
-        got its note-off looks identical to one that was never lit.
+        Replaces the old note-on/note-off alert (a single lamp). A lamp could not
+        say whether one check or five were down, nor which; and an unlit lamp was
+        ambiguous — never lit, recovered, and note-off missed all looked alike.
+        Here 0 says all good and nothing else, and the family counts let a key
+        spell out the letters of what broke.
 
-        Resent on every change and on every heartbeat, deliberately: MIDI has no
+        Resent on every change and every heartbeat, deliberately: MIDI has no
         acknowledgement, so a surface that boots after the monitor — or misses a
         message — would otherwise keep showing a stale number forever. Sending
-        the truth repeatedly costs one 3-byte message and makes the display
-        self-healing.
+        the truth repeatedly costs a handful of 3-byte messages and makes the
+        display self-healing.
         """
         if "midi" not in self.active:
             return
         mc = self.cfg["alerts"]["midi"]
-        cc = int(mc.get("cc", 111))
+        base = int(mc.get("cc", 111))
         ch = int(mc.get("channel", 15)) - 1      # mido is 0-based
-        value = max(0, min(int(failing), 127))   # a CC carries 0..127, nothing else
+
+        per = {}
+        for k in failing_keys:
+            per[k.split(":", 1)[0]] = per.get(k.split(":", 1)[0], 0) + 1
+        # A CC carries 0..127 and nothing wider; a rig with 128 failing checks has
+        # problems this key will not help with.
+        msgs = [(base, min(len(failing_keys), 127))]
+        msgs += [(CC_FAMILY_BASE + i, min(per.get(prefix, 0), 127))
+                 for i, (prefix, _letter, _why) in enumerate(FAMILIES)]
+
+        unknown = set(per) - {f[0] for f in FAMILIES}
+        if unknown:   # a new prefix appeared: it still counts in the total, but has no letter
+            self.log(f"  (jauge : famille sans lettre — {', '.join(sorted(unknown))})")
+
         if self.dry_run:
-            self.log(f"  [dry-run] jauge → CC {cc} canal {ch + 1} = {value} (rien envoyé)")
+            shown = " ".join(f"{cc}={v}" for cc, v in msgs if v)
+            self.log(f"  [dry-run] jauge canal {ch + 1} → {shown or f'{base}=0'} (rien envoyé)")
             return
         target = mc["port"]
         match = next((p for p in mido.get_output_names() if target.lower() in p.lower()), None)
@@ -122,6 +156,7 @@ class Alerter:
             return
         try:
             with mido.open_output(match) as port:
-                port.send(mido.Message("control_change", channel=ch, control=cc, value=value))
+                for cc, value in msgs:
+                    port.send(mido.Message("control_change", channel=ch, control=cc, value=value))
         except Exception as exc:   # an alert must never take the monitor down
             self.log(f"  (jauge a échoué: {exc})")
