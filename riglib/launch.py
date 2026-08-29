@@ -225,8 +225,11 @@ def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
         with mido.open_output(cible) as out:
             out.send(mido.Message("control_change", channel=canal,
                                   control=num_cc, value=scene))
+            # Note-on SEUL, comme la surface : {cc:1,2,0} puis {noteon:1,38,127}. J'y
+            # avais ajouté un note-off par hygiène ; le rig tourne ainsi depuis des mois
+            # sans note suspendue, donc l'inquiétude était théorique et l'ajout une
+            # divergence gratuite avec le protocole de référence.
             out.send(mido.Message("note_on", channel=canal, note=note, velocity=127))
-            out.send(mido.Message("note_off", channel=canal, note=note, velocity=0))
         log(f"  ▶ scène {scene} lancée — CC {num_cc} puis note {note}, canal {canal + 1}")
     except Exception as exc:         # un démarrage raté ne doit pas couler la mise en place
         log(f"  ✖ départ du set : {exc}")
