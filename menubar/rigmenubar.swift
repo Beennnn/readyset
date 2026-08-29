@@ -353,7 +353,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             aw.hasShadow = false
             let av = AlarmView(frame: NSRect(origin: .zero, size: screen.frame.size))
             av.card.onFix = { [weak self] in self?.fixAlarm() }
-            av.card.onSnooze = { [weak self] in self?.silenceAlarm() }
+            av.card.onStop = { [weak self] in self?.silenceAlarm() }
+            // Cinq minutes : assez pour finir le morceau en cours et le suivant, trop peu
+            // pour qu'une panne se fasse oublier jusqu'à la fin du set.
+            av.card.onSnooze = { [weak self] in self?.snoozeAlarm(300) }
             aw.contentView = av; alarms.append((aw, av))
 
             let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
@@ -1059,6 +1062,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func silenceAlarm() { alarm.silence(); applyOverlay() }
+    /// Le report revient tout seul : le sondage tourne toutes les 5 s et rappelle
+    /// `applyOverlay`, qui redemande `firing` — lequel regarde l'heure. Pas de minuterie à
+    /// armer, donc rien qui puisse se perdre si l'app est relancée entre-temps.
+    func snoozeAlarm(_ seconds: TimeInterval) { alarm.snooze(seconds); applyOverlay() }
 
     /// Le bouton du panneau : lance le remède de CHAQUE panne de l'alarme, et d'elles
     /// seules. Pas `/api/preflight` (« Tout préparer ») — celui-là relance des apps et

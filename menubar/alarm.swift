@@ -55,8 +55,25 @@ struct AlarmState {
     /// liseré reste, la liste reste, seule l'alarme se calme. Un problème qu'on ne peut pas
     /// réparer maintenant ne doit pas condamner l'écran pour le reste du set.
     private(set) var silenced = false
+    /// Le report à échéance — l'alarme se tait, puis REVIENT si rien n'a été réglé.
+    ///
+    /// C'est un troisième état, et il fallait qu'il en soit un : « arrêter » convient à ce
+    /// qu'on a vu et décidé d'ignorer, le report à ce qu'on traitera dans deux morceaux et
+    /// qu'on oublierait sans lui. Les confondre, c'est perdre l'un des deux — soit on tait
+    /// pour de bon ce qu'on voulait juste différer, soit on laisse clignoter ce qu'on a
+    /// déjà jugé.
+    private(set) var snoozedUntil: Date?
 
-    var firing: Bool { !keys.isEmpty && !silenced }
+    var firing: Bool {
+        guard !keys.isEmpty, !silenced else { return false }
+        if let until = snoozedUntil, Date() < until { return false }
+        return true
+    }
+    /// Ce qu'il reste à courir, pour l'afficher plutôt que de laisser deviner.
+    var snoozeRemaining: TimeInterval? {
+        guard let until = snoozedUntil, Date() < until else { return nil }
+        return until.timeIntervalSinceNow
+    }
 
     /// À appeler à CHAQUE sondage, avec les problèmes qu'on veut surveiller (les bloquants,
     /// plus les avertissements si l'option le demande).
@@ -73,16 +90,20 @@ struct AlarmState {
         let fresh = now.subtracting(known)
         // Nouvel épisode : un « tais-toi » ne vaut que pour les pannes qu'on connaissait
         // en le prononçant. Ce qui casse ENSUITE a droit à son clignotement.
-        if !fresh.isEmpty, keys.isEmpty { silenced = false }
+        if !fresh.isEmpty, keys.isEmpty { silenced = false; snoozedUntil = nil }
         keys.formUnion(fresh)
         keys.formIntersection(now)          // réparé → sort de l'alarme
-        if keys.isEmpty { silenced = false }
+        if keys.isEmpty { silenced = false; snoozedUntil = nil }
+        // Une panne réglée pendant le report ferme le report avec elle : ce qui revient
+        // ne doit être que ce qui est encore cassé.
+        if snoozedUntil != nil, keys.isEmpty { snoozedUntil = nil }
 
         items = problems.filter { keys.contains($0.key) }
         level = items.contains { $0.status == "fail" } ? .fail : .warn
     }
 
-    mutating func silence() { silenced = true }
+    mutating func silence() { silenced = true; snoozedUntil = nil }
+    mutating func snooze(_ seconds: TimeInterval) { snoozedUntil = Date().addingTimeInterval(seconds); silenced = false }
 
     /// Ce que le bouton de correction peut lancer : les pannes de l'alarme qui ont un
     /// remède. Vide = pas de bouton, et le panneau le DIT au lieu d'en offrir un qui ne
@@ -154,6 +175,75 @@ final class FlashFrameView: NSView {
 }
 
 // ---------------------------------------------------------------------------
+// Les boutons — gros, et qui disent ce qu'ils font
+// ---------------------------------------------------------------------------
+/// Un bouton du panneau : un titre qu'on lit de loin, et sous lui une ligne qui dit ce
+/// qui se passera.
+///
+/// Le sous-titre n'est pas de la décoration. « Arrêter l'alarme » et « Rappel dans 5 min »
+/// se ressemblent assez pour qu'on hésite une seconde — et une seconde d'hésitation
+/// devant un écran rouge, sur scène, c'est déjà trop. La ligne du dessous lève le doute
+/// sans qu'on ait à se souvenir de rien.
+///
+/// Il remplace une ligne d'aide de 12 px en gris à 50 % posée sous les boutons, qui
+/// portait la même information et que personne ne pouvait lire.
+final class BigButton: NSButton {
+    enum Tone { case action, neutral, off }
+    private var tone: Tone = .neutral
+
+    init(tone: Tone, title: String, subtitle: String, target: AnyObject?, action: Selector) {
+        super.init(frame: .zero)
+        self.tone = tone
+        self.target = target
+        self.action = action
+        isBordered = false
+        wantsLayer = true
+        layer?.cornerRadius = 10
+        setButtonType(.momentaryChange)
+        translatesAutoresizingMaskIntoConstraints = false
+        heightAnchor.constraint(greaterThanOrEqualToConstant: 62).isActive = true
+        set(title: title, subtitle: subtitle)
+    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) non utilisé") }
+
+    func set(tone: Tone) { self.tone = tone; isEnabled = tone != .off }
+
+    func set(title: String, subtitle: String) {
+        // Un bouton éteint reste PARFAITEMENT lisible : c'est même sa seule utilité.
+        // Griser un bouton jusqu'à l'illisible pour dire « indisponible » supprime
+        // l'information qu'on voulait donner — ici, que rien ne peut être réparé tout seul.
+        let fg: NSColor = tone == .off ? NSColor.white.withAlphaComponent(0.55) : .white
+        let sub: NSColor = tone == .off ? NSColor.white.withAlphaComponent(0.38)
+                                        : NSColor.white.withAlphaComponent(0.72)
+        layer?.backgroundColor = {
+            switch tone {
+            case .action:  return NSColor(calibratedRed: 0.13, green: 0.47, blue: 0.26, alpha: 1).cgColor
+            case .neutral: return NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
+            case .off:     return NSColor(calibratedWhite: 0.14, alpha: 1).cgColor
+            }
+        }()
+        layer?.borderWidth = tone == .off ? 1 : 0
+        layer?.borderColor = NSColor.white.withAlphaComponent(0.14).cgColor
+
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
+        para.lineSpacing = 2
+        let s = NSMutableAttributedString(string: title, attributes: [
+            .font: NSFont.systemFont(ofSize: 17, weight: .semibold),
+            .foregroundColor: fg, .paragraphStyle: para])
+        if !subtitle.isEmpty {
+            s.append(NSAttributedString(string: "\n" + subtitle, attributes: [
+                .font: NSFont.systemFont(ofSize: 12.5, weight: .regular),
+                .foregroundColor: sub, .paragraphStyle: para]))
+        }
+        attributedTitle = s
+        (cell as? NSButtonCell)?.usesSingleLineMode = false
+        (cell as? NSButtonCell)?.lineBreakMode = .byWordWrapping
+        needsDisplay = true
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Le panneau — fixe, lisible, et actionnable
 // ---------------------------------------------------------------------------
 /// Construit en vraies sous-vues (et non dessiné à la main) parce qu'il porte un BOUTON :
@@ -162,23 +252,18 @@ final class FlashFrameView: NSView {
 final class AlarmCard: NSView {
     private let stack = NSStackView()
     private let title = NSTextField(labelWithString: "")
-    private let fixButton = NSButton(title: "", target: nil, action: nil)
-    /// Le report. Il double une entrée de menu qui existait déjà — et ce doublon est le
-    /// sujet : sur scène, « ouvrir le menu 🎹 puis chercher la bonne ligne » est un geste
-    /// qu'on ne fait pas entre deux morceaux. Une panne qu'on ne peut pas réparer tout de
-    /// suite ne doit pas condamner l'écran pour le reste du set, et le geste qui la met
-    /// en attente doit coûter le même clic que celui qui la répare.
-    private let snoozeButton = NSButton(title: "", target: nil, action: nil)
-    /// Les deux boutons sur une seule rangée : ils répondent à la même question (« et
-    /// maintenant ? ») et se lisent ensemble — réparer, ou plus tard.
+    /// Trois gestes possibles devant une panne, et un bouton pour chacun — parce que les
+    /// trois sont des décisions différentes : la réparer, la classer, ou y revenir. Le
+    /// menu 🎹 en offrait un seul, et il fallait l'ouvrir pour le trouver.
+    private var fixButton: BigButton!
+    private var stopButton: BigButton!
+    private var snoozeButton: BigButton!
     private let buttons = NSStackView()
-    private let hint = NSTextField(labelWithString: "")
-    /// Ce que le bouton déclenche. Posé par le délégué : la carte ne sait pas parler au
-    /// moteur, et n'a pas à le savoir.
+    private var buttonsWidth: NSLayoutConstraint?
+    /// Ce que les boutons déclenchent. Posés par le délégué : la carte ne sait pas parler
+    /// au moteur, et n'a pas à le savoir.
     var onFix: (() -> Void)?
-    /// Idem pour le report — c'est `silence()` de l'état d'alarme, pas une minuterie : un
-    /// réveil programmé retomberait au milieu d'un morceau, ce qui est exactement le
-    /// moment où l'on avait demandé le silence. Ce qui rallume, c'est une panne NEUVE.
+    var onStop: (() -> Void)?
     var onSnooze: (() -> Void)?
 
     override init(frame: NSRect) {
@@ -191,25 +276,20 @@ final class AlarmCard: NSView {
         title.font = .systemFont(ofSize: 27, weight: .heavy)
         title.lineBreakMode = .byTruncatingTail
 
-        for (b, sel) in [(fixButton, #selector(fixTapped)), (snoozeButton, #selector(snoozeTapped))] {
-            b.bezelStyle = .regularSquare
-            b.controlSize = .large
-            b.target = self
-            b.action = sel
-            b.isBordered = true
-            b.setButtonType(.momentaryPushIn)
-            b.font = .systemFont(ofSize: 17, weight: .semibold)
-            b.contentTintColor = .white
-        }
-        snoozeButton.title = "🔕  " + T("alarm.snooze", "Later")
+        fixButton = BigButton(tone: .action, title: "", subtitle: "",
+                              target: self, action: #selector(fixTapped))
+        stopButton = BigButton(tone: .neutral, title: T("alarm.stop", "Stop the alarm"),
+                               subtitle: T("alarm.stopSub", "The error stays, the screen calms down"),
+                               target: self, action: #selector(stopTapped))
+        snoozeButton = BigButton(tone: .neutral, title: T("alarm.snooze", "Remind me in 5 min"),
+                                 subtitle: T("alarm.snoozeSub", "Comes back if it is still broken"),
+                                 target: self, action: #selector(snoozeTapped))
         buttons.orientation = .horizontal
-        buttons.alignment = .centerY
+        buttons.distribution = .fillEqually
+        buttons.alignment = .top
         buttons.spacing = 10
-        buttons.addArrangedSubview(fixButton)
-        buttons.addArrangedSubview(snoozeButton)
-
-        hint.font = .systemFont(ofSize: 12)
-        hint.textColor = NSColor.white.withAlphaComponent(0.5)
+        [fixButton, stopButton, snoozeButton].forEach { buttons.addArrangedSubview($0!) }
+        buttons.translatesAutoresizingMaskIntoConstraints = false
 
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -226,6 +306,7 @@ final class AlarmCard: NSView {
     required init?(coder: NSCoder) { fatalError("init(coder:) non utilisé") }
 
     @objc private func fixTapped() { onFix?() }
+    @objc private func stopTapped() { onStop?() }
     @objc private func snoozeTapped() { onSnooze?() }
 
     /// Le bouton est le SEUL endroit qui prend un clic. Partout ailleurs `hitTest` rend
@@ -233,8 +314,10 @@ final class AlarmCard: NSView {
     /// panneau d'alerte n'a pas à s'interposer entre le doigt et Ableton.
     override func hitTest(_ point: NSPoint) -> NSView? {
         let local = convert(point, from: superview)
-        for b in [fixButton, snoozeButton] where !b.isHidden && b.superview != nil {
-            if b.convert(b.bounds, to: self).contains(local) { return b }
+        // Un bouton ÉTEINT reste dans la liste : il occupe sa place, et un clic dessus doit
+        // s'arrêter là plutôt que de traverser la vitre et d'atterrir dans Ableton.
+        for b in [fixButton, stopButton, snoozeButton] where b != nil && !b!.isHidden && b!.superview != nil {
+            if b!.convert(b!.bounds, to: self).contains(local) { return b!.isEnabled ? b! : self }
         }
         return nil
     }
@@ -271,7 +354,7 @@ final class AlarmCard: NSView {
         // prendra. Sans cette réservation, la dernière panne ajoutée pousserait le bouton
         // de réparation hors de l'écran — le panneau serait complet et inutilisable.
         prepareFooter(fixable: fixable)
-        let footer = buttons.fittingSize.height + hint.fittingSize.height + stack.spacing * 2
+        let footer = 62 + stack.spacing * 2   // hauteur mini d'une rangée de boutons
         let budget = maxHeight - footer
 
         let rowWidth = width - 48
@@ -345,33 +428,40 @@ final class AlarmCard: NSView {
             stack.addArrangedSubview(more)
         }
         stack.addArrangedSubview(buttons)
-        stack.addArrangedSubview(hint)
+        if buttonsWidth == nil {
+            buttonsWidth = buttons.widthAnchor.constraint(equalToConstant: width - 48)
+            buttonsWidth?.isActive = true
+        } else {
+            buttonsWidth?.constant = width - 48
+        }
 
         frame.size = NSSize(width: width, height: stack.fittingSize.height)
         layoutSubtreeIfNeeded()
         needsDisplay = true
     }
 
-    /// Les deux boutons et la ligne d'aide — leur contenu, pas leur place dans le stack.
+    /// L'état des trois boutons. Un seul change vraiment : celui de la réparation.
     ///
-    /// Le bouton de réparation nomme LE geste quand il n'y en a qu'un (« Démarrer session
-    /// Amphetamine » se comprend sans rien ouvrir), et les compte quand il y en a
-    /// plusieurs. Sans remède, pas de bouton du tout : en offrir un qui ne ferait rien est
-    /// pire que de dire honnêtement que la main doit s'en mêler. Le report, lui, est
-    /// TOUJOURS là — c'est même quand rien ne peut être réparé qu'on en a le plus besoin.
+    /// Il nomme LE geste quand il n'y en a qu'un — « Démarrer session Amphetamine » se
+    /// comprend sans rien ouvrir — et les compte quand il y en a plusieurs. Quand il n'y a
+    /// rien à réparer, il ne disparaît pas : il le DIT. C'était la demande, et elle est
+    /// juste — un bouton absent laisse la question ouverte (« est-ce qu'il y a un
+    /// correctif, ou est-ce que je ne le vois pas ? »), un bouton éteint qui dit « aucune
+    /// correction automatique » y répond.
     private func prepareFooter(fixable: [Problem]) {
         if let only = fixable.first, fixable.count == 1 {
-            fixButton.isHidden = false
-            fixButton.title = "⚡  " + (only.remedy ?? T("alarm.fix", "Fix it now"))
+            fixButton.set(tone: .action)
+            fixButton.set(title: T("alarm.fix", "Fix it now"),
+                          subtitle: only.remedy ?? "")
         } else if fixable.count > 1 {
-            fixButton.isHidden = false
-            fixButton.title = String(format: "⚡  " + T("alarm.fixAll", "Fix these %d now"), fixable.count)
+            fixButton.set(tone: .action)
+            fixButton.set(title: T("alarm.fix", "Fix it now"),
+                          subtitle: String(format: T("alarm.fixCount", "%d fixes at once"), fixable.count))
         } else {
-            fixButton.isHidden = true
+            fixButton.set(tone: .off)
+            fixButton.set(title: T("alarm.fixNone", "No automatic fix"),
+                          subtitle: T("alarm.fixNoneSub", "This one needs your hands"))
         }
-        hint.stringValue = fixable.isEmpty
-            ? T("alarm.manualOnly", "No automatic fix — this one needs your hands.")
-            : T("alarm.hint", "The alarm stops on its own once it is fixed.")
     }
 
     /// Une panne : son icône de TYPE à gauche (celle que le moteur donne — 🔌 pour

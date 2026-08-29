@@ -24,11 +24,15 @@
 /* --- Alarme (quelque chose vient de lâcher) --- */
 "alarm.title"       = "QUELQUE CHOSE VIENT DE LÂCHER";
 "alarm.more"        = "+%d autre(s)";
+/* Les trois boutons du panneau : réparer, classer, revenir plus tard. */
 "alarm.fix"         = "Corriger maintenant";
-"alarm.fixAll"      = "Corriger ces %d maintenant";
-"alarm.manualOnly"  = "Pas de correctif automatique — celle-ci demande tes mains.";
-"alarm.hint"        = "L'alarme s'arrête d'elle-même dès que c'est réparé.";
-"alarm.snooze"      = "Plus tard";
+"alarm.fixCount"    = "%d correctifs d'un coup";
+"alarm.fixNone"     = "Pas de correctif auto";
+"alarm.fixNoneSub"  = "Celle-ci demande tes mains";
+"alarm.stop"        = "Arrêter l'alarme";
+"alarm.stopSub"     = "L'erreur reste, l'écran se calme";
+"alarm.snooze"      = "Rappel dans 5 min";
+"alarm.snoozeSub"   = "Revient si ce n'est pas réglé";
 /* Erreurs liées : la ligne portée par la CAUSE, puis celle de chaque panne qu'elle entraîne. */
 "alarm.causes"      = "⛓  entraîne aussi : %@";
 "alarm.knockOn"     = "erreur liée — %@";
