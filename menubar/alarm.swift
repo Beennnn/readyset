@@ -191,7 +191,10 @@ final class FlashFrameView: NSView {
 /// Il remplace une ligne d'aide de 12 px en gris à 50 % posée sous les boutons, qui
 /// portait la même information et que personne ne pouvait lire.
 final class BigButton: NSButton {
-    enum Tone { case action, neutral, off }
+    // Trois gestes, trois couleurs. Deux boutons gris identiques obligeaient à LIRE pour
+    // choisir ; sur scène on vise la couleur avant de lire. Vert = ça répare, ambre = ça
+    // revient, rouge sourd = ça se tait sans rien régler.
+    enum Tone { case action, wait, stop, neutral, off }
     private var tone: Tone = .neutral
 
     init(tone: Tone, title: String, subtitle: String, target: AnyObject?, action: Selector) {
@@ -224,6 +227,8 @@ final class BigButton: NSButton {
         layer?.backgroundColor = {
             switch tone {
             case .action:  return NSColor(calibratedRed: 0.13, green: 0.47, blue: 0.26, alpha: 1).cgColor
+            case .wait:    return NSColor(calibratedRed: 0.52, green: 0.36, blue: 0.06, alpha: 1).cgColor
+            case .stop:    return NSColor(calibratedRed: 0.44, green: 0.15, blue: 0.15, alpha: 1).cgColor
             case .neutral: return NSColor(calibratedWhite: 0.24, alpha: 1).cgColor
             case .off:     return NSColor(calibratedWhite: 0.20, alpha: 1).cgColor
             }
@@ -271,6 +276,10 @@ final class AlarmCard: NSView {
     var onFix: (() -> Void)?
     var onStop: (() -> Void)?
     var onSnooze: (() -> Void)?
+    /// Confirmer à la main que l'iPhone charge. Le check ne PEUT pas le voir seul, donc
+    /// son « correctif » est une parole humaine — elle n'avait sa place que dans le menu,
+    /// c'est-à-dire à deux clics d'un panneau qui, lui, est déjà sous les yeux.
+    var onConfirmCharge: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -284,17 +293,17 @@ final class AlarmCard: NSView {
 
         fixButton = BigButton(tone: .action, title: "", subtitle: "",
                               target: self, action: #selector(fixTapped))
-        stopButton = BigButton(tone: .neutral, title: T("alarm.stop", "Stop the alarm"),
+        stopButton = BigButton(tone: .stop, title: T("alarm.stop", "✕ Stop the alarm"),
                                subtitle: T("alarm.stopSub", "The error stays, the screen calms down"),
                                target: self, action: #selector(stopTapped))
-        snoozeButton = BigButton(tone: .neutral, title: T("alarm.snooze", "Remind me in 5 min"),
+        snoozeButton = BigButton(tone: .wait, title: T("alarm.snooze", "⏰ Remind me in 5 min"),
                                  subtitle: T("alarm.snoozeSub", "Comes back if it is still broken"),
                                  target: self, action: #selector(snoozeTapped))
         buttons.orientation = .horizontal
         buttons.distribution = .fillEqually
         buttons.alignment = .top
         buttons.spacing = 10
-        [fixButton, stopButton, snoozeButton].forEach { buttons.addArrangedSubview($0!) }
+        [fixButton, snoozeButton, stopButton].forEach { buttons.addArrangedSubview($0!) }
         buttons.translatesAutoresizingMaskIntoConstraints = false
 
         stack.orientation = .vertical
@@ -311,7 +320,10 @@ final class AlarmCard: NSView {
     }
     required init?(coder: NSCoder) { fatalError("init(coder:) non utilisé") }
 
-    @objc private func fixTapped() { onFix?() }
+    /// Le bouton de gauche porte deux gestes selon ce qu'il y a à faire : réparer quand
+    /// une réparation existe, confirmer la charge quand c'est le seul geste possible.
+    private var fixIsConfirm = false
+    @objc private func fixTapped() { fixIsConfirm ? onConfirmCharge?() : onFix?() }
     @objc private func stopTapped() { onStop?() }
     @objc private func snoozeTapped() { onSnooze?() }
 
@@ -359,7 +371,7 @@ final class AlarmCard: NSView {
         // Le pied de page se prépare AVANT les lignes, pour qu'on sache la place qu'il
         // prendra. Sans cette réservation, la dernière panne ajoutée pousserait le bouton
         // de réparation hors de l'écran — le panneau serait complet et inutilisable.
-        prepareFooter(fixable: fixable)
+        prepareFooter(items: items, fixable: fixable)
         let footer = 62 + stack.spacing * 2   // hauteur mini d'une rangée de boutons
         let budget = maxHeight - footer
 
@@ -454,15 +466,22 @@ final class AlarmCard: NSView {
     /// juste — un bouton absent laisse la question ouverte (« est-ce qu'il y a un
     /// correctif, ou est-ce que je ne le vois pas ? »), un bouton éteint qui dit « aucune
     /// correction automatique » y répond.
-    private func prepareFooter(fixable: [Problem]) {
+    private func prepareFooter(items: [Problem], fixable: [Problem]) {
+        fixIsConfirm = false
         if let only = fixable.first, fixable.count == 1 {
             fixButton.set(tone: .action)
-            fixButton.set(title: T("alarm.fix", "Fix it now"),
+            fixButton.set(title: T("alarm.fix", "⚡ Fix it now"),
                           subtitle: only.remedy ?? "")
         } else if fixable.count > 1 {
             fixButton.set(tone: .action)
-            fixButton.set(title: T("alarm.fix", "Fix it now"),
+            fixButton.set(title: T("alarm.fix", "⚡ Fix it now"),
                           subtitle: String(format: T("alarm.fixCount", "%d fixes at once"), fixable.count))
+        } else if items.contains(where: { $0.key == "sys:iphonecharge" }) {
+            // Rien à réparer automatiquement, mais UN geste existe et il tient en un mot.
+            fixIsConfirm = true
+            fixButton.set(tone: .action)
+            fixButton.set(title: T("alarm.confirmCharge", "🔋 Confirm it is charging"),
+                          subtitle: T("alarm.confirmChargeSub", "Only you can see the cable"))
         } else {
             fixButton.set(tone: .off)
             fixButton.set(title: T("alarm.fixNone", "No automatic fix"),

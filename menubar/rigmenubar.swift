@@ -357,6 +357,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             // Cinq minutes : assez pour finir le morceau en cours et le suivant, trop peu
             // pour qu'une panne se fasse oublier jusqu'à la fin du set.
             av.card.onSnooze = { [weak self] in self?.snoozeAlarm(300) }
+            av.card.onConfirmCharge = { [weak self] in self?.confirmCharge() }
             aw.contentView = av; alarms.append((aw, av))
 
             let pw = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 260, height: 34),
