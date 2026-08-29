@@ -16,9 +16,32 @@ import mido
 from . import windows
 
 
+# Message-sentinelle : dire « déjà lancée » n'est pas dire « lancée », et l'appelant a
+# besoin de la nuance — pour le glyphe qu'il affiche comme pour le délai qu'il s'épargne.
+ALREADY = "déjà lancée"
+
+
+def running_from(app_path: str) -> list[str]:
+    """Les processus qui tournent DEPUIS ce bundle précis.
+
+    On compare des CHEMINS, pas des noms : deux installations de la même application
+    portent le même nom ET le même identifiant de bundle — Ableton en est la preuve, avec
+    « Suite » et « Suite 3 » tous deux en com.ableton.live. Seul le chemin les sépare.
+
+    Sans ce garde-fou, `open -a` reste inoffensif sur une app déjà lancée (il ne fait que
+    la mettre au premier plan) SAUF si une autre copie tourne : là il en démarre une
+    seconde, et deux instances se disputent les mêmes interfaces audio et MIDI.
+    """
+    prefix = str(Path(app_path)).rstrip("/") + "/Contents/MacOS/"
+    r = subprocess.run(["ps", "-Ao", "command="], capture_output=True, text=True)
+    return [c for c in r.stdout.splitlines() if c.startswith(prefix)]
+
+
 def _open_app(app_path: str, hidden: bool = False) -> tuple[bool, str]:
     if not Path(app_path).exists():
         return False, f"introuvable : {app_path}"
+    if running_from(app_path):
+        return True, ALREADY
     # -g : ne pas passer au premier plan. -j : démarrer masquée. Les deux se règlent au
     # LANCEMENT, donc sans autorisation Accessibilité — c'est le moyen le plus propre de
     # ne jamais voir clignoter la fenêtre d'une app qui n'a rien à faire à l'écran.
@@ -55,8 +78,12 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
             log(f"  [dry-run] lancerait {name}{' masquée' if hidden else ''}{exists}")
             continue
         ok, msg = _open_app(app, hidden=hidden)
-        log(f"  {'▶' if ok else '✖'} {name} — {msg}")
-        if ok:
+        glyphe = "↷" if msg == ALREADY else ("▶" if ok else "✖")
+        log(f"  {glyphe} {name} — {msg}")
+        # Le délai de stabilisation attend qu'une app FRAÎCHEMENT lancée soit prête. Une
+        # app déjà là l'est depuis longtemps : attendre deux secondes de plus par app
+        # allongeait la mise en place pour rien, précisément dans le cas le plus courant.
+        if ok and msg != ALREADY:
             time.sleep(settle)
 
     if dry_run:
