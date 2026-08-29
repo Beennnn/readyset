@@ -150,10 +150,22 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         return
     log(f"  ▶ ouverture de « {Path(project).name} » dans {Path(app).stem}")
     log("  … attente du port « Ableton Loopback »")
-    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=45, interval=1):
+    # Un rappel a mi-parcours, sans aucune autorisation systeme : la cause la plus
+    # frequente d'une attente qui s'eternise est un dialogue qui attend une reponse -
+    # « Live s'est ferme de maniere inattendue, recuperer le travail ? » apres un
+    # plantage. Il bloque le chargement, donc le port ne peut pas apparaitre, et rien
+    # a l'ecran ne le dit tant qu'on regarde le terminal. Une ligne suffit a orienter
+    # le regard vers la fenetre, la ou l'automatisation demande une autorisation.
+    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=20, interval=1):
+        log("  ✔ Ableton en ligne")
+        return
+    log("  … toujours rien après 20s — si Live affiche un dialogue, réponds-lui "
+        "(« récupérer le travail ? » → Non)")
+    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=40, interval=1):
         log("  ✔ Ableton en ligne")
     else:
-        log("  ⚠️  Ableton pas encore prêt après 45s (gros set / plugins qui chargent)")
+        log("  ⚠️  Ableton pas encore prêt après 60s — gros set, plugins qui chargent, "
+            "ou une fenêtre qui attend une réponse")
 
 
 def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> None:
