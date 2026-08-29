@@ -66,14 +66,14 @@ cc      = 111
    With the trevligaspel Stream Deck plugin, the key's script is:
 
    ```
-   [(init){text:RIG\n0}{state:0}]
-   [(cc:15,111,*){text:RIG#IF(@e_ccvalue > 0, "\n"&@e_ccvalue, "\n0")#}
-                 {state:#IF(@e_ccvalue > 0, 1, 0)#}]
+   [(init){text:0}{state:0}]
+   [(cc:15,111,*){text:#@e_ccvalue#}{state:#IF(@e_ccvalue > 0, 1, 0)#}]
    ```
 
-   The script drives the **state**, not the image: state 0 and state 1 carry the healthy
-   and alert images, set once in the Stream Deck UI. That keeps the artwork out of the
-   script, so changing an icon never means editing code.
+   The script writes only the number — the word on the key comes from the image, the way
+   the held-notes key already works. And it drives the **state**, not the image: state 0
+   and state 1 carry the healthy and alert artwork, set once in the Stream Deck UI, so
+   changing an icon never means editing code.
 
 ## Test
 
