@@ -187,3 +187,36 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     ensure_amphetamine_session(cfg, log=log, dry_run=dry_run)
     open_set(cfg, log=log, dry_run=dry_run)
     tidy_windows(cfg, log=log, dry_run=dry_run)
+
+
+def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
+    """Envoie le CC « go » une fois le set chargé — typiquement, lancer la scène 1.
+
+    Séparé de open_set volontairement : ouvrir un set et le faire JOUER sont deux
+    décisions distinctes, et la seconde ne doit pas partir quand on rouvre le set en
+    cours de soirée pour vérifier un réglage. C'est la mise en place qui l'appelle,
+    après avoir posé la sortie audio — dans cet ordre, sinon les premières mesures
+    sortiraient sur la mauvaise interface.
+    """
+    sc = cfg["set"].get("start_cc") or {}
+    port = sc.get("port", "")
+    if not port:
+        return                       # non configuré : rien à faire, et rien à dire
+    canal, num = int(sc.get("channel", 1)), int(sc.get("cc", 30))
+    valeur, attente = int(sc.get("value", 127)), float(sc.get("delay_seconds", 12))
+    if dry_run:
+        log(f"  [dry-run] attendrait {attente:.0f}s puis CC {num} canal {canal} sur « {port} »")
+        return
+    log(f"  … {attente:.0f}s le temps que le set finisse de charger")
+    time.sleep(attente)
+    cible = next((p for p in mido.get_output_names() if port.lower() in p.lower()), None)
+    if cible is None:
+        log(f"  ✖ départ du set : port « {port} » absent")
+        return
+    try:
+        with mido.open_output(cible) as out:
+            out.send(mido.Message("control_change", channel=canal - 1,
+                                  control=num, value=valeur))
+        log(f"  ▶ départ du set — CC {num} canal {canal} sur « {cible} »")
+    except Exception as exc:         # un démarrage raté ne doit pas couler la mise en place
+        log(f"  ✖ départ du set : {exc}")
