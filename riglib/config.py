@@ -45,7 +45,12 @@ DEFAULTS: dict = {
             # delay_seconds is the fallback when no log can be found, where guessing is
             # all that is left.
             "log_glob": "",
-            "quiet_seconds": 2.0,
+            # Doit DÉPASSER l'intervalle du plus bavard des écrivains périodiques du
+            # journal, sinon le silence entre deux de ses lignes se lit comme la fin du
+            # chargement. Ici un script de contrôle en écrit une toutes les 5 s pendant
+            # tout le démarrage : 2 s auraient déclenché dans un trou, sur un set encore
+            # en train de charger. Sept secondes laissent la marge.
+            "quiet_seconds": 7.0,
             "max_seconds": 25.0,
             "delay_seconds": 12,
         },
