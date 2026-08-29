@@ -13,6 +13,7 @@ natively via tomllib (no dependency).
 from __future__ import annotations
 
 import os
+import sys
 import tomllib
 from pathlib import Path
 
@@ -169,7 +170,7 @@ DEFAULTS: dict = {
     "monitor": {
         "interval": 5,        # seconds between fast checks (apps + MIDI)
         "audio_every": 6,     # run the slow audio check once every N cycles
-        "alerts": ["macos", "push", "streamdeck"],  # backends: macos, push, streamdeck
+        "alerts": ["macos", "push", "midi"],   # backends: macos, push, midi
         "recovery_alerts": True,
     },
     "alerts": {
@@ -177,13 +178,17 @@ DEFAULTS: dict = {
             "server": "https://ntfy.sh",
             "topic": "",       # set a PRIVATE topic, e.g. "my-rig-9d3f", to enable
             "priority": "high",
+            # Skip TLS verification — for a LAN that intercepts HTTPS with a self-signed
+            # certificate. Off by default: the payload is only rig status, but turning
+            # this on should be a decision, not an inheritance.
+            "insecure": False,
         },
-        "streamdeck": {
-            # Dedicated dead-end IAC port so the alert note never hits the live routing.
+        "midi": {
+            # Dedicated dead-end IAC port so the alert never hits the live routing.
             # Create it: Audio MIDI Setup → IAC Driver → "+" → rename to "rig-alert".
             "port": "rig-alert",
             "channel": 15,     # 1-16 (kept off the musical channels)
-            "note": 60,
+            "cc": 111,         # total on this CC, one family per CC above it
         },
     },
 }
@@ -210,10 +215,41 @@ def config_path() -> Path | None:
     return None
 
 
+# Sections whose key set is FIXED: anything else in them is a typo or a stale name.
+# Deliberately a short list — [checks].apps, [modes] and [diagram] hold user-invented
+# keys, and flagging those would cry wolf until nobody reads the warnings any more.
+CLOSED_SECTIONS = ("set", "launch", "server", "monitor")
+
+
+def unknown_keys(user: dict) -> list[str]:
+    """Keys the engine will silently ignore, as dotted paths.
+
+    Exists because of a real, expensive bug: [set].ableton_app was written « app »
+    in rig.toml, so nobody read it, the engine fell back to its default — another
+    Ableton install — and the dashboard's fix launched a SECOND Live next to the
+    one already running. A key that does nothing looks exactly like a key that
+    works, which is why it has to be said out loud.
+    """
+    out = []
+    for section in CLOSED_SECTIONS:
+        for k in user.get(section, {}):
+            if k not in DEFAULTS.get(section, {}):
+                out.append(f"{section}.{k}")
+    for sub in user.get("alerts", {}):
+        if isinstance(user["alerts"].get(sub), dict) and sub in DEFAULTS["alerts"]:
+            for k in user["alerts"][sub]:
+                if k not in DEFAULTS["alerts"][sub]:
+                    out.append(f"alerts.{sub}.{k}")
+    return out
+
+
 def load() -> dict:
     path = config_path()
     if path and path.exists():
         with path.open("rb") as fh:
             user = tomllib.load(fh)
+        for k in unknown_keys(user):
+            print(f"⚠️  rig.toml : « {k} » n'est lu par personne — faute de frappe ou "
+                  f"nom périmé ? La valeur par défaut s'applique.", file=sys.stderr)
         return _deep_merge(DEFAULTS, user)
     return DEFAULTS

@@ -74,6 +74,12 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
             log(f"  ⚠️  « {anchor} » toujours absent après 15s (Bome pas prêt ?)")
 
 
+def _live_processes() -> list[str]:
+    """Command line of every running Ableton Live, whatever the install."""
+    r = subprocess.run(["pgrep", "-fl", "/MacOS/Live"], capture_output=True, text=True)
+    return [l.split(" ", 1)[1] for l in r.stdout.splitlines() if " " in l]
+
+
 def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
     if not cfg["set"].get("open_after_launch", True):
         log("  (ouverture du set désactivée : [set].open_after_launch = false)")
@@ -92,6 +98,18 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         return
     if not Path(app).exists():
         log(f"  ✖ Ableton introuvable : {app}")
+        return
+    # Ne JAMAIS ajouter un second Live. Le 2026-08-29, une clé de config mal nommée a
+    # fait retomber le moteur sur une autre installation d'Ableton, et ce « open » a
+    # lancé Suite à côté de Suite 3 qui tournait : deux Live se disputant les mêmes
+    # interfaces audio et MIDI. Ouvrir le projet dans l'instance ATTENDUE reste bon —
+    # macOS le charge dans le Live déjà là. C'est la mauvaise install qu'on refuse.
+    autres = [c for c in _live_processes() if not c.startswith(str(app))]
+    if autres:
+        log(f"  ✖ un autre Ableton tourne déjà — {Path(app).stem} ne sera pas lancé :")
+        for c in autres:
+            log(f"      {c}")
+        log("    → quitte-le d'abord : deux Live ouverts se disputent audio et MIDI")
         return
     r = subprocess.run(["open", "-a", app, project], capture_output=True, text=True)
     if r.returncode != 0:
