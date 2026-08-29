@@ -712,8 +712,16 @@ PAGE = r"""<!doctype html>
   button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:9px;cursor:pointer}
   button:hover{border-color:var(--accent)} button:active{transform:translateY(1px)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#03122b;font-weight:600}
-  button.fix{background:transparent;border-color:var(--fail);color:var(--fail);padding:6px 12px;font-size:13px}
-  button.fix:hover{background:var(--fail);color:#2a0009}
+  button.fix{background:transparent;border-color:var(--fail);color:var(--fail);padding:6px 12px;font-size:13px;
+    /* La remontée est portée par la transition : le bouton s'enfonce d'un coup au
+       clic, puis revient. Sans elle, l'enfoncement et le retour sont tous deux
+       instantanés et l'œil ne voit rien du tout. */
+    transition:transform .07s ease-out,background-color .12s ease,opacity .12s ease}
+  button.fix:hover:not(:disabled){background:var(--fail);color:#2a0009}
+  /* Enfoncement franc : deux pixels et un léger rétrécissement. Un bouton qui bouge
+     dit « reçu » avant même que la requête parte — et c'est ce délai-là, entre le
+     doigt et la réponse du serveur, qui donnait envie de recliquer. */
+  button.fix:active:not(:disabled){transform:translateY(2px) scale(.97);background:var(--fail);color:#2a0009}
   /* Un correctif en cours : le bouton dit qu'il travaille et refuse un second clic. */
   button.fix:disabled{opacity:.55;cursor:progress}
   button.fix:disabled:hover{background:transparent;color:var(--fail)}
@@ -1220,6 +1228,11 @@ async function quitApps(){
   logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
   extraSel=null;setTimeout(refresh,900);
 }
+// Les corrections EN COURS, par clé. La page se reconstruit chaque seconde : sans cette
+// mémoire, le bouton grisé était recréé neuf et cliquable une seconde après le clic,
+// alors qu'un correctif dure jusqu'à quarante-cinq. On voyait donc un bouton qui n'avait
+// pas l'air de travailler, et on recliquait — exactement ce qu'il fallait empêcher.
+const enCours = new Map();
 let toastT=null;
 // kind: "run" (en cours, reste affiché), "ok" (4 s), "ko" (9 s — un échec se lit).
 function toast(kind,text){
@@ -1295,7 +1308,10 @@ async function refresh(){
       <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
-      btn.onclick=()=>fix(it.key,it.remedy,btn);row.appendChild(btn);}
+      btn.onclick=()=>fix(it.key,it.remedy,btn);
+      // Repose l'état d'attente sur le bouton fraîchement recréé.
+      if(enCours.has(it.key)){btn.disabled=true;btn.textContent="⏳ "+enCours.get(it.key);}
+      row.appendChild(btn);}
     if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
       b.textContent="✓ Confirmer en charge";b.onclick=()=>manualSet("iphone_charge",true);row.appendChild(b);}
     prob.appendChild(row);
@@ -1319,7 +1335,8 @@ async function refresh(){
 async function fix(key,label,btn){
   logline(`→ ${label}…`);
   toast("run","⏳ "+label+"…");
-  if(btn){btn.disabled=true;btn.dataset.was=btn.textContent;btn.textContent="⏳ "+label;}
+  enCours.set(key,label);
+  if(btn){btn.disabled=true;btn.textContent="⏳ "+label;}
   try{
     const r=await(await fetch("/api/fix",{method:"POST",headers:{"Content-Type":"application/json"},
       body:JSON.stringify({key,dry:false})})).json();
@@ -1334,7 +1351,9 @@ async function fix(key,label,btn){
     logline("✖ "+label+" — "+e);
     toast("ko","✖ "+label+" — "+e);
   }finally{
-    if(btn){btn.disabled=false;btn.textContent=btn.dataset.was;}
+    // La suite est reposée par le prochain refresh, à partir de enCours.
+    enCours.delete(key);
+    if(btn){btn.disabled=false;btn.textContent=label;}
   }
   setTimeout(refresh,800);
 }
