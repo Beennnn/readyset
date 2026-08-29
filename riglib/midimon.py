@@ -33,10 +33,20 @@ CC_NAMES = {1: "Mod", 2: "Breath", 4: "Foot", 5: "Porta", 7: "Volume", 10: "Pan"
             120: "All Off", 121: "Reset", 123: "Notes Off"}
 
 
-def _physical_inputs() -> list[str]:
+def _physical_inputs(aussi_exclus: tuple[str, ...] = ()) -> list[str]:
+    """Les entrées où quelqu'un JOUE vraiment.
+
+    `aussi_exclus` reçoit les ports que la config désigne comme non-instruments — le port
+    d'alerte du rig en premier lieu. Il ne porte aucun geste : il porte ce que le rig se
+    dit à lui-même, onze messages toutes les quinze secondes depuis que la jauge existe.
+    Le laisser ici noyait le soundcheck sous du trafic qu'aucun doigt n'a produit, et son
+    nom ne contient aucun des mots de _EXCLUDE — l'exclure par mot-clé aurait été un
+    pari sur son orthographe, alors que la config le nomme déjà.
+    """
     with MIDI_LOCK:
         names = sorted(set(mido.get_input_names()))
-    keep = [n for n in names if not any(x in n.lower() for x in _EXCLUDE)]
+    mots = _EXCLUDE + tuple(x.lower() for x in aussi_exclus if x)
+    keep = [n for n in names if not any(x in n.lower() for x in mots)]
     return keep[:_MAX_PORTS]
 
 
@@ -100,6 +110,8 @@ class MidiMonitor:
     def configure(self, cfg: dict) -> None:
         """Donne au moniteur la chaîne du breath à surveiller (voir rig.toml)."""
         self.chain = dict(cfg.get("checks", {}).get("breath_chain", {}) or {})
+        # Le port d'alerte n'est pas un instrument : on le retire de la liste écoutée.
+        self.non_instruments = (str(cfg.get("alerts", {}).get("midi", {}).get("port", "")),)
 
     def _chain_ports(self) -> list[str]:
         """Le port de SORTIE de Bome, qu'il faut écouter en plus des contrôleurs.
@@ -161,7 +173,7 @@ class MidiMonitor:
         Symétriquement, un port débranché est refermé : garder l'objet ouvert sur un
         appareil parti fait lever `iter_pending()` en boucle.
         """
-        want = set(_physical_inputs()) | set(self._chain_ports())
+        want = set(_physical_inputs(getattr(self, 'non_instruments', ()))) | set(self._chain_ports())
         have = {p.name for p in opened}
         if want == have:
             return opened
