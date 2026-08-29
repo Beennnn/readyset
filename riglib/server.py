@@ -589,6 +589,15 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
                 print(f"  réseau local ({label}) → {u}")
         print("  ⚠ ouvert au réseau local, sans authentification — réseau de confiance "
               "uniquement (le dashboard lance et ferme des apps).")
+    # Le retour de la touche du rig : elle affiche un verdict, elle doit pouvoir en
+    # montrer le détail. Sans ça, lire « 2 · NB » oblige à revenir au clavier — le geste
+    # que la touche existait justement pour éviter.
+    def _montrer() -> None:
+        print(f"[jauge]  (retour : ouverture de {url})", flush=True)
+        webbrowser.open(url)
+
+    alerts.listen_for_open(cfg, _montrer,
+                           log=lambda m: print(f"[jauge]{m}", flush=True))
     if open_browser:
         threading.Timer(0.6, lambda: webbrowser.open(url)).start()
     try:
