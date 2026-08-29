@@ -20,6 +20,7 @@ import json
 import os
 import subprocess
 import threading
+from pathlib import Path
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -136,15 +137,40 @@ def _pgrep(pattern: str) -> bool:
     ).returncode == 0
 
 
+def _pgrep_cmds(pattern: str) -> list[str]:
+    """Command line of every process matching, not merely whether one does.
+
+    Counting them is the point: two copies of the same app is a fault of its own,
+    and « it is running » hides it completely.
+    """
+    r = subprocess.run(["pgrep", "-fl", pattern], capture_output=True, text=True)
+    return [l.split(" ", 1)[1] for l in r.stdout.splitlines() if " " in l]
+
+
 def check_apps(cfg: dict) -> list[Result]:
+    # L'app que [set] désigne est la SEULE installation d'Ableton à tourner. Deux Live
+    # ouverts se disputent les interfaces audio et MIDI, et rien ne le disait : le check
+    # ne demandait que « au moins un process ». Constaté le 2026-08-29, Suite lancé à
+    # côté de Suite 3.
+    want = cfg["set"].get("ableton_app", "")
+    want_stem = Path(want).stem.lower() if want else ""
     out = []
     for label, pattern in cfg["checks"]["apps"].items():
-        running = _pgrep(pattern)
-        out.append(Result(
-            key=f"app:{label}", label=f"{label} lancé",
-            status=OK if running else FAIL,
-            detail="" if running else "process introuvable",
-        ))
+        cmds = _pgrep_cmds(pattern)
+        if not cmds:
+            status, detail = FAIL, "process introuvable"
+        elif len(cmds) > 1:
+            status = FAIL
+            detail = f"{len(cmds)} instances, il n'en faut qu'une : " + " · ".join(
+                Path(c.split("/Contents/")[0]).name for c in cmds)
+        elif want and label.lower() in want_stem and not cmds[0].startswith(want):
+            status = FAIL
+            detail = (f"mauvaise installation : {Path(cmds[0].split('/Contents/')[0]).name} "
+                      f"— attendu {Path(want).name}")
+        else:
+            status, detail = OK, ""
+        out.append(Result(key=f"app:{label}", label=f"{label} lancé",
+                          status=status, detail=detail))
     return out
 
 
