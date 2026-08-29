@@ -27,6 +27,19 @@ DEFAULTS: dict = {
         "ableton_app": "/Applications/Ableton Live 12 Suite.app",
         "project": "",                     # your gig .als — set in rig.toml
         "open_after_launch": True,
+        # Fired once the set is loaded, to start it playing. Empty port = disabled.
+        # Map this CC in the DAW to whatever "go" means for you — launching the first
+        # scene, arming a transport. The engine only sends it; what it does is yours.
+        "start_cc": {
+            "port": "",
+            "channel": 1,
+            "cc": 30,
+            "value": 127,
+            # The MIDI port appears when the DAW STARTS, not when the set has finished
+            # loading — plugins and samples come after. Firing « go » at that moment
+            # starts a set that is not ready. Measured against your own gig set.
+            "delay_seconds": 12,
+        },
     },
     "launch": {
         # Standard app locations; override the list in rig.toml for your own rig.

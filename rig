@@ -80,6 +80,9 @@ def cmd_preflight(cfg: dict, args) -> int:
     # se prononcer sur une trace périmée.
     ok, msg = liveaudio.apply(cfg, mode, dry)
     print(f"  {'✔' if ok else '✖'} Sortie Ableton — {msg}")
+    # APRÈS la sortie audio, jamais avant : les premières mesures sortiraient sinon sur
+    # l'interface qu'on vient justement de corriger.
+    launch.start_scene(cfg, log=print, dry_run=dry)
 
     print(f"\n[{_hr()}] Vérification finale…\n")
     results = checks.run_all(cfg, mode, with_audio=True)
