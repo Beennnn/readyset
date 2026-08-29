@@ -39,8 +39,14 @@ DEFAULTS: dict = {
             "scene": 0,
             "trigger_note": 38,
             # The MIDI port appears when the DAW STARTS, not when the set has finished
-            # loading — plugins and samples come after. Firing at that moment launches a
-            # scene in a set that is not ready. The right value depends on the set.
+            # loading — plugins and samples come after. Rather than guess a duration, we
+            # WATCH: the DAW writes to its log while it loads and falls silent when done.
+            # quiet_seconds of silence means ready; max_seconds caps the wait; and
+            # delay_seconds is the fallback when no log can be found, where guessing is
+            # all that is left.
+            "log_glob": "",
+            "quiet_seconds": 2.0,
+            "max_seconds": 25.0,
             "delay_seconds": 12,
         },
     },
