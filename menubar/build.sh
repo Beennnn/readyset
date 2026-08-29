@@ -60,3 +60,23 @@ PLIST
 # Developer-ID signature — it grants no distribution trust (see header note).
 codesign --force --deep --sign - "$APP" 2>/dev/null || true
 echo "✔ built $APP (ad-hoc signed, not notarized — see header comment)"
+
+# Et on INSTALLE. Le lanceur (launchd/com.readyset.menubar.plist) exécute
+# /Applications/RigMenuBar.app, pas la copie du dépôt : construire sans installer ne
+# changeait donc rien à ce qui tourne, en silence. Constaté le 2026-08-29 — les trois
+# boutons du panneau d'alarme avaient été recompilés sans effet visible, et rien ne le
+# disait. Un build qui ne déploie pas est un build qui ment.
+DEST="/Applications/RigMenuBar.app"
+if pgrep -f "$DEST/Contents/MacOS/RigMenuBar" >/dev/null 2>&1; then
+  launchctl bootout "gui/$UID/com.readyset.menubar" 2>/dev/null || true
+  while pgrep -f "$DEST/Contents/MacOS" >/dev/null 2>&1; do pkill -f "$DEST/Contents/MacOS"; sleep 1; done
+  RELANCER=1
+fi
+rm -rf "$DEST"
+cp -R "$APP" "$DEST"
+echo "✔ installé $DEST"
+if [ "${RELANCER:-0}" = 1 ]; then
+  launchctl bootstrap "gui/$UID" "$HOME/Library/LaunchAgents/com.readyset.menubar.plist" 2>/dev/null \
+    || launchctl kickstart "gui/$UID/com.readyset.menubar"
+  echo "✔ relancé"
+fi
