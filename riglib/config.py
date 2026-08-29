@@ -27,17 +27,20 @@ DEFAULTS: dict = {
         "ableton_app": "/Applications/Ableton Live 12 Suite.app",
         "project": "",                     # your gig .als — set in rig.toml
         "open_after_launch": True,
-        # Fired once the set is loaded, to start it playing. Empty port = disabled.
-        # Map this CC in the DAW to whatever "go" means for you — launching the first
-        # scene, arming a transport. The engine only sends it; what it does is yours.
-        "start_cc": {
+        # Fired once the set is loaded, to launch a scene. Empty port = disabled.
+        # Two messages, in this order: a CC whose VALUE is the scene number, then a note
+        # that triggers the selected scene. That pairing is not invented here — it is the
+        # protocol the rig's own control surface already speaks, and reusing it means one
+        # mapping in the DAW instead of two.
+        "start_scene": {
             "port": "",
             "channel": 1,
-            "cc": 30,
-            "value": 127,
+            "select_cc": 2,      # its value carries the scene number
+            "scene": 0,
+            "trigger_note": 38,
             # The MIDI port appears when the DAW STARTS, not when the set has finished
-            # loading — plugins and samples come after. Firing « go » at that moment
-            # starts a set that is not ready. Measured against your own gig set.
+            # loading — plugins and samples come after. Firing at that moment launches a
+            # scene in a set that is not ready. The right value depends on the set.
             "delay_seconds": 12,
         },
     },
