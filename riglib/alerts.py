@@ -46,7 +46,18 @@ FAMILIES = [
     ("xapp",  "X", "une application de trop tourne"),
     ("sc",    "B", "balance : une étape du soundcheck n'est pas passée"),
 ]
-CC_FAMILY_BASE = 112     # CC 111 porte le total, 112..120 les neuf familles
+CC_FAMILY_BASE = 112     # CC 111 porte le total, 112..121 les dix familles
+
+# La PREMIÈRE famille tombée dans l'ordre ci-dessus, en un seul nombre : 0 si tout va
+# bien, sinon son rang + 1. Elle existe parce que la surface ne sait pas composer une
+# chaîne : dix conditions concaténées figent le plugin trevligaspel dans une boucle
+# infinie — mesuré le 2026-08-29, 95 % de CPU, un fil CoreMIDI bloqué dans
+# midiInputCallback, et le même script retiré fait retomber le plugin à 0,4 %. Un
+# indice, lui, se lit d'un seul appel de fonction sur la touche.
+#
+# Les comptes par famille (112..121) restent émis : ils ne coûtent rien et une surface
+# capable de les lire aura tout. Celle-ci ne l'est pas.
+CC_FIRST = 110
 
 
 class Alerter:
@@ -140,7 +151,9 @@ class Alerter:
             per[k.split(":", 1)[0]] = per.get(k.split(":", 1)[0], 0) + 1
         # A CC carries 0..127 and nothing wider; a rig with 128 failing checks has
         # problems this key will not help with.
-        msgs = [(base, min(len(failing_keys), 127))]
+        rangs = [i for i, (prefix, _l, _w) in enumerate(FAMILIES) if per.get(prefix)]
+        msgs = [(CC_FIRST, rangs[0] + 1 if rangs else 0),
+                (base, min(len(failing_keys), 127))]
         msgs += [(CC_FAMILY_BASE + i, min(per.get(prefix, 0), 127))
                  for i, (prefix, _letter, _why) in enumerate(FAMILIES)]
 
