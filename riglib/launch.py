@@ -10,7 +10,6 @@ from __future__ import annotations
 import glob
 import os
 import subprocess
-import threading
 import time
 from pathlib import Path
 
@@ -141,9 +140,6 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
             log(f"      {c}")
         log("    → quitte-le d'abord : deux Live ouverts se disputent audio et MIDI")
         return
-    # Armé AVANT d'ouvrir : le dialogue de récupération apparaît dans les premières
-    # secondes, et il bloque tout ce qui suit — y compris l'attente du port MIDI.
-    surveiller_dialogue_recuperation(cfg, log=log)
     r = subprocess.run(["open", "-a", app, project], capture_output=True, text=True)
     if r.returncode != 0:
         log(f"  ✖ ouverture du set : {r.stderr.strip()}")
@@ -205,92 +201,6 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
     ensure_amphetamine_session(cfg, log=log, dry_run=dry_run)
     open_set(cfg, log=log, dry_run=dry_run)
     tidy_windows(cfg, log=log, dry_run=dry_run)
-
-
-def _script_dialogue(mots: list[str], boutons: list[str]) -> str:
-    """AppleScript qui cherche le dialogue de récupération et clique « Non »."""
-    cond = " or ".join(f'txt contains "{m}"' for m in mots) or "false"
-    test = " or ".join(f'name of b is "{b}"' for b in boutons) or "false"
-    return f'''
-tell application "System Events"
-  if not (exists process "Live") then return "absent"
-  tell process "Live"
-    set vu to false
-    repeat with w in windows
-      set txt to ""
-      try
-        set txt to (value of every static text of w) as text
-      end try
-      if txt is not "" then set vu to true
-      if {cond} then
-        repeat with b in buttons of w
-          if {test} then
-            click b
-            return "clique:" & (name of b)
-          end if
-        end repeat
-        return "vu-sans-bouton"
-      end if
-    end repeat
-    if vu then return "rien"
-  end tell
-end tell
-return "aveugle"'''
-
-
-def surveiller_dialogue_recuperation(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Répond « Non » au dialogue de récupération, en tâche de fond.
-
-    En tâche de fond parce que le dialogue BLOQUE le chargement : le port MIDI n'apparaît
-    pas tant qu'il est là, donc l'attente qui le guette ne peut pas être celle qui le
-    ferme. La mise en place s'arrêtait sinon sur une fenêtre que personne ne regardait.
-
-    Ne clique JAMAIS sans avoir reconnu le dialogue à son texte. Cliquer au jugé dans une
-    fenêtre du DAW serait la seule façon de faire pire que le dialogue lui-même — et les
-    mots comme les boutons sont dans la config, parce qu'ils changent avec la langue et
-    la version, là où le code ne devrait pas.
-
-    Demande l'autorisation d'Accessibilité, celle que le check « sys:accessibility »
-    surveille déjà. Sans elle, System Events rend des fenêtres vides et on ne voit rien —
-    d'où le message explicite plutôt qu'un silence.
-    """
-    rd = cfg["set"].get("recovery_dialog") or {}
-    if not rd.get("enabled", True) or dry_run:
-        return
-    mots = [m for m in rd.get("keywords", []) if m]
-    boutons = [b for b in rd.get("refuse_buttons", []) if b]
-    if not mots or not boutons:
-        return
-    script = _script_dialogue(mots, boutons)
-    plafond = float(rd.get("timeout_seconds", 45))
-
-    def boucle() -> None:
-        debut, vide = time.monotonic(), 0
-        while time.monotonic() - debut < plafond:
-            r = subprocess.run(["osascript", "-e", script],
-                               capture_output=True, text=True)
-            sortie = r.stdout.strip()
-            if sortie.startswith("clique:"):
-                log(f"  ↩ dialogue de récupération refusé (bouton « {sortie[7:]} »)")
-                return
-            if sortie == "vu-sans-bouton":
-                log("  ⚠️  dialogue de récupération vu, mais aucun bouton connu — "
-                    "ajoute son libellé dans [set.recovery_dialog].refuse_buttons")
-                return
-            # « aveugle » = le DAW a des fenêtres mais aucune ne rend son texte, ce qui
-            # est la signature de l'autorisation d'Accessibilité manquante. Sans cette
-            # distinction, « je ne vois pas de dialogue » et « je ne vois rien du tout »
-            # se ressemblent, et on cherche le problème du mauvais côté.
-            if sortie == "aveugle" and vide == 0:
-                vide = 1
-                log("  ⚠️  dialogue : fenêtres illisibles — autorisation d'Accessibilité "
-                    "manquante pour ce service (le check « sys:accessibility » la surveille)")
-            if r.returncode != 0 and vide == 0:
-                vide = 1
-                log(f"  (dialogue : System Events injoignable — {r.stderr.strip()[:90]})")
-            time.sleep(1.0)
-
-    threading.Thread(target=boucle, daemon=True).start()
 
 
 def _attendre_chargement(motif: str, calme: float, plafond: float, log) -> bool:

@@ -32,19 +32,6 @@ DEFAULTS: dict = {
         # that triggers the selected scene. That pairing is not invented here — it is the
         # protocol the rig's own control surface already speaks, and reusing it means one
         # mapping in the DAW instead of two.
-        # « Live s'est fermé de manière inattendue — récupérer le travail ? » Ce dialogue
-        # bloque le chargement, donc la mise en place s'arrête dessus sans rien dire.
-        # On répond NON : le set du soir est celui du disque, et une récupération
-        # ramènerait un état de travail que personne n'a demandé.
-        "recovery_dialog": {
-            "enabled": True,
-            # Ce qui identifie le dialogue. Il n'est JAMAIS cliqué sans qu'un de ces
-            # mots apparaisse dedans : cliquer au jugé dans une fenêtre du DAW est la
-            # seule façon de faire pire que le dialogue lui-même.
-            "keywords": ["inopin", "unexpected", "récupér", "recuper", "recover", "restaur"],
-            "refuse_buttons": ["Non", "No", "Ne pas récupérer", "Don't Recover", "Don't recover"],
-            "timeout_seconds": 45,
-        },
         "start_scene": {
             "port": "",
             "channel": 1,
