@@ -179,12 +179,15 @@ topic    = ""            # e.g. "my-rig-9d3f2a" — leave empty to disable push
 priority = "high"
 insecure = false         # set true only if your LAN does SSL interception (self-signed)
 
-[alerts.streamdeck]
-# Emits a note on a dead-end IAC port. Create it once: Audio MIDI Setup → IAC Driver
-# → "+" → rename "rig-alert". Map a Stream Deck key to MIDI feedback (note 60, ch 15).
+[alerts.midi]
+# Emits a CC carrying the NUMBER of failing checks on a dead-end IAC port. Create it
+# once: Audio MIDI Setup → IAC Driver → "+" → rename "rig-alert". Map a control-surface
+# key to MIDI feedback on this CC: show the value, and switch to an alert image when it
+# is not zero. A count beats a lamp — 0 is unambiguously "all good", where an unlit lamp
+# could equally mean "never lit" or "note-off missed".
 port    = "rig-alert"
 channel = 15
-note    = 60
+cc      = 111
 
 # ---------------------------------------------------------------------------------
 # Erreurs LIÉES — ce qui tombe AVEC quoi (riglib/cascade.py).

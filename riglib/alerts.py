@@ -2,14 +2,16 @@
 
 Why not trevligaspel for the Stream Deck alert? That plugin is button → MIDI
 (outgoing) — it cannot repaint a key from an external script. To make a button
-react, the honest path is MIDI *feedback*: this backend emits a note on a virtual
-port; a Stream Deck key configured with MIDI feedback (most MIDI SD plugins,
-incl. trevligaspel, support incoming-MIDI state) then lights red. The emit side
-lives here; the one-time button-side mapping is yours to set (see rig.example.toml).
+react, the honest path is MIDI *feedback*: this backend emits on a virtual port;
+a Stream Deck key configured with MIDI feedback (most MIDI SD plugins, incl.
+trevligaspel, support incoming-MIDI state) then reacts. The emit side lives here;
+the one-time button-side mapping is yours to set (see rig.example.toml).
 
   macos       — osascript banner + sound. Zero setup, but the laptop is closed on stage.
   push        — HTTP POST to ntfy.sh (stdlib, no install). Buzzes your phone anywhere.
-  streamdeck  — MIDI note to a virtual port → lights a feedback-configured key.
+  midi        — MIDI CC to a virtual port → a feedback-configured key shows the
+                number of failing checks, and goes to its alert state when it is
+                not zero. A *count*, not an event: see Alerter.gauge().
 """
 
 from __future__ import annotations
@@ -22,6 +24,11 @@ import mido
 
 
 class Alerter:
+    # Backends that speak in *counts* rather than events. Feeding them one
+    # message per transition would make the key flicker and lose the total,
+    # so notify() skips them; they publish through gauge() instead.
+    GAUGE_ONLY = ("midi",)
+
     def __init__(self, cfg: dict, active: list[str], log=print, dry_run: bool = False):
         self.cfg = cfg
         self.active = active
@@ -34,6 +41,8 @@ class Alerter:
                      f"« {title} — {message} » (rien envoyé)")
             return
         for backend in self.active:
+            if backend in self.GAUGE_ONLY:
+                continue
             fn = getattr(self, f"_{backend}", None)
             if fn is None:
                 self.log(f"  (alerte inconnue: {backend})")
@@ -83,17 +92,36 @@ class Alerter:
             ctx.verify_mode = ssl.CERT_NONE
         urllib.request.urlopen(req, timeout=5, context=ctx).read()
 
-    def _streamdeck(self, title: str, message: str, level: str) -> None:
-        sc = self.cfg["alerts"]["streamdeck"]
-        target = sc["port"]
-        outs = mido.get_output_names()
-        match = next((p for p in outs if target.lower() in p.lower()), None)
-        if match is None:
-            self.log(f"  (streamdeck : port de sortie « {target} » absent)")
+    # -- gauge (counts, not events) ---------------------------------------
+    def gauge(self, failing: int) -> None:
+        """Publish how many checks are failing RIGHT NOW, as a MIDI CC value.
+
+        Replaces the old note-on/note-off alert (a single lamp): a count says
+        *how bad* it is, and 0 is unambiguously "all good" — a lamp that never
+        got its note-off looks identical to one that was never lit.
+
+        Resent on every change and on every heartbeat, deliberately: MIDI has no
+        acknowledgement, so a surface that boots after the monitor — or misses a
+        message — would otherwise keep showing a stale number forever. Sending
+        the truth repeatedly costs one 3-byte message and makes the display
+        self-healing.
+        """
+        if "midi" not in self.active:
             return
-        ch = int(sc.get("channel", 15)) - 1     # mido is 0-based
-        note = int(sc.get("note", 60))
-        vel = 127 if level in ("fail", "warn") else 0   # on = alarm, off = recovered
-        with mido.open_output(match) as port:
-            kind = "note_on" if vel else "note_off"
-            port.send(mido.Message(kind, channel=ch, note=note, velocity=vel or 0))
+        mc = self.cfg["alerts"]["midi"]
+        cc = int(mc.get("cc", 111))
+        ch = int(mc.get("channel", 15)) - 1      # mido is 0-based
+        value = max(0, min(int(failing), 127))   # a CC carries 0..127, nothing else
+        if self.dry_run:
+            self.log(f"  [dry-run] jauge → CC {cc} canal {ch + 1} = {value} (rien envoyé)")
+            return
+        target = mc["port"]
+        match = next((p for p in mido.get_output_names() if target.lower() in p.lower()), None)
+        if match is None:
+            self.log(f"  (jauge : port de sortie « {target} » absent)")
+            return
+        try:
+            with mido.open_output(match) as port:
+                port.send(mido.Message("control_change", channel=ch, control=cc, value=value))
+        except Exception as exc:   # an alert must never take the monitor down
+            self.log(f"  (jauge a échoué: {exc})")
