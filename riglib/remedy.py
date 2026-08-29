@@ -36,6 +36,11 @@ def _launch_app(path: str, dry: bool) -> tuple[bool, str]:
         return False, f"{name} introuvable : {path}"
     if dry:
         return True, f"[dry-run] lancerait {name}"
+    # Un correctif qui ne corrige rien ne doit pas être compté comme appliqué : si l'app
+    # tourne déjà, c'est le CHECK qui a un problème (mauvaise installation, doublon), pas
+    # le lancement qui en manque un. Le dire plutôt que de relancer à l'aveugle.
+    if launch.running_from(path):
+        return False, f"{name} tourne déjà — la relancer ne réglerait rien"
     r = subprocess.run(["open", "-a", path], capture_output=True, text=True)
     if r.returncode != 0:
         return False, f"{name} : {r.stderr.strip() or 'open a échoué'}"
