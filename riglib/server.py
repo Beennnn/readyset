@@ -573,7 +573,21 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
     _phone_load()
     threading.Thread(target=_state_loop, args=(cfg,), daemon=True).start()
     handler = type("Handler", (_Handler,), {"cfg": cfg})
-    httpd = ThreadingHTTPServer((host, port), handler)
+    try:
+        httpd = ThreadingHTTPServer((host, port), handler)
+    except OSError as exc:
+        # Deux instances en collision, deux fois dans la meme journee. Le vrai degat
+        # n'est pas l'echec : c'est qu'il est SILENCIEUX pour qui regarde ailleurs. La
+        # seconde instance meurt, la premiere continue de servir la page, et si c'est
+        # elle qui est perimee on cherche le probleme partout sauf la. Dire QUI tient le
+        # port transforme une trace de pile en une ligne actionnable.
+        tenant = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
+                                capture_output=True, text=True).stdout.strip().splitlines()
+        print(f"✖ le port {port} est deja pris — cette instance s'arrete ({exc})")
+        for ligne in tenant[1:]:
+            print(f"    tenu par : {ligne}")
+        print("    → arrete l'autre instance avant de relancer celle-ci")
+        raise SystemExit(1)
     # Le navigateur local passe toujours par la boucle locale, même quand on écoute plus
     # large : c'est l'adresse qui marche à coup sûr, y compris hors réseau.
     url = f"http://127.0.0.1:{port}/"
