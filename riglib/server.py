@@ -567,6 +567,46 @@ def _bonjour_name() -> str:
     return name if "." in name else f"{name}.local"
 
 
+# Un par navigateur, parce que leurs dictionnaires AppleScript diffèrent : Chrome
+# sélectionne un onglet par son INDICE dans la fenêtre, Safari par l'objet lui-même.
+_RETROUVER_ONGLET = [
+    ("Chrome", '''
+if application "Google Chrome" is running then
+  tell application "Google Chrome"
+    repeat with w in windows
+      set i to 0
+      repeat with t in tabs of w
+        set i to i + 1
+        if URL of t starts with "%s" then
+          set active tab index of w to i
+          set index of w to 1
+          activate
+          return "ok"
+        end if
+      end repeat
+    end repeat
+  end tell
+end if
+return "no"'''),
+    ("Safari", '''
+if application "Safari" is running then
+  tell application "Safari"
+    repeat with w in windows
+      repeat with t in tabs of w
+        if URL of t starts with "%s" then
+          set current tab of w to t
+          set index of w to 1
+          activate
+          return "ok"
+        end if
+      end repeat
+    end repeat
+  end tell
+end if
+return "no"'''),
+]
+
+
 def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
           host: str | None = None) -> None:
     host = host or str(cfg.get("server", {}).get("host", "127.0.0.1"))
@@ -607,6 +647,27 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
     # montrer le détail. Sans ça, lire « 2 · NB » oblige à revenir au clavier — le geste
     # que la touche existait justement pour éviter.
     def _montrer() -> None:
+        # Chercher l'onglet AVANT d'en ouvrir un. webbrowser.open() en crée un nouveau à
+        # chaque appel : appuyer trois fois sur la touche laissait trois onglets du même
+        # tableau de bord, et sur scène on appuie plutôt deux fois qu'une. Le navigateur
+        # n'est interrogé que s'il tourne déjà — le réveiller pour chercher un onglet
+        # qu'il n'a pas serait exactement le contraire du but.
+        for nav, script in _RETROUVER_ONGLET:
+            try:
+                r = subprocess.run(["osascript", "-e", script % url],
+                                   capture_output=True, text=True, timeout=5)
+                if r.stdout.strip() == "ok":
+                    print(f"[jauge]  (retour : onglet {nav} remis au premier plan)", flush=True)
+                    return
+                if r.returncode != 0:
+                    # Le cas courant, et il est INVISIBLE sans cette ligne : un service
+                    # lancé par launchd n'a pas l'autorisation d'automatiser un
+                    # navigateur tant qu'elle n'a pas été accordée. Le repli ouvre alors
+                    # un onglet de plus à chaque appui, sans que rien n'en dise la cause.
+                    # → Réglages Système → Confidentialité → Automatisation.
+                    print(f"[jauge]  ({nav} injoignable : {r.stderr.strip()[:120]})", flush=True)
+            except Exception as exc:
+                print(f"[jauge]  ({nav} : {exc})", flush=True)
         print(f"[jauge]  (retour : ouverture de {url})", flush=True)
         webbrowser.open(url)
 
