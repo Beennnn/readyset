@@ -1055,11 +1055,18 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     // KeepAlive=true would respawn a plain terminate, so bootout the LaunchAgent (stays quit
     // until next login, where RunAtLoad brings it back).
-    @objc func quit() {
-        let p = Process(); p.launchPath = "/bin/launchctl"
-        p.arguments = ["bootout", "gui/\(getuid())/com.readyset.menubar"]
-        try? p.run()
-    }
+    /// Quitter, pour de bon — mais seulement pour cette fois.
+    ///
+    /// C'était un `launchctl bootout` : la seule façon de ne pas être relancé, tant que
+    /// l'agent portait `KeepAlive: true`. Le prix en était caché et sévère — décharger
+    /// l'agent le laisse déchargé, donc iRig ne revenait plus AU LOGIN SUIVANT non plus,
+    /// et il fallait un `bootstrap` à la main pour s'en apercevoir.
+    ///
+    /// L'agent est passé à `KeepAlive: { SuccessfulExit: false }`, qui ne relance que sur
+    /// un code de sortie non nul. Une sortie propre suffit donc, et elle laisse le service
+    /// en place pour la prochaine ouverture de session. Ce qui tombe tout seul est encore
+    /// rattrapé ; ce qu'on ferme exprès reste fermé.
+    @objc func quit() { NSApp.terminate(nil) }
 
     @objc func silenceAlarm() { alarm.silence(); applyOverlay() }
     /// Le report revient tout seul : le sondage tourne toutes les 5 s et rappelle
