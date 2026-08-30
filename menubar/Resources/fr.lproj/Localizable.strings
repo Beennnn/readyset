@@ -48,7 +48,7 @@
 "menu.refresh"      = "↻ Rafraîchir maintenant";
 "menu.refreshShort" = "↻ Rafraîchir";
 "menu.settings"     = "⚙︎ Réglages…";
-"menu.quit"         = "⏻ Quitter iRig";
+"menu.quit.ancien"         = "⏻ Quitter iRig";
 
 /* --- Fenêtre Réglages : onglets --- */
 "settings.title" = "Réglages iRig";
@@ -113,3 +113,9 @@
 "quit.warn"   = "Une app qui tient un document non enregistré posera sa propre question.";
 "quit.ok"     = "Les fermer";
 "quit.cancel" = "Annuler";
+
+/* La pause remplace « Quitter » : l'app est un filet de securite, et un filet
+   qu'on peut fermer par megarde ne protege plus. */
+"menu.pause" = "⏸ Pause — ne réagit plus à rien";
+"menu.resume" = "▶︎ Reprendre la surveillance";
+"menu.pausedTip" = "Rig en pause — cliquer pour reprendre";

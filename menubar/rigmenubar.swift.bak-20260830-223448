@@ -156,10 +156,6 @@ enum Pref {
     /// plus rien. Une entrée qui coupe une alimentation ne doit pas s'offrir tant que sa
     /// cible n'a pas été confirmée.
     static let streamDeck = "pref.streamDeckPower"
-    /// Pause : l'app reste vivante mais ne regarde plus rien et n'affiche plus rien.
-    /// Persistée à dessein — l'app ne peut pas être quittée, donc launchd la relance ;
-    /// une pause en mémoire seule serait annulée par le premier redémarrage.
-    static let paused = "pref.paused"
     static let screenMode = "pref.screenMode"      // "main" (default) | "all" | "custom"
     static let screenIDs = "pref.screenIDs"        // display IDs for "custom"
     static func on(_ key: String, default def: Bool) -> Bool {
@@ -410,24 +406,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Poll --------------------------------------------------------------
-    var paused: Bool { Pref.on(Pref.paused, default: false) }
-
-    /// Entrer ou sortir de pause. En entrant on DÉMONTE ce qui est à l'écran au lieu
-    /// d'attendre le prochain tour : sans ça le cadre et la pastille resteraient affichés,
-    /// et la pause ne tiendrait pas sa promesse — ne plus rien montrer.
-    @objc func togglePause() {
-        Pref.set(Pref.paused, !paused)
-        if paused { alarm.silence() }
-        refresh()
-    }
-
     func refresh() {
-        if paused {
-            current = .unreachable
-            applyGlyph()
-            applyOverlay()
-            return
-        }
         guard let u = URL(string: stateURL) else { return }
         var req = URLRequest(url: u); req.timeoutInterval = 4; req.cachePolicy = .reloadIgnoringLocalCacheData
         URLSession.shared.dataTask(with: req) { [weak self] data, _, err in
@@ -507,15 +486,6 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // ---- Menu-bar glyph ----------------------------------------------------
     private func applyGlyph() {
         guard let b = item.button else { return }
-        if paused {
-            b.toolTip = T("menu.pausedTip", "Rig paused — click to resume")
-            if let base = baseSymbol {
-                let img = base.withSymbolConfiguration(
-                    .init(paletteColors: [NSColor.tertiaryLabelColor])) ?? base
-                img.isTemplate = false; b.image = img; b.title = ""
-            } else { b.title = "🎹⏸" }
-            return
-        }
         b.toolTip = "Rig : \(current.label) — clic pour les options"
         let colored = Pref.on(Pref.glyph, default: true)
         guard let base = baseSymbol else {
@@ -534,10 +504,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // ---- Overlays ----------------------------------------------------------
     private func applyOverlay() {
-        // En pause, aucun des trois affichages ne sort — c'est le sens même de la pause.
-        let showBorder = !paused && Pref.on(Pref.border, default: true) && current.showsOverlay
-        let showPill = !paused && Pref.on(Pref.pill, default: true) && current.showsOverlay
-        let showAlarm = !paused && Pref.on(Pref.alarm, default: true) && alarm.firing
+        let showBorder = Pref.on(Pref.border, default: true) && current.showsOverlay
+        let showPill = Pref.on(Pref.pill, default: true) && current.showsOverlay
+        let showAlarm = Pref.on(Pref.alarm, default: true) && alarm.firing
         for (i, b) in borders.enumerated() {
             b.view.status = current
             if showBorder && allowedScreen(i) { b.win.orderFrontRegardless() } else { b.win.orderOut(nil) }
@@ -850,12 +819,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
                                   action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
-        // Plus de « Quitter » : l'app est un filet de sécurité, et un filet qu'on peut
-        // fermer par mégarde ne protège plus. Ce qu'on veut vraiment quand on clique
-        // Quitter, c'est qu'elle cesse de se manifester — c'est exactement la pause.
-        add(menu, paused ? T("menu.resume", "▶︎ Resume monitoring")
-                         : T("menu.pause", "⏸ Pause — stop reacting to anything"),
-            #selector(togglePause))
+        add(menu, T("menu.quit", "⏻ Quit iRig"), #selector(quit))
     }
 
     // ---- Settings window (classic macOS look) ------------------------------
