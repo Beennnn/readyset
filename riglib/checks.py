@@ -788,6 +788,21 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
                   "à confirmer — non détectable depuis le Mac")
 
 
+def iphone_charge_watched(cfg: dict) -> bool:
+    """Un seul mode qui regarde la charge suffit à justifier qu'on interroge le téléphone.
+
+    Le mode, lui, change en cours de route — la tirette du dashboard, "auto" qui bascule —
+    alors que la boucle de sondage est UNIQUE et démarre avant tout choix. On ne peut donc
+    pas la régler sur le mode courant sans qu'elle se trompe une fois sur deux : elle
+    interroge dès qu'un mode s'y intéresse, et se tait quand aucun ne le fait. Réveiller
+    l'iPhone toutes les minutes pour un relevé que plus aucune ligne n'affiche est
+    exactement ce que "off" veut éviter.
+    """
+    modes = cfg.get("modes", {})
+    return any(str(m.get("iphone_power_severity", "warn")).lower() != OFF
+               for m in modes.values() if isinstance(m, dict))
+
+
 def check_bome_iphone(cfg: dict) -> Result:
     """Detect the Bome Network ↔ iPhone link via an ESTABLISHED TCP connection on
     Bome Network's port (37000). The iPhone runs Bome Network and connects here."""

@@ -61,6 +61,9 @@ autonomy_min_hours = 3.0           # en dessous, il ne passera pas la soirée �
 #    en USB, déverrouillé, « Se fier », et Finder → « Afficher cet iPhone lorsqu'il est
 #    en Wi-Fi ». Sans appairage, la lecture échoue en silence et rien ne change.
 idevice_poll_seconds = 60          # 0 = ne pas interroger
+# Ce sondage ne part QUE si un mode regarde la charge (iphone_power_severity
+# ≠ "off", voir [modes.*] plus bas). Réglage éteint partout = aucun réveil du
+# téléphone toutes les minutes pour un relevé que personne ne lit.
 idevice_bin = ""                   # vide = PATH, puis les emplacements Homebrew
 
 [checks]
@@ -147,7 +150,13 @@ amphetamine_severity = "fail"
 breath_severity = "fail"
 interface_severity = "fail"
 mac_power_severity = "fail"
-iphone_power_severity = "fail"
+# Charge du téléphone — ÉTEINTE PAR DÉFAUT ("off"), et c'est la seule ligne dans ce cas.
+# Le Mac ne peut pas la voir : il faut soit un raccourci iOS qui publie sur /api/phone,
+# soit un appairage libimobiledevice. Sans l'un des deux, la ligne reste en « à confirmer »
+# tous les soirs — un rouge permanent sur un rig qui va très bien, donc un rouge qu'on
+# finit par ne plus lire. Mettre "fail" (bloquant sur scène) ou "warn" pour la rallumer :
+# la pente de la batterie, l'autonomie estimée et le sondage ideviceinfo reviennent avec.
+iphone_power_severity = "off"
 # Le soundcheck (gestes réellement joués) compte comme un check à part entière :
 # un rig jamais joué n'est pas un rig vérifié. "off" pour ne pas l'exiger.
 soundcheck_severity = "fail"
@@ -162,7 +171,7 @@ amphetamine_severity = "off"   # au bureau le Mac peut dormir : la question n'a 
 breath_severity = "warn"
 interface_severity = "warn"
 mac_power_severity = "warn"
-iphone_power_severity = "warn"
+iphone_power_severity = "off"   # même raison qu'en live — cf. le commentaire là-haut
 network_severity = "warn"   # the stage network is elsewhere — at the desk it *can't*
                             # answer, so its absence is information, not a defect
 
