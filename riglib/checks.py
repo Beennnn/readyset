@@ -506,10 +506,20 @@ def check_live_output(cfg: dict, mode: str) -> Result:
 
     if ok:
         return Result("audio:live", label, OK, short)
-    return Result("audio:live", "Ableton ne produit pas de son", FAIL,
-                  _hint(f"sort sur {short}",
+    # Le libellé reste « Sortie audio d'Ableton », comme dans tous les autres cas.
+    # Il a dit « Ableton ne produit pas de son » jusqu'au 2026-08-31, et c'était une
+    # affirmation que ce check ne peut PAS faire : il lit le périphérique de sortie,
+    # pas le son. Une sortie hors liste sonne très bien — ce soir-là, « P-Series »,
+    # c'est-à-dire les haut-parleurs du piano, pendant que la ligne annonçait le
+    # silence. Une ligne rouge qui décrit un fait faux coûte plus que pas de ligne :
+    # on cherche une panne qui n'existe pas. Le titre dit donc ce qui est vérifié,
+    # le détail dit ce qui cloche. Seul « No Device » garde son titre alarmant,
+    # plus haut — là, le silence est certain.
+    return Result("audio:live", label, FAIL,
+                  _hint(f"sort sur {short}, qui n'est pas une sortie attendue ici",
                         "attendu : " + " ou ".join(wants) +
-                        " — à changer dans Live > Préférences > Audio"))
+                        " — à changer dans Live > Préférences > Audio, ou à ajouter "
+                        "à live_output du mode si cette sortie est volontaire"))
 
 
 def _ping(host: str, timeout_s: int = 1) -> bool:
