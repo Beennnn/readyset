@@ -19,6 +19,7 @@ import glob
 import json
 import os
 import subprocess
+import sys
 import threading
 from pathlib import Path
 import time
@@ -177,20 +178,65 @@ def check_apps(cfg: dict) -> list[Result]:
     return out
 
 
-def _midi_inputs() -> list[str]:
-    from .midi_lock import MIDI_LOCK
+# Liste des entrées MIDI, relevée dans un process NEUF et gardée quelques secondes.
+# Trois checks la demandent par cycle (ports requis, clavier, souffle) ; sans ce cache,
+# chacun paierait un démarrage de Python.
+_MIDI_CACHE: dict = {"t": 0.0, "names": None}
+_MIDI_TTL = 5.0
+
+
+def _midi_inputs_fresh() -> list[str] | None:
+    """Énumère CoreMIDI dans un PROCESS NEUF. None si ça n'a pas pu se faire.
+
+    C'est le seul moyen de voir un appareil branché APRÈS le démarrage du dashboard.
+    macOS tient la liste des appareils dans un cache PAR PROCESS, rafraîchi par des
+    notifications livrées sur une boucle d'exécution ; le dashboard n'en fait pas
+    tourner, donc sa liste est celle de son démarrage — figée. Rouvrir un client
+    rtmidi n'y change rien : le cache est en amont, partagé par tout le process.
+
+    Mesuré le 2026-08-31 : le dashboard, lancé à 19h06, déclarait « Breath controller
+    absent » alors que « Breath Controller 5.2-18261F88 » répondait présent à toute
+    commande lancée à côté. Le check était juste, la liste qu'il lisait ne l'était plus.
+    Un appareil branché en cours de soirée restait donc invisible jusqu'au prochain
+    redémarrage du service — exactement au moment où on veut le vérifier.
+    """
+    code = ("import json, mido; "
+            "print(json.dumps([n for n in mido.get_input_names() if isinstance(n, str) and n]))")
     try:
-        with MIDI_LOCK:
-            names = list(mido.get_input_names())
-    except Exception as exc:  # pragma: no cover - backend init failure
-        return [f"__error__:{exc}"]
-    # CoreMIDI can hand back an endpoint whose name reads as None: a device that
-    # vanished while the process kept its client open leaves a nameless ghost behind.
-    # A fresh process never sees it, which is why `rig check` stayed green while the
-    # long-lived dashboard crashed on EVERY request for 18 h (2026-08-18, after the
-    # Dell dock dropped the whole USB chain). Filtering here fixes every caller at
-    # once — several of them do `p.lower()` and would raise the same way.
-    return [n for n in names if isinstance(n, str) and n]
+        r = subprocess.run([sys.executable, "-c", code],
+                           capture_output=True, text=True, timeout=15)
+        if r.returncode != 0 or not r.stdout.strip():
+            return None
+        return json.loads(r.stdout.strip().splitlines()[-1])
+    except Exception:
+        return None
+
+
+def _midi_inputs() -> list[str]:
+    now = time.monotonic()
+    cached = _MIDI_CACHE["names"]
+    if cached is not None and now - _MIDI_CACHE["t"] < _MIDI_TTL:
+        return cached
+    names = _midi_inputs_fresh()
+    if names is None:
+        # Repli : l'énumération dans CE process. Elle voit ce qui était branché au
+        # démarrage — moins bien que le process neuf, mieux que rien, et c'est le
+        # comportement qu'on avait avant.
+        from .midi_lock import MIDI_LOCK
+        try:
+            with MIDI_LOCK:
+                raw = list(mido.get_input_names())
+        except Exception as exc:  # pragma: no cover - backend init failure
+            return [f"__error__:{exc}"]
+        # CoreMIDI can hand back an endpoint whose name reads as None: a device that
+        # vanished while the process kept its client open leaves a nameless ghost behind.
+        # A fresh process never sees it, which is why `rig check` stayed green while the
+        # long-lived dashboard crashed on EVERY request for 18 h (2026-08-18, after the
+        # Dell dock dropped the whole USB chain). Filtering here fixes every caller at
+        # once — several of them do `p.lower()` and would raise the same way.
+        names = [n for n in raw if isinstance(n, str) and n]
+    _MIDI_CACHE["t"], _MIDI_CACHE["names"] = now, names
+    return names
 
 
 def check_midi(cfg: dict) -> list[Result]:
