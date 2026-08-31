@@ -179,7 +179,14 @@ DEFAULTS: dict = {
             "breath_severity": "fail",
             "interface_severity": "fail",
             "mac_power_severity": "fail",
-            "iphone_power_severity": "fail",
+            # ÉTEINT PAR DÉFAUT — la seule ligne dont la réponse ne vient pas du Mac.
+            # Sans raccourci iOS qui publie ni appairage libimobiledevice, elle ne peut
+            # rien observer : elle passe ses soirées en « à confirmer », c'est-à-dire en
+            # rouge sur un rig qui va très bien, et on apprend à ignorer ce rouge-là. La
+            # question reste posable — "fail" ou "warn" ici la rallume, avec tout ce qui
+            # va avec (pente de la batterie, autonomie estimée, sondage ideviceinfo) —
+            # mais elle se demande, elle ne s'impose plus.
+            "iphone_power_severity": "off",
             "unexpected_apps_severity": "warn",   # on stage, every extra app is a risk
         },
         "studio": {
@@ -190,7 +197,7 @@ DEFAULTS: dict = {
             "breath_severity": "warn",
             "interface_severity": "warn",
             "mac_power_severity": "warn",
-            "iphone_power_severity": "warn",
+            "iphone_power_severity": "off",   # même raison qu'en live, en plus vrai au bureau
             "unexpected_apps_severity": "info",   # at the desk it's just a fact
         },
     },

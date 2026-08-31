@@ -523,8 +523,12 @@ def _state_loop(cfg: dict) -> None:
         # Le battement que le téléphone ne sait pas produire : c'est le Mac qui demande,
         # à cadence fixe, tant que l'appareil est appairé. Silencieux s'il ne l'est pas —
         # `read` rend None et on garde ce que le téléphone a publié de son côté.
+        # Muet aussi quand AUCUN mode ne regarde la charge (iphone_power_severity =
+        # "off" partout, ce qui est le défaut) : sans ligne pour l'afficher, le relevé
+        # n'irait nulle part, et l'iPhone serait réveillé toutes les minutes pour rien.
         every = float(cfg.get("server", {}).get("idevice_poll_seconds", 60))
-        if every > 0 and ticks % max(1, int(every / REFRESH_EVERY)) == 0:
+        if (every > 0 and checks.iphone_charge_watched(cfg)
+                and ticks % max(1, int(every / REFRESH_EVERY)) == 0):
             got = idevice.read(cfg)
             if got:
                 phone_record(charging=got["charging"], battery=got["battery"],
