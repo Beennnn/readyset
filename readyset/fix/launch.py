@@ -15,7 +15,7 @@ from pathlib import Path
 
 import mido
 
-from . import windows, liveaudio
+from .. import windows, liveaudio
 
 
 # Message-sentinelle : dire « déjà lancée » n'est pas dire « lancée », et l'appelant a
@@ -122,7 +122,7 @@ def _loopback_port(cfg: dict) -> str:
 
 
 def _resolved_mode(cfg: dict, mode: str | None) -> str:
-    from . import checks          # import tardif : `checks` est lourd et n'est pas requis
+    from .. import checks          # import tardif : `checks` est lourd et n'est pas requis
     if mode:                      # pour lancer les apps — seulement pour régler le son.
         return mode
     return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
@@ -139,7 +139,7 @@ def warn_if_output_missing(cfg: dict, mode: str, log=print) -> bool:
     sa fenêtre modale, et la suite de la mise en place se fera contre une app sourde.
     Autant l'annoncer à la ligne où c'est encore réparable — en branchant un câble.
     """
-    from . import checks
+    from .. import checks
     wants = cfg["modes"][mode].get("live_output") or []
     if not wants or not checks._audio_ready():
         return True               # rien d'attendu, ou inventaire pas encore lu : on se tait

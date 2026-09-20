@@ -41,7 +41,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSUIElement</key><true/>
   <key>LSMinimumSystemVersion</key><string>13.0</string>
   <!-- Base language = English (it lives in the source, as T()'s default value).
-       Every code listed here must have a matching .lproj under menubar/Resources/,
+       Every code listed here must have a matching .lproj under readyset/surfaces/menubar/Resources/,
        otherwise macOS falls back to the development region. -->
   <key>CFBundleDevelopmentRegion</key><string>en</string>
   <key>CFBundleLocalizations</key><array>

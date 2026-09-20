@@ -2,8 +2,8 @@
 
 Resolution order for the config file:
   1. $RIG_CONF if set
-  2. bin/rig.toml           (your real config — git-ignored, may hold a private ntfy topic)
-  3. bin/rig.example.toml   (committed template — used as-is if you never copy it)
+  2. rig.toml          (your real config — git-ignored, may hold a private ntfy topic)
+  3. rig.example.toml  (committed template — used as-is if you never copy it)
 
 Whatever file is found is merged over DEFAULTS below, so a partial rig.toml
 only needs to override what differs from the template. Python 3.11+ reads TOML
@@ -17,7 +17,11 @@ import sys
 import tomllib
 from pathlib import Path
 
-BIN_DIR = Path(__file__).resolve().parent.parent
+# The repo root — three levels up from readyset/core/config.py. Exported because it is
+# the anchor for every path the program resolves at runtime (rig.toml, logs/, the
+# dashboard's page.html): computing `__file__.parent.parent…` in each module meant the
+# count silently became wrong the day a module moved one directory deeper.
+REPO_DIR = Path(__file__).resolve().parent.parent.parent
 
 # Generic skeleton so the engine runs out of the box — NOTHING here is personal.
 # Your real rig (gig .als path, network IPs, device names, lamp MACs, ntfy topic)
@@ -236,7 +240,7 @@ def config_path() -> Path | None:
     if env:
         return Path(env)
     for name in ("rig.toml", "rig.example.toml"):
-        p = BIN_DIR / name
+        p = REPO_DIR / name
         if p.exists():
             return p
     return None

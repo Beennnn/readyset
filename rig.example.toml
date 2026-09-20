@@ -1,5 +1,5 @@
 # rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
-# falls back to the generic defaults in readyset/config.py. Nothing below is personal —
+# falls back to the generic defaults in readyset/core/config.py. Nothing below is personal —
 # these are placeholder examples; replace with your paths / IPs / device names / MACs.
 
 [set]
@@ -190,7 +190,7 @@ channel = 15
 cc      = 111
 
 # ---------------------------------------------------------------------------------
-# Erreurs LIÉES — ce qui tombe AVEC quoi (readyset/cascade.py).
+# Erreurs LIÉES — ce qui tombe AVEC quoi (readyset/core/cascade.py).
 #
 # À ne pas confondre avec [diagram] : celui-là dessine le flux MIDI et audio, celui-ci
 # décrit les DÉPENDANCES — le plus souvent l'alimentation. Les deux ne se recouvrent pas :

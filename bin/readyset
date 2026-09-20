@@ -27,7 +27,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from readyset import alerts, apps, checks, config, launch, liveaudio, server, vpn, windows  # noqa: E402
+from readyset import apps, checks, liveaudio, vpn, windows  # noqa: E402
+from readyset.core import config  # noqa: E402
+from readyset.fix import launch  # noqa: E402
+from readyset.surfaces import alerts  # noqa: E402
+from readyset.surfaces import web  # noqa: E402
 
 
 def _hr() -> str:
@@ -168,8 +172,8 @@ def cmd_monitor(cfg: dict, args) -> int:
 
 def cmd_serve(cfg: dict, args) -> int:
     if getattr(args, "mode", None):
-        server._MODE["requested"] = args.mode
-    server.serve(cfg, port=args.port, open_browser=not args.no_open, host=args.host)
+        web.set_requested_mode(args.mode)
+    web.serve(cfg, port=args.port, open_browser=not args.no_open, host=args.host)
     return 0
 
 
