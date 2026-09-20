@@ -24,7 +24,7 @@ PLIST_DST="$HOME/Library/LaunchAgents/$LABEL.plist"
 UID_="$(id -u)"
 
 # The engine + the daemon must agree on the file path → take it from rig.toml.
-FILE="$(cd "$REPO" && python3 -c 'from riglib import config; print(config.load().get("audiolevel",{}).get("file","") or "")')"
+FILE="$(cd "$REPO" && python3 -c 'from readyset import config; print(config.load().get("audiolevel",{}).get("file","") or "")')"
 if [ -z "$FILE" ]; then
   echo "✖ [audiolevel].file n'est pas défini dans rig.toml — renseigne-le d'abord, ex :"
   echo '    [audiolevel]'

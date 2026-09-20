@@ -186,7 +186,7 @@ def _midi_inputs() -> list[str]:
         return [f"__error__:{exc}"]
     # CoreMIDI can hand back an endpoint whose name reads as None: a device that
     # vanished while the process kept its client open leaves a nameless ghost behind.
-    # A fresh process never sees it, which is why `rig check` stayed green while the
+    # A fresh process never sees it, which is why `readyset check` stayed green while the
     # long-lived dashboard crashed on EVERY request for 18 h (2026-08-18, after the
     # Dell dock dropped the whole USB chain). Filtering here fixes every caller at
     # once — several of them do `p.lower()` and would raise the same way.
@@ -1146,7 +1146,7 @@ def check_default_output(cfg: dict) -> Result:
     )
 
 
-# Le parsing vit dans riglib/vpn.py, avec la coupure : un seul lecteur de `scutil --nc
+# Le parsing vit dans readyset/vpn.py, avec la coupure : un seul lecteur de `scutil --nc
 # list` pour les deux, sinon le check et le fix finissent par ne plus parler du même VPN.
 # (Les entrées [PPP:Modem] y sont écartées : ce sont des gadgets série — pédale ToneX,
 # cartes Seeed — que macOS range dans la même liste, pas des VPN.)

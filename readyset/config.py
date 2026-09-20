@@ -156,7 +156,7 @@ DEFAULTS: dict = {
         # = jamais proposées à la fermeture. Le Finder y est d'office : macOS le relance.
         "unexpected_apps": {"allow": ["Finder"]},
     },
-    # Window policy per app — everything RUNS, only Ableton is SEEN. See riglib/windows.py.
+    # Window policy per app — everything RUNS, only Ableton is SEEN. See readyset/windows.py.
     "windows": {
         "default": "hide",          # hide | minimize | keep
         "apps": {"Ableton": "keep"},

@@ -14,7 +14,7 @@ Analyse complète : github.com/Beennnn/surfshark-toggle.
 
 Conséquence à assumer, et c'est pour ça que chaque message le répète : la coupure est
 PERSISTANTE — elle survit au redémarrage. C'est voulu (sinon elle ne tiendrait pas une
-soirée), mais ça veut dire qu'un `rig vpn on` est nécessaire pour retrouver son VPN.
+soirée), mais ça veut dire qu'un `readyset vpn on` est nécessaire pour retrouver son VPN.
 
 La désactivation de service demande root. La règle sudoers posée par surfshark-toggle
 (`install.sh`) l'autorise sans mot de passe, et UNIQUEMENT pour ce sous-verbe :
@@ -73,7 +73,7 @@ def _network_services() -> set[str]:
 
 
 def disabled_services() -> list[str]:
-    """Services réseau actuellement DÉSACTIVÉS — ceux qu'un `rig vpn on` doit rallumer."""
+    """Services réseau actuellement DÉSACTIVÉS — ceux qu'un `readyset vpn on` doit rallumer."""
     try:
         lines = _run(["networksetup", "-listallnetworkservices"], timeout=10).stdout.splitlines()
     except Exception:
@@ -163,7 +163,7 @@ def turn_off(cfg: dict, dry_run: bool = False) -> tuple[bool, str]:
         ok_all = False
     else:
         lines.append("🔒 VPN coupé — coupure PERSISTANTE (survit au redémarrage) ; "
-                     "`rig vpn on` pour le rétablir")
+                     "`readyset vpn on` pour le rétablir")
     return ok_all, "\n".join(lines)
 
 
@@ -192,5 +192,5 @@ def status(cfg: dict) -> str:
     lines = []
     lines.append("VPN actif : " + (", ".join(n for n, _ in conns) if conns else "aucun"))
     if off:
-        lines.append("Service(s) VPN désactivé(s) : " + ", ".join(off) + "  (`rig vpn on` pour rétablir)")
+        lines.append("Service(s) VPN désactivé(s) : " + ", ".join(off) + "  (`readyset vpn on` pour rétablir)")
     return "\n".join(lines)

@@ -1,4 +1,4 @@
-"""Bring-up sequence — launch the rig apps in order, then open the gig set.
+"""Bring-up sequence — launch the readyset apps in order, then open the gig set.
 
 Poll-for-readiness rather than fixed sleeps: after launching Bome we wait until
 its virtual MIDI ports actually appear before opening the Ableton set, so the set
@@ -239,7 +239,7 @@ def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> N
 
 
 def tidy_windows(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Range les fenêtres en fin de bring-up (voir riglib/windows.py).
+    """Range les fenêtres en fin de bring-up (voir readyset/windows.py).
 
     Après le lancement, même masquées au démarrage, des apps déjà ouvertes avant le
     préflight peuvent traîner à l'écran — et Ableton, lui, vient de passer devant en

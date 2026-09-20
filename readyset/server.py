@@ -259,7 +259,7 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
             "group": _group_of(r.key),
             "glyph": _glyph_of(r.key),
             # Les vignettes d'un check : l'icône macOS réelle pour une app, un dessin
-            # pour du matériel (voir riglib/gear.py). Liste, parce qu'un check peut
+            # pour du matériel (voir readyset/gear.py). Liste, parce qu'un check peut
             # porter sur DEUX objets — « Bome Network ↔ iPhone » en montre les deux.
             "icons": gear.icons_for(cfg, r.key, r.label),
             "remedy": rem.label if (rem and r.status != checks.OK) else None,
@@ -269,7 +269,7 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
             "manual": bool(rem and rem.hands_on and r.status != checks.OK),
         })
     # Erreurs LIÉES : qui explique qui. Posé APRÈS que tous les items existent — un lien
-    # se juge sur l'état de la chaîne entière, pas check par check (riglib/cascade.py).
+    # se juge sur l'état de la chaîne entière, pas check par check (readyset/cascade.py).
     cascade.annotate(cfg, mode, items)
     status = checks.worst(results)
     return {
@@ -286,7 +286,7 @@ def build_state(cfg: dict, with_audio: bool = True) -> dict:
         "items": items,
         # Servi à part des `items` pour que le panneau de fermeture ait le chemin exact
         # de chaque app (les items ne portent qu'un libellé). Presque gratuit : la liste
-        # vient du mémo de riglib/apps, déjà rempli par le check.
+        # vient du mémo de readyset/apps, déjà rempli par le check.
         "unexpected": apps.unexpected(cfg),
     }
 
@@ -559,7 +559,7 @@ def _state_loop(cfg: dict) -> None:
     ticks = 0
     # Publier ne relève pas du même geste qu'alerter : on force le seul backend « midi »
     # plutôt que la liste de [monitor].alerts, sans quoi le tableau de bord doublerait
-    # les notifications macOS et les push de « rig monitor ».
+    # les notifications macOS et les push de « readyset monitor ».
     jauge = alerts.Alerter(cfg, ["midi"], log=lambda m: print(f"[jauge]{m}", flush=True))
     vues: list[str] | None = None
     dernier = 0.0
@@ -1414,7 +1414,7 @@ async function fix(key,label,btn){
 // Ranger les fenêtres : les apps continuent de tourner, elles disparaissent juste de
 // l'écran. QUI est rangé est une décision de CONFIG (`[windows.apps]` dans rig.toml, où
 // Ableton est en "keep" parce que le set EST l'écran de scène) — pas une case à cocher
-// qui pouvait contredire le réglage. Pour tout ranger, Ableton compris : `rig tidy --all`.
+// qui pouvait contredire le réglage. Pour tout ranger, Ableton compris : `readyset tidy --all`.
 async function tidy(){
   logline(`🪟 rangement des fenêtres…`);
   toast("run","⏳ Rangement des fenêtres…");

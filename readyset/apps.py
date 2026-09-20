@@ -48,7 +48,7 @@ _ENTRY = re.compile(r'^\s*\d+\)\s*"([^"]*)"\s*ASN:', re.M)
 _BUNDLE_PATH = re.compile(r'^\s*bundle path="([^"]+)"', re.M)
 _TYPE = re.compile(r'\btype="([^"]+)"')
 
-_ICON_CACHE = Path.home() / ".cache" / "irig" / "appicons"
+_ICON_CACHE = Path.home() / ".cache" / "readyset" / "appicons"
 
 # Mémo très court : un seul rendu du dashboard appelle cette liste une fois pour le check,
 # une fois pour le panneau, puis une fois par bouton « Quitter » à résoudre — soit une

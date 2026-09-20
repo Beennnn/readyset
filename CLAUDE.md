@@ -1,18 +1,42 @@
-# readyset — le jumeau PUBLIABLE
+# readyset — le dépôt PUBLIABLE
 
-Version générique de l'outil : `plugins/`, licence, et **rien qui appartienne à une
-installation particulière**. Tout le spécifique vit dans `rig.toml` (git-ignored) ;
-`rig.example.toml` en est le mode d'emploi versionné. Le code ne nomme aucun appareil,
-aucun morceau, aucun numéro de série — si une modification l'exige, elle est mal placée :
-elle va dans la config, ou dans le dépôt privé [`rig-control`](https://github.com/Beennnn/rig-control).
+## Le vocabulaire : un mot, un concept
 
-## Une exception à « tout arrive d'abord dans rig-control »
+Six mots désignaient la même chose (`rig`, `iRig`, `readyset`, `rig-control`, `riglib`,
+`live-rig`). Il n'en reste que deux, et ils ne se recouvrent pas :
 
-**L'app de barre de menus vit ICI**, et c'est celle qui est réellement installée
-(`/Applications/RigMenuBar.app`, agent `com.readyset.menubar`). La copie qui traînait dans
-`rig-control/menubar/` a été supprimée le 2026-08-19 — elle datait d'avant et son
-`install.sh` posait une SECONDE icône 🎹 dans la barre. Le moteur qui tourne, lui, vient
-toujours de `rig-control`.
+| mot | ce qu'il désigne, et rien d'autre |
+|---|---|
+| **rig** | l'**installation physique** — claviers, câbles, le DAW, le Stream Deck. Jamais un nom de programme. |
+| **readyset** | le **logiciel** : l'exécutable `bin/readyset` et le paquet `readyset/`. |
+| **check** | une vérification · **fix** : sa correction · **surface** : un endroit où ça s'affiche |
+
+`iRig` est une marque déposée d'IK Multimedia : elle ne doit jamais revenir.
+
+⚠️ **L'exécutable est dans `bin/`, pas à la racine.** Un fichier et un dossier ne peuvent
+pas porter le même nom dans le même répertoire, et le paquet s'appelle `readyset/`.
+`bin/readyset` ajoute donc la racine du dépôt à `sys.path` avant d'importer le paquet.
+
+`rig.toml` et `rig.example.toml` gardent leur nom : ils décrivent bien l'installation
+PHYSIQUE, pas le logiciel.
+
+## Rien qui appartienne à une installation particulière
+
+Tout le spécifique vit dans `rig.toml` (git-ignored) ; `rig.example.toml` en est le mode
+d'emploi versionné. Le code ne nomme aucun appareil, aucun morceau, aucun numéro de série,
+aucune machine, aucune personne — si une modification l'exige, elle est mal placée : elle
+va dans la config, ou dans `readyset/devices/devices.toml` quand c'est un catalogue
+d'appareils.
+
+Le dépôt privé `rig-control` a été absorbé le 2026-09-20 (commit `b42d90f`) : il n'y a
+plus qu'une base de code, celle-ci.
+
+## L'app de barre de menus vit ICI
+
+C'est celle qui est réellement installée (`/Applications/RigMenuBar.app`, agent
+`com.readyset.menubar`). La copie qui traînait dans l'ancien dépôt jumeau a été supprimée
+le 2026-08-19 — elle datait d'avant et son `install.sh` posait une SECONDE icône 🎹 dans
+la barre.
 
 ## Construire et installer l'app
 
@@ -45,7 +69,7 @@ Trois pièges macOS déjà payés, tous commentés dans le code :
 ## Le principe qui gouverne tous les checks
 
 **Aucune ligne verte qui n'ait été observée.** Un check qui ne sait pas le dit ; il ne
-suppose jamais que tout va bien. Voir `riglib/checks.py` (charge du téléphone) pour le cas
+suppose jamais que tout va bien. Voir `readyset/checks.py` (charge du téléphone) pour le cas
 d'école : mesure contre déclaration, et « il s'est tu » comme état à part entière.
 
 `Result.parts` sert aux checks COMPOSITES (le soundcheck et ses gestes) : le check reste
@@ -54,9 +78,9 @@ déplient le détail au lieu de le tronquer.
 
 ## Longueur des fichiers
 
-`riglib/server.py` dépasse 1 000 lignes (1 178 au 2026-08-19) : **ne rien y ajouter sans
+`readyset/server.py` dépasse 1 000 lignes (1 178 au 2026-08-19) : **ne rien y ajouter sans
 extraire**. C'est pour ça que la lecture `ideviceinfo` est partie dans son propre module
-`riglib/idevice.py` plutôt que d'y être glissée.
+`readyset/idevice.py` plutôt que d'y être glissée.
 
 ## Plusieurs sessions Claude travaillent dans `~/dev`
 

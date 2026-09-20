@@ -13,7 +13,7 @@ détaille.
 
 Ce module ne fait que le CHOIX et l'APPEL : quelle sortie veut-on dans ce mode, et
 qu'est-ce que le script en a fait. Il est utilisé aux deux endroits qui en ont besoin —
-la mise en place (`rig preflight`) et le bouton de correction du dashboard — pour que les
+la mise en place (`readyset preflight`) et le bouton de correction du dashboard — pour que les
 deux fassent exactement la même chose.
 
 ⚠️ Rien ici ne LIT la sortie courante. Ce serait tentant, et ce serait un piège : lire

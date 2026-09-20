@@ -8,12 +8,12 @@ message displays the value and switches image.
 ## Overview
 
 ```
-  rig monitor ──MIDI CC──►  virtual port  ──►  control-surface key (MIDI feedback)
+  readyset monitor ──MIDI CC──►  virtual port  ──►  control-surface key (MIDI feedback)
    (emitter)               (dead-end IAC)       (receiver → shows the count)
 ```
 
-- **Emitter** — the `midi` alert backend (`Alerter.gauge()` in `riglib/alerts.py`),
-  driven by `rig monitor` and `rig alert-test`.
+- **Emitter** — the `midi` alert backend (`Alerter.gauge()` in `readyset/alerts.py`),
+  driven by `readyset monitor` and `readyset alert-test`.
 - **Transport** — a **dedicated virtual MIDI port** that nothing else in the rig reads,
   so an alert can never trigger a sound or an action elsewhere.
 - **Receiver** — a control-surface key configured for **incoming MIDI feedback**.
@@ -114,6 +114,6 @@ cc      = 111
 ## Test
 
 ```bash
-./rig alert-test --alerts midi   # → the key should read 3 over AMN
-./rig monitor                    # → puts the real count back
+./bin/readyset alert-test --alerts midi   # → the key should read 3 over AMN
+./bin/readyset monitor                    # → puts the real count back
 ```

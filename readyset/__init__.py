@@ -1,4 +1,4 @@
-"""riglib — bring-up + live monitoring for the stage keyboard rig.
+"""readyset — bring-up + live monitoring for the stage keyboard rig.
 
 One concern per module (per the repo's file-hygiene rule):
   config.py  — load rig.toml (+ example fallback + baked defaults)

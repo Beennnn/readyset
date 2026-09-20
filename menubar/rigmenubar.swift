@@ -97,7 +97,7 @@ struct Problem {
     /// surfaces, une seule carte mentale à retenir.
     let group: String
     /// ERREUR LIÉE — la panne AMONT qui explique celle-ci, quand le moteur en connaît
-    /// une (riglib/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
+    /// une (readyset/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
     /// breath : quand son câble saute, ces trois-là tombent avec lui sans être en cause.
     /// `nil` = panne autonome, celle qui demande vraiment un geste à elle.
     let causedBy: String?
@@ -234,7 +234,7 @@ final class SettingsTabController: NSTabViewController {
 
     private func fit(to item: NSTabViewItem?) {
         guard let win = view.window else { return }
-        win.title = T("settings.title", "iRig Settings")
+        win.title = T("settings.title", "readyset Settings")
         // La fenêtre garderait sinon la hauteur de l'onglet le plus haut, laissant un grand
         // vide sous les onglets plus courts. On la retaille sur le contenu réel, en gardant
         // le bord HAUT fixe : `setFrame` ancre en bas, donc sans compenser l'origine la
@@ -825,7 +825,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             go.attributedTitle = NSAttributedString(string: label, attributes: [
                 .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
             go.toolTip = T("menu.prepare.tip", """
-                           Launches the rig apps, opens the set, tidies the windows, then applies \
+                           Launches the readyset apps, opens the set, tidies the windows, then applies \
                            every fix it can — and re-checks everything. The ✋ lines stay yours to do.
                            """)
             menu.addItem(go)
@@ -907,7 +907,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 Pref.notify, false, {}),
             Row("wrench.and.screwdriver", T("alerts.autofix.title", "Fix automatically"),
                 T("alerts.autofix.hint",
-                  "iRig relaunches apps and ports on its own, without asking — including mid-song. "
+                  "readyset relaunches apps and ports on its own, without asking — including mid-song. "
                   + "Leave this off on stage."),
                 Pref.autofix, false, warning: true, { self.maybeAutoFix() }),
             Row("powerplug", T("alerts.streamDeck.title", "Stream Deck power"),
@@ -928,7 +928,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         tabs.addTabViewItem(screensTab)
 
         let w = NSWindow(contentViewController: tabs)
-        w.title = T("settings.title", "iRig Settings")
+        w.title = T("settings.title", "readyset Settings")
         w.isReleasedWhenClosed = false
         // .resizable : la largeur venait de `fittingSize`, qui sous-estime un NSGridView
         // imbriqué dans un NSStackView — d'où du texte rogné à droite dès qu'un libellé
@@ -1096,7 +1096,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     ///
     /// C'était un `launchctl bootout` : la seule façon de ne pas être relancé, tant que
     /// l'agent portait `KeepAlive: true`. Le prix en était caché et sévère — décharger
-    /// l'agent le laisse déchargé, donc iRig ne revenait plus AU LOGIN SUIVANT non plus,
+    /// l'agent le laisse déchargé, donc readyset ne revenait plus AU LOGIN SUIVANT non plus,
     /// et il fallait un `bootstrap` à la main pour s'en apercevoir.
     ///
     /// L'agent est passé à `KeepAlive: { SuccessfulExit: false }`, qui ne relance que sur
