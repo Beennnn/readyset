@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 """Pont Ableton Link → une ligne JSON par tick sur stdout.
 
-POURQUOI CE FICHIER EST UN PROCESS À PART, ET NON UN MODULE DE `riglib`
+POURQUOI CE FICHIER EST UN PROCESS À PART, ET NON UN MODULE DE `readyset`
 ======================================================================
 
 **Licence.** `aalink` embarque [Ableton Link](https://github.com/Ableton/link), qui est
@@ -12,7 +12,7 @@ aalink/Link) est confiné à UN process — `beatsync.py` » (README de `~/dev/m
 Ce fichier est le second occupant de cette règle, pas une exception à celle-ci. Le
 corollaire vaut surtout pour l'aval : `readyset`, lui, porte une LICENSE et a vocation
 à être publié — **ne jamais y remonter ce fichier sans traiter la licence d'abord**, et
-ne jamais importer `aalink` depuis `riglib/`.
+ne jamais importer `aalink` depuis `readyset/`.
 
 **Boucle d'événements.** `aalink` impose asyncio ; le serveur du rig est un
 `http.server` synchrone servi par des fils. Deux modèles de concurrence dans le même
@@ -23,7 +23,7 @@ session de TOUS les autres pairs, Live compris. Un process dédié qu'on démarr
 qu'on arrête franchement est un pair propre ; un thread accroché à la vie du serveur
 ne l'est pas.
 
-C'est le même patron que `riglib/spectrum.py` avec ffmpeg : un sous-process qui produit
+C'est le même patron que `readyset/spectrum.py` avec ffmpeg : un sous-process qui produit
 un flux, un fil qui le lit, un dernier état partagé.
 
 CE QU'IL FAUT SAVOIR DE LINK POUR LIRE CE QUI SUIT

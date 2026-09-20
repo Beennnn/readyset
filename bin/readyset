@@ -1,16 +1,20 @@
 #!/usr/bin/env python3
-"""rig — bring-up + live monitoring for the stage keyboard rig.
+"""readyset — bring-up + live monitoring for the stage keyboard rig.
 
-  rig preflight     launch the apps in order, open the gig set, then verify → checklist
-  rig check         verify only (no launch), one-shot checklist + exit code
-  rig monitor       watch continuously; alert the moment something dies (and recovers)
-  rig tidy          hide the rig apps' windows (they keep running) — Ableton stays visible
-  rig apps          list the open apps the rig doesn't need; --close offers to quit them
-  rig vpn off|on    cut the VPN (it rewrites routing → no iPhone, no stage LAN) / restore
-  rig alert-test    fire a test alert through every active backend
+  readyset preflight   launch the apps in order, open the gig set, then verify → checklist
+  readyset check       verify only (no launch), one-shot checklist + exit code
+  readyset monitor     watch continuously; alert the moment something dies (and recovers)
+  readyset tidy        hide the readyset apps' windows (they keep running) — Ableton stays visible
+  readyset apps        list the open apps the rig doesn't need; --close offers to quit them
+  readyset vpn off|on  cut the VPN (it rewrites routing → no iPhone, no stage LAN) / restore
+  readyset alert-test  fire a test alert through every active backend
 
 Exit codes for check/preflight: 0 all-ok, 1 warnings only, 2 a required check failed.
-Config: bin/rig.toml (copy from rig.example.toml). Python 3.11+, needs `mido`.
+Config: rig.toml at the repo root (copy from rig.example.toml). Python 3.11+, needs `mido`.
+
+The executable lives in bin/ and the package at the repo root: a file and a directory
+cannot share the name `readyset` in the same folder. Hence the sys.path line below —
+without it Python would only look inside bin/ and never find the package next door.
 """
 
 from __future__ import annotations
@@ -19,8 +23,11 @@ import argparse
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 
-from riglib import alerts, apps, checks, config, launch, liveaudio, server, vpn, windows
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from readyset import alerts, apps, checks, config, launch, liveaudio, server, vpn, windows  # noqa: E402
 
 
 def _hr() -> str:
@@ -189,7 +196,7 @@ def cmd_apps(cfg: dict, args) -> int:
     for a in extra:
         print(f"  📦 {a['name'].ljust(24)} {a['path']}")
     if not args.close:
-        print("\n(`rig apps --close` pour proposer de les fermer)")
+        print("\n(`readyset apps --close` pour proposer de les fermer)")
         return 0
     # Confirmation explicite, y compris hors terminal interactif : sans réponse claire on
     # ne ferme rien. Fermer une app peut faire perdre du travail non enregistré.
@@ -227,18 +234,18 @@ def cmd_alert_test(cfg: dict, args) -> int:
     # not merely light up.
     alerter.gauge(["app:Ableton Live", "midi:P-Series", "net:stage"])
     print("Envoyé. Vérifie la notif / le téléphone / le bouton Stream Deck.")
-    print("Le bouton doit afficher 3 et les lettres AMN. « rig monitor » y remettra la vraie valeur.")
+    print("Le bouton doit afficher 3 et les lettres AMN. « readyset monitor » y remettra la vraie valeur.")
     return 0
 
 
 def main(argv=None) -> int:
-    # Line-buffer stdout so `rig monitor >log` streams live instead of blocking.
+    # Line-buffer stdout so `readyset monitor >log` streams live instead of blocking.
     try:
         sys.stdout.reconfigure(line_buffering=True)
     except Exception:
         pass
     cfg = config.load()
-    p = argparse.ArgumentParser(prog="rig", description=__doc__,
+    p = argparse.ArgumentParser(prog="readyset", description=__doc__,
                                 formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = p.add_subparsers(dest="cmd", required=True)
 

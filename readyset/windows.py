@@ -17,10 +17,10 @@ Trois politiques :
 Deux moments, deux mécanismes — le premier suffit la plupart du temps :
   au LANCEMENT  `open -g -j` fait démarrer l'app déjà masquée. Aucune autorisation
                 macOS requise, et rien ne clignote jamais à l'écran (cf. launch.py).
-  À LA DEMANDE  `rig tidy` / le bouton du dashboard range ce qui est DÉJÀ ouvert —
+  À LA DEMANDE  `readyset tidy` / le bouton du dashboard range ce qui est DÉJÀ ouvert —
                 le cas courant, puisque les apps du rig restent lancées des jours.
                 Celui-là passe par System Events, donc exige que l'app qui exécute
-                `rig` (Terminal, iRig.app) soit cochée dans Réglages → Confidentialité
+                `readyset` (Terminal, or the menu-bar app) soit cochée dans Réglages → Confidentialité
                 et sécurité → Accessibilité. Sans ça macOS renvoie l'erreur -1743 et
                 on le dit explicitement plutôt que d'échouer en silence.
 
@@ -96,7 +96,7 @@ def _osascript(script: str) -> tuple[bool, str]:
     # permission Accessibilité qui manque, jamais un bug du script — on le dit tel quel.
     if "1743" in err or "assistive" in err.lower() or "autoris" in err.lower():
         return False, ("macOS refuse le pilotage des fenêtres — coche l'app qui lance "
-                       "rig (Terminal / iRig) dans Réglages → Confidentialité et "
+                       "readyset (Terminal / the menu-bar app) dans Réglages → Confidentialité et "
                        "sécurité → Accessibilité")
     return False, err or "osascript a échoué"
 

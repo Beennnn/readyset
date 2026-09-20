@@ -1,5 +1,5 @@
 # rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
-# falls back to the generic defaults in riglib/config.py. Nothing below is personal —
+# falls back to the generic defaults in readyset/config.py. Nothing below is personal —
 # these are placeholder examples; replace with your paths / IPs / device names / MACs.
 
 [set]
@@ -101,7 +101,7 @@ lamp_severity = "warn"
 ignore = []
 # Per-VPN override for HOW to cut it (substring → shell command). With no entry, the
 # generic method applies: disable the network service — the only thing that holds
-# against an on-demand profile (see riglib/vpn.py).
+# against an on-demand profile (see readyset/vpn.py).
 [checks.vpn.off_cmds]
 
 # Open apps the rig doesn't need — one line each, **warning on stage** (a notification
@@ -109,7 +109,7 @@ ignore = []
 # **plain info in the studio**. Per-mode via `unexpected_apps_severity`; never fail — an
 # extra app makes the rig fragile, it doesn't stop it from playing. The dashboard lists
 # them with their icons and asks for confirmation before quitting anything; from a
-# terminal: `rig apps`, then `rig apps --close`.
+# terminal: `readyset apps`, then `readyset apps --close`.
 #
 # Only apps with a real on-screen presence are considered: menu-bar agents and background
 # apps never show up here — they can't clutter the screen.
@@ -119,7 +119,7 @@ ignore = []
 allow = ["Finder"]
 
 # --- windows: everything RUNS, only the DAW is SEEN ----------------------------------
-# The rig apps (MIDI router, deck software, backing-track player) must run — they carry
+# The readyset apps (MIDI router, deck software, backing-track player) must run — they carry
 # the routing, the buttons and the tracks — but their windows are noise on a stage
 # screen. Policies: "hide" (⌘H — gone from the screen, still running), "minimize"
 # (windows to the Dock), "keep" (left alone).
@@ -190,7 +190,7 @@ channel = 15
 cc      = 111
 
 # ---------------------------------------------------------------------------------
-# Erreurs LIÉES — ce qui tombe AVEC quoi (riglib/cascade.py).
+# Erreurs LIÉES — ce qui tombe AVEC quoi (readyset/cascade.py).
 #
 # À ne pas confondre avec [diagram] : celui-là dessine le flux MIDI et audio, celui-ci
 # décrit les DÉPENDANCES — le plus souvent l'alimentation. Les deux ne se recouvrent pas :

@@ -165,9 +165,9 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                 return Remedy(f"Quitter {name}", lambda dry: apps.quit_app(path, dry_run=dry))
         return None
 
-    # VPN actif → le couper. Pas un simple `scutil stop` : voir riglib/vpn.py (l'on-demand
+    # VPN actif → le couper. Pas un simple `scutil stop` : voir readyset/vpn.py (l'on-demand
     # reforme le tunnel dans la demi-seconde ; il faut éteindre le service réseau).
-    # Coupure PERSISTANTE, d'où le libellé explicite et le `rig vpn on` pour l'inverse.
+    # Coupure PERSISTANTE, d'où le libellé explicite et le `readyset vpn on` pour l'inverse.
     if key == "sys:vpn":
         return Remedy("Couper le VPN", lambda dry: vpn.turn_off(cfg, dry_run=dry))
 

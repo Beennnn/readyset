@@ -13,10 +13,10 @@
         <string>exec '/Applications/RigMenuBar.app/Contents/MacOS/RigMenuBar'</string>
     </array>
     <!-- Relancée SEULEMENT si elle est tombée. `KeepAlive` à `true` relançait aussi
-         après un « ⏻ Quitter iRig » du menu, ce qui rendait la sortie volontaire
+         après un « ⏻ Quitter readyset » du menu, ce qui rendait la sortie volontaire
          impossible : l'app revenait dans la seconde. On la contournait en déchargeant
          l'agent (`launchctl bootout`) — et le remède était pire, puisque le service
-         restait déchargé jusqu'à la session suivante, donc iRig ne redémarrait plus au
+         restait déchargé jusqu'à la session suivante, donc readyset ne redémarrait plus au
          login tant qu'on ne le rechargeait pas à la main.
          Avec `SuccessfulExit: false`, launchd ne relance que sur un code de sortie NON
          NUL. Quitter proprement (code 0) est respecté ; un crash est rattrapé. Le

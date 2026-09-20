@@ -48,10 +48,10 @@
 "menu.refresh"      = "↻ Rafraîchir maintenant";
 "menu.refreshShort" = "↻ Rafraîchir";
 "menu.settings"     = "⚙︎ Réglages…";
-"menu.quit.ancien"         = "⏻ Quitter iRig";
+"menu.quit.ancien"         = "⏻ Quitter readyset";
 
 /* --- Fenêtre Réglages : onglets --- */
-"settings.title" = "Réglages iRig";
+"settings.title" = "Réglages readyset";
 "tab.display"    = "Affichage";
 "tab.alerts"     = "Alertes";
 "tab.screens"    = "Écrans";
@@ -72,7 +72,7 @@
 "alerts.notify.title"   = "Une notification au changement d'état";
 "alerts.notify.hint"    = "Notification macOS quand la gravité empire (vert → orange → rouge), pas à chaque check.";
 "alerts.autofix.title"  = "Corriger automatiquement";
-"alerts.autofix.hint"   = "iRig relance apps et ports tout seul, sans rien demander — y compris en plein morceau. À laisser éteint sur scène.";
+"alerts.autofix.hint"   = "readyset relance apps et ports tout seul, sans rien demander — y compris en plein morceau. À laisser éteint sur scène.";
 
 /* --- Onglet Écrans --- */
 "screens.showOn" = "Afficher sur";

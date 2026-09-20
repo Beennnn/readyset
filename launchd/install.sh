@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install the login agents:
-#   com.readyset.dashboard — auto-starts `rig serve` (dashboard on :8765)
+#   com.readyset.dashboard — auto-starts `readyset serve` (dashboard on :8765)
 #   com.readyset.menubar   — 🎹 menu-bar icon that opens the dashboard
 # Both are relaunched by launchd if they die.
 #   ./launchd/install.sh          # build menubar + install/start both

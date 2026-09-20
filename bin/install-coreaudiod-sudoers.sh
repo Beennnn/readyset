@@ -22,7 +22,7 @@ TMP="$(mktemp)"
 trap 'rm -f "$TMP"' EXIT
 
 cat > "$TMP" <<RULE
-# Installed by rig-control/bin/install-coreaudiod-sudoers.sh
+# Installed by readyset/bin/install-coreaudiod-sudoers.sh
 # Allow $USER_NAME to restart the macOS audio server without a password — that one
 # command only. launchd respawns coreaudiod within a second.
 $USER_NAME ALL=(root) NOPASSWD: /usr/bin/killall coreaudiod

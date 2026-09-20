@@ -9,7 +9,7 @@ débranché tient ce lien pendant qu'il se vide.
 `ideviceinfo` est la seule voie qui donne le niveau ET l'état d'alimentation sans rien
 demander au téléphone. C'est ce qui la rend précieuse : elle peut BATTRE régulièrement,
 là où une automatisation iOS ne part qu'au branchement. Le battement est ce qui fait
-vivre la pente de la batterie (riglib/checks.py), donc le seul démenti possible d'un
+vivre la pente de la batterie (readyset/checks.py), donc le seul démenti possible d'un
 « en charge » devenu faux.
 
 Prérequis, une fois pour toutes : iPhone branché en USB, déverrouillé, « Se fier », puis
