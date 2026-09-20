@@ -8,6 +8,4 @@
 
 ☐ Re-run `launchd/install.sh` after this restructure lands → the agent still points at the old `rig` path; the dashboard will not restart until the plist is re-substituted (see the report for why this is not optional)
 
-☐ Bring the README's "What it can check" table back in line with `rig.example.toml` → the table lists primitives (`usb_devices`, `links`, `commands`, `output_probe`, `keepawake`, `manual_confirms`) and a `[[apps]]` schema that the loader does not read; a newcomer copying it gets silence
-
 ☐ Decide what `plugins/` is for → its README says checks and fixes call the plugins by path, but no code reads `[checks.fixes]`; either wire an executor into `readyset/fix/` or say in the README that they are standalone tools
