@@ -12,7 +12,7 @@ message displays the value and switches image.
    (emitter)               (dead-end IAC)       (receiver → shows the count)
 ```
 
-- **Emitter** — the `midi` alert backend (`Alerter.gauge()` in `readyset/alerts.py`),
+- **Emitter** — the `midi` alert backend (`Alerter.gauge()` in `readyset/surfaces/alerts/`),
   driven by `readyset monitor` and `readyset alert-test`.
 - **Transport** — a **dedicated virtual MIDI port** that nothing else in the rig reads,
   so an alert can never trigger a sound or an action elsewhere.

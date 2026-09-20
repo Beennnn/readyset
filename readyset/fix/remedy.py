@@ -15,7 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-from . import apps, launch, liveaudio, vpn
+from .. import apps, liveaudio, vpn
+from . import launch
 
 
 @dataclass
@@ -70,7 +71,7 @@ def _bome_path(cfg: dict) -> str | None:
 
 def checks_mode(cfg: dict) -> str:
     """Le mode résolu — le remède doit viser la même sortie que le check qui l'a déclenché."""
-    from . import checks
+    from .. import checks
     return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
 
 
@@ -123,7 +124,7 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
     #
     # S'il est éteint sur le Mac, en revanche, c'est bien ici que ça se répare.
     if key == "net:iphone":
-        from .checks import _pgrep
+        from ..checks import _pgrep
         if _pgrep(cfg["checks"]["apps"].get("Bome Network", "Bome Network")):
             return None
         net = _app_path_for(cfg, "Bome Network")
@@ -249,7 +250,7 @@ def _restart_coreaudiod(dry: bool) -> tuple[bool, str]:
                 return False, (f"annulé — pour un relancement sans mot de passe, installer "
                                f"une fois : {_COREAUDIOD_SUDOERS}")
             return False, err or "killall coreaudiod a échoué"
-    from . import checks
+    from .. import checks
     checks.audio_cache_reset()
     return True, (f"coreaudiod relancé ({how}) — le son revient dans les 2 s ; Ableton ou "
                   "Stage Traxx ouverts doivent resélectionner leur sortie audio")

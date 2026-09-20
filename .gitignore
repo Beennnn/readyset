@@ -3,5 +3,5 @@
 __pycache__/
 audiolevel/audiolevel
 logs/
-menubar/RigMenuBar.app
+readyset/surfaces/menubar/RigMenuBar.app
 rig.toml

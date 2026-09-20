@@ -36,7 +36,7 @@ import UserNotifications
 /// English the base language of the project while a French build is just `fr.lproj`
 /// dropped into Resources, never a fork of the source.
 ///
-/// Adding a language: copy `menubar/Resources/fr.lproj/Localizable.strings` to
+/// Adding a language: copy `readyset/surfaces/menubar/Resources/fr.lproj/Localizable.strings` to
 /// `<code>.lproj/`, translate the right-hand side, and add the code to
 /// CFBundleLocalizations in build.sh. No Swift change.
 func T(_ key: String, _ english: String) -> String {
@@ -97,7 +97,7 @@ struct Problem {
     /// surfaces, une seule carte mentale à retenir.
     let group: String
     /// ERREUR LIÉE — la panne AMONT qui explique celle-ci, quand le moteur en connaît
-    /// une (readyset/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
+    /// une (readyset/core/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
     /// breath : quand son câble saute, ces trois-là tombent avec lui sans être en cause.
     /// `nil` = panne autonome, celle qui demande vraiment un geste à elle.
     let causedBy: String?
