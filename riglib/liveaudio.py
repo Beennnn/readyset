@@ -1,7 +1,7 @@
 """Régler la SORTIE audio d'Ableton dans l'application déjà ouverte.
 
 Le travail réel est fait par `live-output`, qui vit dans son PROPRE dépôt
-(github.com/Beennnn/ableton-live-output) et s'installe en lien symbolique dans
+(github.com/Beennnn/ableton-audio-output) et s'installe en lien symbolique dans
 `~/.local/bin`. Il n'a rien à voir avec un rig : il règle la sortie audio de Live en
 ligne de commande, point — donc il se teste, se publie et se corrige tout seul, et les
 deux jumeaux le CONSOMMENT au lieu d'en porter chacun une copie qui dériverait.
@@ -85,7 +85,7 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
     exe = script()
     if exe is None:
         return False, ("live-output n'est pas installé — "
-                       "github.com/Beennnn/ableton-live-output, puis ./install.sh")
+                       "github.com/Beennnn/ableton-audio-output, puis ./install.sh")
     if dry:
         return True, f"[dry-run] réglerait la sortie d'Ableton sur « {want} »"
     # D'ABORD la fenêtre modale, ENSUITE le réglage : `live-output` ouvre les réglages de
