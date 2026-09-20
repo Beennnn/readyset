@@ -1,5 +1,5 @@
 # rig.test.toml — INERT profile for testing without touching your live session.
-# Use with:  RIG_CONF=bin/rig.test.toml bin/rig <cmd>
+# Use with:  RIG_CONF=rig.test.toml ./bin/readyset <cmd>
 #
 # It launches nothing, opens no set, and routes the Stream Deck MIDI alert to a
 # dead-end virtual MIDI port, so even a *real* (non-dry-run) test can't inject

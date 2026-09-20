@@ -29,8 +29,8 @@ rig up in order, verifies every link, and then watches them for the whole set.
 
 | Piece | Role | How readyset knows it's OK |
 |---|---|---|
-| **DAW** (Ableton Live) opening a **gig set** (`Funk Set.als`) | your sound engine + the actual songs | app process running; project opened by preflight |
-| **Audio interface** (RME-class USB) | sound out to the PA | CoreAudio device present; DAW's logged output device matches |
+| **DAW** (Ableton Live) opening a **gig set** (`Gig Set.als`) | your sound engine + the actual songs | app process running; project opened by preflight |
+| **Audio interface** (a class-compliant USB interface) | sound out to the PA | CoreAudio device present; DAW's logged output device matches |
 | **Main keyboard** (88-key stage piano) | what you play | its MIDI input port is present (with a fallback tier in studio) |
 | **Breath controller** | expression for winds/leads | its MIDI input port is present |
 | **MIDI router** (Bome Translator + Network) | glue between surfaces, phone and the DAW | both apps running; the loopback MIDI port exists |
@@ -61,15 +61,15 @@ different fix from a dead "Keyboard", and the diagram tells them apart at a glan
 
 ## What readyset does for this rig
 
-- **`rig preflight`** — before doors, one command: launches Bome (the MIDI plumbing) first,
+- **`readyset preflight`** — before doors, one command: launches Bome (the MIDI plumbing) first,
   then the Stream Decks, backing-track app and anti-sleep app, starts an Amphetamine
   session, opens the gig set in the DAW, then verifies everything above. Exit code `2` if a
   *required* thing is missing — so you know before the first song, not during it.
-- **`rig monitor`** — for the whole gig, re-checks every few seconds and **alerts the moment
+- **`readyset monitor`** — for the whole gig, re-checks every few seconds and **alerts the moment
   something breaks and again when it recovers**. If the interface drops mid-set you get a
   macOS notification, a phone push, *and* a Stream Deck key turns red — you don't have to be
   looking at the laptop.
-- **Soundcheck** (`rig serve` → 🎹 Soundcheck) — a guided play-test: press the sustain pedal
+- **Soundcheck** (`readyset serve` → 🎹 Soundcheck) — a guided play-test: press the sustain pedal
   and watch CC64 arrive, play and watch the notes, blow the breath controller, wiggle each
   controller — each step ticks green as the MIDI actually arrives. The final step, "is sound
   coming out?", is confirmed either by an [automatic audio-level meter](../audiolevel/README.md)
@@ -91,7 +91,7 @@ own apps, ports, devices and network — the code names nothing proprietary:
 
 ```bash
 cp rig.example.toml rig.toml   # then edit for your setup
-./rig preflight
+./bin/readyset preflight
 ```
 
 Every real-world worry maps to a generic primitive (an app, a USB device, a MIDI port, a

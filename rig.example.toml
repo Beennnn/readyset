@@ -1,5 +1,5 @@
 # rig.toml — copy to `rig.toml` (git-ignored) and set YOUR rig here. Anything omitted
-# falls back to the generic defaults in riglib/config.py. Nothing below is personal —
+# falls back to the generic defaults in readyset/core/config.py. Nothing below is personal —
 # these are placeholder examples; replace with your paths / IPs / device names / MACs.
 
 [set]
@@ -19,49 +19,50 @@ settle_seconds = 2
 amphetamine_session = true   # start an anti-sleep session during bring-up
 
 [server]
-# Interface d'écoute du dashboard.
-#   "127.0.0.1" (défaut) → cette machine seulement.
-#   "0.0.0.0"            → ouvert au RÉSEAU LOCAL : la page est consultable depuis le
-#                          téléphone, et surtout le téléphone peut publier son propre
-#                          état (POST /api/phone, voir plus bas).
-# Il n'y a AUCUNE authentification, et le dashboard sait lancer et fermer des apps
-# (/api/fix, /api/quit-apps, /api/preflight). À n'ouvrir que sur un réseau de confiance.
+# The dashboard's listening interface.
+#   "127.0.0.1" (default) → this machine only.
+#   "0.0.0.0"             → open to the LOCAL NETWORK: the page can be read from the
+#                           phone, and above all the phone can publish its own
+#                           state (POST /api/phone, see further down).
+# There is NO authentication at all, and the dashboard knows how to launch and quit apps
+# (/api/fix, /api/quit-apps, /api/preflight). Only open it on a trusted network.
 host = "127.0.0.1"
-# Âge au-delà duquel le dernier rapport du téléphone n'est plus cru (secondes).
-# Âge au-delà duquel le dernier relevé n'est plus cru et la ligne revient à
-# « à confirmer ». Une heure, pas cinq minutes : une automatisation iOS ne publie qu'au
-# BRANCHEMENT, donc « branché il y a 20 min » reste vrai. Si le Mac interroge lui-même
-# (idevice_poll_seconds ci-dessous), descendre juste au-dessus de cette cadence : le
-# silence devient alors un signal en soi.
+# Age beyond which the phone's last report is no longer believed (seconds).
+# Age beyond which the last reading is no longer believed and the line reverts to
+# « à confirmer ». One hour, not five minutes: an iOS automation only publishes on
+# PLUGGING IN, so "plugged in 20 min ago" stays true. If the Mac polls by itself
+# (idevice_poll_seconds below), come down to just above that cadence: the silence
+# then becomes a signal in itself.
 phone_stale_seconds = 3600
 
-# --- la pente de la batterie, qui sert de DÉMENTI ------------------------------------
-# « En charge » est un fait daté du branchement, que plus rien ne revérifie : un câble
-# sorti, une multiprise éteinte, un chargeur mort ne le changent pas. La batterie, si.
-# Un seul pour cent PERDU suffit à conclure — une batterie qui charge ne recule pas —
-# d'où un écart minimal court, moins long qu'un soundcheck.
-trend_window_seconds = 10800       # on ne regarde pas au-delà de 3 h en arrière
-trend_min_span_seconds = 180       # écart minimal pour parler de baisse
-# ESTIMER l'autonomie demande bien plus de recul : à 1 % près sur 3 min, la pente vaut
-# ±20 %/h. Sous cet écart on dit « elle descend » sans oser chiffrer combien de temps.
+# --- the battery slope, which serves as a DENIAL -------------------------------------
+# "Charging" is a fact dated from the plugging-in, which nothing re-checks any more: a
+# cable pulled out, a power strip switched off, a dead charger do not change it. The
+# battery does. A single per cent LOST is enough to conclude — a charging battery does
+# not go backwards — hence a short minimum span, shorter than a soundcheck.
+trend_window_seconds = 10800       # we do not look further back than 3 h
+trend_min_span_seconds = 180       # minimum span before speaking of a drop
+# ESTIMATING the remaining time takes far more hindsight: to within 1 % over 3 min, the
+# slope is worth ±20 %/h. Below that span we say "it is going down" without daring to
+# put a figure on how long.
 trend_autonomy_span_seconds = 1800
-autonomy_min_hours = 3.0           # en dessous, il ne passera pas la soirée → erreur
+autonomy_min_hours = 3.0           # below that, it will not last the evening → error
 
-# --- deux sources possibles, un seul historique --------------------------------------
-# 1) LE TÉLÉPHONE PUBLIE (aucune installation) :
+# --- two possible sources, a single history ------------------------------------------
+# 1) THE PHONE PUBLISHES (nothing to install):
 #      curl -X POST http://<mac>.local:8765/api/phone \
 #           -H 'Content-Type: application/json' \
 #           -d '{"charging": true, "battery": 87}'
-#    Côté iPhone : Raccourcis → « Niveau de la batterie » + « État de charge » →
-#    « Obtenir le contenu de l'URL » (POST, JSON), déclenché par une automatisation
-#    « quand je branche / débranche ». Simple, mais ce n'est pas un battement : la pente
-#    a besoin de plusieurs points.
-# 2) LE MAC INTERROGE (battement régulier, rien à installer sur le téléphone) — via
-#    libimobiledevice : `brew install libimobiledevice`, puis l'iPhone branché UNE fois
-#    en USB, déverrouillé, « Se fier », et Finder → « Afficher cet iPhone lorsqu'il est
-#    en Wi-Fi ». Sans appairage, la lecture échoue en silence et rien ne change.
-idevice_poll_seconds = 60          # 0 = ne pas interroger
-idevice_bin = ""                   # vide = PATH, puis les emplacements Homebrew
+#    On the iPhone (French UI labels): Raccourcis → « Niveau de la batterie » +
+#    « État de charge » → « Obtenir le contenu de l'URL » (POST, JSON), triggered by a
+#    « quand je branche / débranche » automation. Simple, but it is not a heartbeat:
+#    the slope needs several points.
+# 2) THE MAC POLLS (regular heartbeat, nothing to install on the phone) — via
+#    libimobiledevice: `brew install libimobiledevice`, then the iPhone plugged in ONCE
+#    over USB, unlocked, « Se fier », and Finder → « Afficher cet iPhone lorsqu'il est
+#    en Wi-Fi ». Without pairing, the read fails silently and nothing changes.
+idevice_poll_seconds = 60          # 0 = do not poll
+idevice_bin = ""                   # empty = PATH, then the Homebrew locations
 
 [checks]
 apps = { Ableton = "Ableton Live.*/MacOS/Live", "Stream Deck" = "Elgato Stream Deck.app/Contents/MacOS/Stream Deck", "Bome MIDI Translator" = "MIDITranslatorPro", "Bome Network" = "Bome Network.app/Contents/MacOS/MT Player" }
@@ -83,10 +84,10 @@ lamp_severity = "warn"
 # if either hits. The name ioreg exposes isn't stable across firmwares (the Plus shows up
 # as "Stream Deck +" on some, "Stream Deck Plus" on others) whereas the serial never
 # changes. Read it off the Stream Deck app's own device id in any profile manifest:
-# "UUID": "@(1)[vid/pid/SERIAL]".
+# "UUID": "@(1)[vid/pid/SERIAL]". The serial below is a made-up example — use yours.
 # [[checks.streamdecks]]
 # name    = "XL"
-# serial  = "CL13L2A01061"
+# serial  = "AA00A0A00000"
 # product = ["Stream Deck XL"]
 
 # Stage lamps (Tuya/WLED) — found by MAC via ARP, then pinged. Add one block per lamp.
@@ -101,7 +102,7 @@ lamp_severity = "warn"
 ignore = []
 # Per-VPN override for HOW to cut it (substring → shell command). With no entry, the
 # generic method applies: disable the network service — the only thing that holds
-# against an on-demand profile (see riglib/vpn.py).
+# against an on-demand profile (see readyset/vpn.py).
 [checks.vpn.off_cmds]
 
 # Open apps the rig doesn't need — one line each, **warning on stage** (a notification
@@ -109,7 +110,7 @@ ignore = []
 # **plain info in the studio**. Per-mode via `unexpected_apps_severity`; never fail — an
 # extra app makes the rig fragile, it doesn't stop it from playing. The dashboard lists
 # them with their icons and asks for confirmation before quitting anything; from a
-# terminal: `rig apps`, then `rig apps --close`.
+# terminal: `readyset apps`, then `readyset apps --close`.
 #
 # Only apps with a real on-screen presence are considered: menu-bar agents and background
 # apps never show up here — they can't clutter the screen.
@@ -139,17 +140,17 @@ default = "auto"    # boots live; flips to studio when studio_router answers
 keyboard_ok   = ["Piano"]             # your main keyboard's MIDI port (green if present)
 keyboard_warn = []                    # fallback keyboards (yellow if only these)
 live_output   = ["Piano"]            # Ableton must output here on stage
-# Anti-veille : sur scène, un Mac qui s'endort arrête le set — donc "fail", au même
-# titre qu'un clavier débranché. Niveaux : fail | warn | info | off ("off" = la ligne
-# n'apparaît pas). Remplace l'ancien booléen `require_amphetamine`, qui ne pouvait que
-# FAIRE DISPARAÎTRE la ligne — un rig sans anti-veille ressemblait à un rig sans problème.
+# Anti-sleep: on stage, a Mac that falls asleep stops the set — hence "fail", on the
+# same footing as an unplugged keyboard. Levels: fail | warn | info | off ("off" = the
+# line does not appear). Replaces the old `require_amphetamine` boolean, which could only
+# MAKE THE LINE DISAPPEAR — a rig with no anti-sleep looked like a rig with no problem.
 amphetamine_severity = "fail"
 breath_severity = "fail"
 interface_severity = "fail"
 mac_power_severity = "fail"
 iphone_power_severity = "fail"
-# Le soundcheck (gestes réellement joués) compte comme un check à part entière :
-# un rig jamais joué n'est pas un rig vérifié. "off" pour ne pas l'exiger.
+# The soundcheck (gestures actually played) counts as a check in its own right:
+# a rig never played is not a rig verified. "off" so as not to require it.
 soundcheck_severity = "fail"
 network_severity = "fail"   # covers BOTH stage_network and modem_host — same question
 # (Mac plugged but battery still draining = always FAIL, both modes.)
@@ -158,7 +159,7 @@ network_severity = "fail"   # covers BOTH stage_network and modem_host — same 
 keyboard_ok   = ["Piano"]
 keyboard_warn = ["microKey"]
 live_output   = ["MacBook", "USB Audio"]
-amphetamine_severity = "off"   # au bureau le Mac peut dormir : la question n'a pas d'objet
+amphetamine_severity = "off"   # at the desk the Mac may sleep: the question has no object
 breath_severity = "warn"
 interface_severity = "warn"
 mac_power_severity = "warn"
@@ -190,27 +191,27 @@ channel = 15
 cc      = 111
 
 # ---------------------------------------------------------------------------------
-# Erreurs LIÉES — ce qui tombe AVEC quoi (riglib/cascade.py).
+# KNOCK-ON failures — what goes down WITH what (readyset/core/cascade.py).
 #
-# À ne pas confondre avec [diagram] : celui-là dessine le flux MIDI et audio, celui-ci
-# décrit les DÉPENDANCES — le plus souvent l'alimentation. Les deux ne se recouvrent pas :
-# un clavier peut envoyer son MIDI à Ableton tout en tirant son courant d'un hub, et c'est
-# le courant qui décide de qui tombe avec qui.
+# Not to be confused with [diagram]: that one draws the MIDI and audio flow, this one
+# describes the DEPENDENCIES — most often the power. The two do not overlap:
+# a keyboard can send its MIDI to Ableton while drawing its current from a hub, and it
+# is the current that decides who falls with whom.
 #
-# Sans ces blocs, un hub débranché produit quatre pannes également urgentes, dont trois
-# sont des symptômes ; l'écran d'alarme les aligne et laisse chercher laquelle réparer.
-# Avec eux, la CAUSE passe en tête et les autres se rangent dessous, grisées, chacune
-# disant en une ligne pourquoi elle est tombée.
+# Without these blocks, an unplugged hub produces four equally urgent failures, three of
+# which are symptoms; the alarm screen lines them up and leaves you hunting for the one
+# to repair. With them, the CAUSE goes to the top and the others file in underneath it,
+# greyed out, each saying in one line why it went down.
 #
-#   on    = la clé du check qui, en tombant, entraîne les autres
-#   keys  = les clés qui en dépendent (elles ne sont « liées » que si `on` est LUI AUSSI
-#           en panne — un appareil débranché pendant que sa source va bien reste une
-#           panne à part entière, et le cacher serait pire que ne rien relier)
-#   why   = le lien en toutes lettres ; c'est lui qui dit où aller regarder
-#   modes = facultatif — le lien ne vaut que dans ces modes (au bureau, la moitié du rig
-#           n'est simplement pas branchée, et un lien qui ne vaut pas ce soir ment)
+#   on    = the key of the check which, by going down, brings the others with it
+#   keys  = the keys that depend on it (they are only "knock-on" if `on` is ALSO down
+#           — a device unplugged while its source is fine remains a failure in its own
+#           right, and hiding it would be worse than linking nothing at all)
+#   why   = the link spelled out; it is what says where to go and look
+#   modes = optional — the link only holds in these modes (at the desk, half the rig is
+#           simply not plugged in, and a link that does not hold tonight lies)
 #
-# Les chaînes se remontent : si A alimente B et B alimente C, la cause affichée est A.
+# Chains are walked back up: if A powers B and B powers C, the cause displayed is A.
 #
 # [[depends]]
 # on    = "usb:Plus"
