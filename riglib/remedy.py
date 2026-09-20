@@ -24,9 +24,10 @@ class Remedy:
     run: Callable[[bool], tuple[bool, str]]     # run(dry_run) -> (ok, message)
     # Ce remède RÈGLE-t-il le problème, ou ouvre-t-il seulement la porte à un geste
     # humain ? « Ouvrir le réglage Accessibilité » réussit toujours — il ouvre un
-    # panneau — et le check reste rouge derrière : seul un humain peut cocher la case.
+    # panneau — et le check reste rouge derrière : seul Benoît peut cocher la case.
     # Sans cette distinction, une surface qui compte les remèdes annonce « 1 réglable
-    # ici » pour quelque chose qu'elle ne sait pas régler.
+    # ici » pour quelque chose qu'elle ne sait pas régler. C'est la même famille
+    # d'erreur que le 2026-08-22 : compter la tentative comme la réussite.
     hands_on: bool = False
 
 
@@ -131,6 +132,12 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                           lambda dry: _launch_app(net, dry))
         return None
 
+    # Fenêtre modale de Live : le seul correctif qui débloque TOUS les autres. Il ne
+    # s'applique qu'aux fenêtres à bouton unique — `liveaudio.dismiss_dialog` refuse
+    # elle-même celles qui proposent un choix, plutôt que de s'en remettre à l'appelant.
+    if key == "audio:live-dialog":
+        return Remedy("Congédier la fenêtre (OK)", _dismiss_live_dialog)
+
     # Autorisation d'accessibilité : personne ne peut la donner à la place de l'humain —
     # macOS exige le clic dans les Réglages Système, c'est le point même de la protection.
     # Le correctif ouvre donc la BONNE page (deux niveaux de sous-menu, cherchés de tête
@@ -164,9 +171,23 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
     if key == "sys:vpn":
         return Remedy("Couper le VPN", lambda dry: vpn.turn_off(cfg, dry_run=dry))
 
+    # coreaudiod figé → le relancer. Il tourne sous root : le tuer demande sudo. Deux
+    # chemins, du plus discret au plus bruyant — voir _restart_coreaudiod.
+    if key == "sys:coreaudio":
+        return Remedy("Relancer le service audio (coreaudiod)", _restart_coreaudiod)
+
     # Audio interface = hardware, and Live's output device is set inside Ableton —
     # nothing to relaunch here.
     return None
+
+
+def _dismiss_live_dialog(dry: bool) -> tuple[bool, str]:
+    d = liveaudio.dialog()
+    if not d:
+        return True, "plus aucune fenêtre en attente"
+    if dry:
+        return True, f"[dry-run] cliquerait OK sur « {d[0]} »"
+    return liveaudio.dismiss_dialog()
 
 
 def _open_accessibility_pane(dry: bool) -> tuple[bool, str]:
@@ -192,3 +213,43 @@ def _amphetamine_session(dry: bool) -> tuple[bool, str]:
     if r.returncode == 0:
         return True, "session Amphetamine démarrée"
     return False, r.stderr.strip() or "échec (autorisation Automation ?)"
+
+
+_COREAUDIOD_SUDOERS = "bin/install-coreaudiod-sudoers.sh"
+
+
+def _restart_coreaudiod(dry: bool) -> tuple[bool, str]:
+    """Tue coreaudiod ; launchd le relance en ~1 s et le son revient sans redémarrer.
+
+    Le processus appartient à root, donc `killall` seul est refusé. Ordre d'essai :
+    1. `sudo -n` — sans mot de passe SI la règle sudoers posée par
+       bin/install-coreaudiod-sudoers.sh est là (scope : cette seule commande). C'est
+       le chemin de scène : un clic, zéro dialogue.
+    2. sinon `osascript … with administrator privileges` — macOS ouvre son dialogue de
+       mot de passe. Ça marche du premier coup sans rien installer, mais ça suppose
+       quelqu'un devant l'écran ; le message dit comment ne plus l'avoir.
+    Ce que ça casse : les apps qui tenaient un périphérique (Ableton, Stage Traxx)
+    perdent leur sortie et doivent la resélectionner — d'où l'avertissement rendu.
+    """
+    if dry:
+        return True, "[dry-run] relancerait coreaudiod (killall ; launchd le ressuscite en ~1 s)"
+    how = "règle sudoers"
+    r = subprocess.run(["sudo", "-n", "/usr/bin/killall", "coreaudiod"],
+                       capture_output=True, text=True)
+    if r.returncode != 0:
+        how = "mot de passe saisi"
+        r = subprocess.run(
+            ["osascript", "-e",
+             'do shell script "/usr/bin/killall coreaudiod" with administrator privileges'],
+            capture_output=True, text=True,
+        )
+        if r.returncode != 0:
+            err = r.stderr.strip()
+            if "-128" in err:
+                return False, (f"annulé — pour un relancement sans mot de passe, installer "
+                               f"une fois : {_COREAUDIOD_SUDOERS}")
+            return False, err or "killall coreaudiod a échoué"
+    from . import checks
+    checks.audio_cache_reset()
+    return True, (f"coreaudiod relancé ({how}) — le son revient dans les 2 s ; Ableton ou "
+                  "Stage Traxx ouverts doivent resélectionner leur sortie audio")

@@ -1,0 +1,177 @@
+#!/usr/bin/env bash
+# sd-power — coupe / remet l'alimentation des ports du dock Dell WD19TB qui
+# portent le Stream Deck Plus et tout ce qui est branché dessus.
+#
+# POURQUOI CE DÉTOUR plutôt qu'un interrupteur physique sur le câble :
+# les hubs internes du WD19TB annoncent "ppps" (per-port power switching — la
+# capacité de couper le +5 V d'un port précis par une commande USB standard).
+# uhubctl envoie cette commande. Vérifié le 2026-08-19 sur ce dock : l'écriture
+# passe SANS sudo, et le bit d'état bascule réellement (0100 power -> 0000 off).
+#
+# PIÈGE PRINCIPAL, d'où la notion de "paire" ci-dessous : une prise physique du
+# dock est câblée sur DEUX hubs internes à la fois — un USB 2.0 et un USB 3.x.
+# Couper un seul des deux laisse le +5 V présent par l'autre chemin et l'appareil
+# reste alimenté. La config liste donc une PAIRE de cibles "hub port", pas une.
+#
+# Config : ~/.config/sd-power.conf, une cible par ligne, au format "<hub> <port>".
+# Écrite automatiquement par `sd-power detect`.
+
+set -uo pipefail
+
+# Raccourcis, launchd et cron exécutent avec un PATH minimal (/usr/bin:/bin:...)
+# où Homebrew est absent : sans cet ajout, uhubctl est déclaré introuvable alors
+# qu'il est bien installé. Vérifié le 2026-08-19 en simulant `env -i PATH=...`.
+PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+CONF="${SD_POWER_CONF:-$HOME/.config/sd-power.conf}"
+
+die() { printf '%s\n' "$*" >&2; exit 1; }
+
+command -v uhubctl >/dev/null 2>&1 || die "uhubctl introuvable — installe-le : brew install uhubctl"
+
+# Liste les ports actuellement occupés, un par ligne : "<hub> <port> <description>"
+occupied_ports() {
+  local hub=""
+  uhubctl 2>/dev/null | while IFS= read -r line; do
+    case "$line" in
+      "Current status for hub "*)
+        hub="${line#Current status for hub }"
+        hub="${hub%% *}"
+        ;;
+      *"connect"*)
+        local port="${line#*Port }"
+        port="${port%%:*}"
+        printf '%s %s %s\n' "$hub" "$port" "${line#*\[}"
+        ;;
+    esac
+  done
+}
+
+read_targets() {
+  [ -f "$CONF" ] || die "Pas de config : $CONF
+Lance d'abord :  sd-power detect"
+  local t
+  t="$(grep -vE '^\s*(#|$)' "$CONF")"
+  # Une config réduite à ses commentaires n'est PAS une config vide inoffensive : la boucle
+  # de lecture d'état tournerait zéro fois, donc « toutes les cibles sont coupées », donc un
+  # faux « off » — et le toggle enverrait un « on » dans le vide.
+  [ -n "$t" ] || die "Config sans cible : $CONF
+Lance d'abord :  sd-power detect"
+  printf '%s\n' "$t"
+}
+
+cmd_detect() {
+  printf 'Détection du port qui porte le Stream Deck.\n\n'
+  printf '1. DÉBRANCHE le Stream Deck du dock (ou le hub sur lequel il est branché).\n'
+  printf '   Puis appuie sur Entrée. '
+  read -r _
+  local before after
+  before="$(occupied_ports | awk '{print $1, $2}' | sort)"
+
+  printf '\n2. REBRANCHE-le, attends 3 secondes, puis appuie sur Entrée. '
+  read -r _
+  after="$(occupied_ports | awk '{print $1, $2}' | sort)"
+
+  local appeared
+  appeared="$(comm -13 <(printf '%s\n' "$before") <(printf '%s\n' "$after"))"
+
+  if [ -z "$appeared" ]; then
+    die "
+Aucun port n'est apparu entre les deux relevés.
+Causes possibles : le Stream Deck est branché derrière un hub qui n'expose pas
+le ppps, ou le débranchement/rebranchement n'a pas été détecté. Relance en
+laissant 3-4 s après le rebranchement."
+  fi
+
+  # Écarter les ports INTERNES à un hub déjà retenu. Rebrancher un hub fait apparaître
+  # d'un coup son port sur le dock ET les ports occupés à l'intérieur ; couper le port du
+  # dock emporte déjà toute la descendance. Pire, l'id d'un port interne (« 32-2.2 ») est
+  # dérivé de l'énumération USB du moment : il peut ne plus désigner rien à la session
+  # suivante. Et une cible morte n'est pas neutre — uhubctl échoue dessus, l'état devient
+  # illisible, et le toggle croirait en permanence que tout est allumé.
+  local filtered="" h p h2 p2 child
+  while read -r h p; do
+    [ -n "${h:-}" ] || continue
+    child=0
+    while read -r h2 p2; do
+      [ -n "${h2:-}" ] || continue
+      [ "$h $p" = "$h2 $p2" ] && continue
+      case "$h" in "$h2.$p2"|"$h2.$p2".*) child=1 ;; esac
+    done <<< "$appeared"
+    [ "$child" -eq 0 ] && filtered="${filtered}${h} ${p}
+"
+  done <<< "$appeared"
+  appeared="$(printf '%s' "$filtered")"
+
+  mkdir -p "$(dirname "$CONF")"
+  {
+    printf '# Généré par `sd-power detect` le %s\n' "$(date '+%Y-%m-%d %H:%M')"
+    printf '# Ports du dock Dell WD19TB portant le Stream Deck Plus et sa descendance.\n'
+    printf '# Format : <hub> <port>. La paire USB 2.0 + USB 3.x doit être coupée ENSEMBLE,\n'
+    printf '# sinon le +5 V subsiste par le chemin resté actif.\n'
+    printf '%s\n' "$appeared"
+  } > "$CONF"
+
+  printf '\nConfig écrite dans %s :\n' "$CONF"
+  printf '%s\n' "$appeared" | sed 's/^/  /'
+  local n
+  n="$(printf '%s\n' "$appeared" | grep -c .)"
+  if [ "$n" -lt 2 ]; then
+    printf '\n⚠️  Une seule cible détectée. Si `sd-power off` laisse le Stream Deck\n'
+    printf '   alimenté, c'"'"'est que le jumeau USB 3.x manque : ajoute-le à la main.\n'
+  fi
+}
+
+cmd_set() {
+  local action="$1" rc=0
+  while read -r hub port; do
+    [ -n "${hub:-}" ] || continue
+    uhubctl -l "$hub" -p "$port" -a "$action" >/dev/null 2>&1 || rc=1
+  done < <(read_targets)
+  [ "$rc" -eq 0 ] || printf 'Au moins une cible a refusé la commande.\n' >&2
+  printf 'Stream Deck : %s\n' "$([ "$action" = off ] && echo 'COUPÉ' || echo 'SOUS TENSION')"
+}
+
+# État global : "off" seulement si TOUTES les cibles sont coupées, "inconnu" dès qu'une
+# cible ne répond pas. Ce troisième cas est indispensable : sans lui, un port disparu
+# rendait un `grep` muet, donc "pas off", donc "on" — et le toggle coupait indéfiniment
+# sans jamais rallumer. Un état illisible doit se dire, pas se deviner.
+current_state() {
+  local all_off=1 line
+  while read -r hub port; do
+    [ -n "${hub:-}" ] || continue
+    line="$(uhubctl -l "$hub" -p "$port" 2>/dev/null | grep "Port $port:")"
+    [ -n "$line" ] || { echo inconnu; return; }
+    case "$line" in *"0000 off"*) ;; *) all_off=0 ;; esac
+  done < <(read_targets)
+  [ "$all_off" -eq 1 ] && echo off || echo on
+}
+
+cmd_status() {
+  printf 'État : %s\n\n' "$(current_state)"
+  while read -r hub port; do
+    [ -n "${hub:-}" ] || continue
+    uhubctl -l "$hub" -p "$port" 2>/dev/null | grep "Port $port:" | sed "s/^/  $hub /"
+  done < <(read_targets)
+}
+
+# La validation de la config doit se faire ICI, dans le shell principal : appelée
+# depuis une substitution de process (`< <(read_targets)`), le `exit` de `die`
+# ne tue que le sous-shell et le script continuerait avec un état faux "off".
+require_conf() { read_targets >/dev/null; }
+
+case "${1:-toggle}" in
+  off)    require_conf; cmd_set off ;;
+  on)     require_conf; cmd_set on ;;
+  toggle) require_conf
+          case "$(current_state)" in
+            off) cmd_set on ;;
+            on)  cmd_set off ;;
+            *)   die "État illisible : au moins une cible de $CONF ne répond plus.
+Relance \`sd-power detect\` — les ports ont pu être renumérotés." ;;
+          esac ;;
+  cycle)  require_conf; cmd_set off; sleep 2; cmd_set on ;;
+  status) require_conf; cmd_status ;;
+  detect) cmd_detect ;;
+  *)      die "Usage : sd-power [toggle|off|on|cycle|status|detect]" ;;
+esac

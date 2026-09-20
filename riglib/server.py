@@ -106,6 +106,15 @@ _GROUP = {"app:": "Apps", "xapp:": "Apps en trop", "usb:": "Stream Deck",
           "midi?:": "MIDI optionnel", "midi:": "MIDI requis", "audio": "Audio"}
 
 
+LOG_CAP = 5 * 1024 * 1024      # au-delà, on coupe
+LOG_KEEP = 256 * 1024          # ce qu'on garde : la fin, la seule partie utile
+
+
+def cfg_tidy_after(cfg: dict) -> bool:
+    """Le rangement de fin de mise en place est-il activé ? (`[windows] after_preflight`)"""
+    return bool(cfg.get("windows", {}).get("after_preflight", True))
+
+
 def _group_of(key: str) -> str:
     for prefix, name in _GROUP.items():
         if key.startswith(prefix):
@@ -472,6 +481,18 @@ class _Handler(BaseHTTPRequestHandler):
                 head.append("")
                 logs[:0] = head
 
+            # ON RANGE EN DERNIER, pas au milieu (2026-08-22). `bring_up` finit par
+            # tidy_windows, mais les correctifs tournent APRÈS lui : « Ouvrir le set »
+            # relance Ableton, « Relancer Bome » rouvre une fenêtre — toutes arrivées
+            # trop tard pour le rangement qui les précédait. Et une app qui vient de
+            # démarrer crée souvent sa fenêtre après les 2 s de settle : Bome Network
+            # s'est retrouvé VISIBLE et non réduit à la fin d'une mise en place, alors que
+            # sa politique dit « minimize ». Un second passage est idempotent — il ne
+            # coûte qu'une poignée de millisecondes quand il n'y a rien à ranger.
+            if not dry and cfg_tidy_after(self.cfg):
+                time.sleep(1.0)   # laisse aux fenêtres tardives le temps d'exister
+                windows.tidy(self.cfg, log=logs.append, dry_run=False)
+
             # La fermeture des applis en trop n'est PAS ici : elle peut faire perdre un
             # document non enregistré, donc elle garde sa confirmation nommant chaque app.
             # Une action « magique » ne doit rien détruire sans qu'on l'ait vu venir.
@@ -500,7 +521,40 @@ class _Handler(BaseHTTPRequestHandler):
 _GAUGE_BEAT_S = 15.0
 
 
+def _rotate_log(path: Path) -> None:
+    """Coupe le journal quand il dépasse LOG_CAP, en gardant sa FIN.
+
+    Tronquer à zéro serait plus simple, mais on jetterait précisément la trace de ce qui
+    vient de mal tourner — c'est presque toujours la fin qu'on lit. On réécrit donc les
+    derniers LOG_KEEP octets, en repartant à une frontière de ligne pour ne pas laisser
+    une demi-ligne en tête.
+
+    Écriture EN PLACE (`r+`) et non renommage : launchd tient le descripteur ouvert en
+    mode ajout, et renommer le fichier sous ses pieds le ferait écrire dans un fichier
+    qui n'a plus de nom — le journal deviendrait invisible jusqu'au prochain redémarrage
+    du service.
+    """
+    try:
+        if not path.exists() or path.stat().st_size <= LOG_CAP:
+            return
+        with path.open("r+b") as f:
+            f.seek(-LOG_KEEP, 2)
+            tail = f.read()
+            cut = tail.find(b"\n")
+            tail = tail[cut + 1:] if cut != -1 else tail
+            f.seek(0)
+            f.write(b"--- journal tronque (garde les %d derniers Ko) ---\n" % (len(tail) // 1024))
+            f.write(tail)
+            f.truncate()
+    except Exception as exc:
+        print(f"[log] rotation impossible : {exc}", flush=True)
+
+
+_ticks = [0]
+
+
 def _state_loop(cfg: dict) -> None:
+    _rotate_log(Path(__file__).resolve().parent.parent / "logs" / "dashboard.log")
     """Recalcule l'état sans fin, à cadence fixe, quoi que fassent les clients."""
     ticks = 0
     # Publier ne relève pas du même geste qu'alerter : on force le seul backend « midi »

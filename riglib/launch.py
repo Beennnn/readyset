@@ -15,7 +15,7 @@ from pathlib import Path
 
 import mido
 
-from . import windows
+from . import windows, liveaudio
 
 
 # Message-sentinelle : dire « déjà lancée » n'est pas dire « lancée », et l'appelant a
@@ -109,7 +109,49 @@ def _live_processes() -> list[str]:
     return [l.split(" ", 1)[1] for l in r.stdout.splitlines() if " " in l]
 
 
-def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
+def _loopback_port(cfg: dict) -> str:
+    """Le port MIDI dont l'apparition prouve que Live a fini de charger.
+
+    Il se LIT dans la config : c'est un nom d'installation, pas une constante du moteur —
+    le codant en dur, on a gardé « Ableton Loopback » dans le code des mois après que le
+    bus ait été renommé. Le premier `midi_required` est le bon défaut : c'est par
+    définition le port sans lequel le rig ne marche pas.
+    """
+    ports = cfg.get("checks", {}).get("midi_required") or []
+    return ports[0] if ports else "Rig Bus"
+
+
+def _resolved_mode(cfg: dict, mode: str | None) -> str:
+    from . import checks          # import tardif : `checks` est lourd et n'est pas requis
+    if mode:                      # pour lancer les apps — seulement pour régler le son.
+        return mode
+    return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
+
+
+def warn_if_output_missing(cfg: dict, mode: str, log=print) -> bool:
+    """La sortie attendue est-elle seulement BRANCHÉE ? Dit AVANT d'ouvrir le set.
+
+    C'est la seule forme de « régler la sortie avant de lancer Ableton » qui existe : Live
+    restaure lui-même son périphérique au démarrage et n'accepte aucun réglage tant qu'il
+    n'est pas lancé (ni AppleScript, ni préférences lisibles, ni API Python — voir le
+    README de `ableton-live-output`). Ce qu'on PEUT faire, c'est refuser de découvrir le
+    problème après coup : si le P-225 n'est pas branché, Live va s'ouvrir sur rien, poser
+    sa fenêtre modale, et la suite de la mise en place se fera contre une app sourde.
+    Autant l'annoncer à la ligne où c'est encore réparable — en branchant un câble.
+    """
+    from . import checks
+    wants = cfg["modes"][mode].get("live_output") or []
+    if not wants or not checks._audio_ready():
+        return True               # rien d'attendu, ou inventaire pas encore lu : on se tait
+    names = [it.get("_name", "") for it in checks._audio_items()]
+    if any(w.lower() in n.lower() for w in wants for n in names):
+        return True
+    log(f"  ⚠️  aucune sortie attendue n'est branchée (attendu : {' ou '.join(wants)})")
+    log(f"      → Ableton va s'ouvrir sans son et poser sa fenêtre « section audio désactivée »")
+    return False
+
+
+def open_set(cfg: dict, log=print, dry_run: bool = False, mode: str | None = None) -> None:
     if not cfg["set"].get("open_after_launch", True):
         log("  (ouverture du set désactivée : [set].open_after_launch = false)")
         return
@@ -120,6 +162,9 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         ae = "" if Path(app).exists() else "  (Ableton introuvable !)"
         log(f"  [dry-run] ouvrirait « {Path(project).name} »{pe}")
         log(f"  [dry-run]   dans {Path(app).stem}{ae}")
+        want = liveaudio.wanted(cfg, _resolved_mode(cfg, mode))
+        log(f"  [dry-run] congédierait une éventuelle fenêtre modale de Live, "
+            f"puis réglerait la sortie sur « {want or '(aucune déclarée)'} »")
         return
     if not Path(project).exists():
         log(f"  ✖ set introuvable : {project}")
@@ -145,23 +190,35 @@ def open_set(cfg: dict, log=print, dry_run: bool = False) -> None:
         log(f"  ✖ ouverture du set : {r.stderr.strip()}")
         return
     log(f"  ▶ ouverture de « {Path(project).name} » dans {Path(app).stem}")
-    log("  … attente du port « Ableton Loopback »")
+    log(f"  … attente du port « {_loopback_port(cfg)} »")
     # Un rappel a mi-parcours, sans aucune autorisation systeme : la cause la plus
     # frequente d'une attente qui s'eternise est un dialogue qui attend une reponse -
     # « Live s'est ferme de maniere inattendue, recuperer le travail ? » apres un
     # plantage. Il bloque le chargement, donc le port ne peut pas apparaitre, et rien
     # a l'ecran ne le dit tant qu'on regarde le terminal. Une ligne suffit a orienter
     # le regard vers la fenetre, la ou l'automatisation demande une autorisation.
-    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=20, interval=1):
+    if _wait_for(lambda: _midi_port_present(_loopback_port(cfg)), timeout=20, interval=1):
         log("  ✔ Ableton en ligne")
         return
     log("  … toujours rien après 20s — si Live affiche un dialogue, réponds-lui "
         "(« récupérer le travail ? » → Non)")
-    if _wait_for(lambda: _midi_port_present("Ableton Loopback"), timeout=40, interval=1):
+    if _wait_for(lambda: _midi_port_present(_loopback_port(cfg)), timeout=40, interval=1):
         log("  ✔ Ableton en ligne")
     else:
         log("  ⚠️  Ableton pas encore prêt après 60s — gros set, plugins qui chargent, "
             "ou une fenêtre qui attend une réponse")
+
+    # Le son se règle ICI, pas dans la passe de correctifs qui suit. Deux raisons, toutes
+    # deux payées le 2026-08-22 : c'est le premier instant où c'est POSSIBLE (Live doit
+    # tourner), et c'est le dernier où c'est encore INOFFENSIF — le rangement des fenêtres
+    # qui vient juste après pilote lui aussi l'interface, et une fenêtre modale non
+    # congédiée le fait échouer à son tour. Congédier d'abord, régler ensuite, ranger après.
+    cleared, note = liveaudio.dismiss_dialog()
+    if note:
+        log(f"  {'🧹' if cleared else '✖'} {note}")
+    ok, msg = liveaudio.apply(cfg, _resolved_mode(cfg, mode))
+    log(f"  {'🔊' if ok else '✖'} sortie d'Ableton — {msg}")
+
 
 
 def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> None:
@@ -195,11 +252,13 @@ def tidy_windows(cfg: dict, log=print, dry_run: bool = False) -> None:
     windows.tidy(cfg, log=log, dry_run=dry_run)
 
 
-def bring_up(cfg: dict, log=print, dry_run: bool = False) -> None:
+def bring_up(cfg: dict, log=print, dry_run: bool = False, mode: str | None = None) -> None:
     log("Lancement des apps du rig…" if not dry_run else "Séquence de mise en place (dry-run) :")
     launch_apps(cfg, log=log, dry_run=dry_run)
     ensure_amphetamine_session(cfg, log=log, dry_run=dry_run)
-    open_set(cfg, log=log, dry_run=dry_run)
+    if not dry_run:
+        warn_if_output_missing(cfg, _resolved_mode(cfg, mode), log=log)
+    open_set(cfg, log=log, dry_run=dry_run, mode=mode)
     tidy_windows(cfg, log=log, dry_run=dry_run)
 
 
