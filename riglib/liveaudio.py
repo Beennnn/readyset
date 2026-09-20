@@ -42,7 +42,7 @@ from pathlib import Path
 _DENIED_MARKERS = (
     "-25211", "accès d’aide", "accès d'aide", "assistive access",   # lecture d'interface
     "(1002)", "envoyer de saisies", "envoyer des saisies", "send keystrokes",  # envoi de frappes
-    "-1743", "not allowed to send apple events", "envoyer des apple",    # automatisation
+    "-1743", "not allowed to send apple events", "envoyer des apple", "envoyer des Apple",  # automatisation
 )
 
 DENIED_HINT = ("le service n'a pas le droit de piloter Ableton — cocher le processus qui "
@@ -55,7 +55,6 @@ def denied(text: str) -> bool:
     """Ce message est-il un refus d'autorisation macOS (et pas un vrai échec du réglage) ?"""
     low = (text or "").lower()
     return any(m.lower() in low for m in _DENIED_MARKERS)
-
 
 # Cherché par chemin, comme sd-power : le script est installé, pas embarqué. Absent, tout
 # ici rend un message clair — le rig ne dépend pas de lui pour démarrer, il perd seulement
@@ -89,6 +88,15 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
                        "github.com/Beennnn/ableton-live-output, puis ./install.sh")
     if dry:
         return True, f"[dry-run] réglerait la sortie d'Ableton sur « {want} »"
+    # D'ABORD la fenêtre modale, ENSUITE le réglage : `live-output` ouvre les réglages de
+    # Live par ⌘, — une frappe que Live ignore tant qu'une fenêtre modale est ouverte. Sans
+    # ce passage, le correctif expirait au bout de 60 s en accusant l'accessibilité, alors
+    # que le seul obstacle était un bouton OK à cliquer. Et c'est le cas le plus FRÉQUENT,
+    # puisque la fenêtre en question est précisément celle que Live affiche quand sa sortie
+    # est absente — c'est-à-dire exactement quand ce correctif est appelé.
+    cleared, note = dismiss_dialog()
+    if not cleared:
+        return False, note
     try:
         p = subprocess.run([str(exe), want], capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
@@ -104,4 +112,116 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
     if p.returncode == 4 or denied(joined):
         return False, DENIED_HINT
     msg = out[-1] if out else f"code {p.returncode}"
+    if note:
+        msg = f"{note} ; {msg}"
     return p.returncode == 0, msg
+
+
+# ─── La fenêtre modale de Live ────────────────────────────────────────────────────────
+#
+# « La section audio est désactivée. Veuillez sélectionner un périphérique de sortie audio
+# dans les Réglages Audio. » — c'est ce que Live affiche quand il s'ouvre sur un
+# périphérique absent (typiquement « No Device », restauré de la session précédente).
+#
+# Elle mérite son propre traitement pour une raison qui n'a rien d'esthétique : elle est
+# MODALE. Tant qu'elle est là, Live n'écoute plus rien — ni ⌘, pour ouvrir ses réglages,
+# ni le rangement des fenêtres, ni le correctif de sortie. Le rig se retrouve donc à
+# essayer de réparer une app qui ne peut pas lui répondre, et à rendre des erreurs qui
+# décrivent le symptôme (« Live n'a pas répondu ») au lieu de la cause. Vécu le 2026-08-22,
+# juste après le lancement : Ableton ouvert, muet, bloqué là-dessus, et le rig aveugle.
+#
+# ⚠️ RÈGLE DE SÛRETÉ : on ne congédie QUE les fenêtres à bouton unique « OK ». Une fenêtre
+# qui propose un CHOIX (« Enregistrer / Ne pas enregistrer / Annuler ») ne se clique pas
+# toute seule — cliquer au hasard dedans peut perdre un set non enregistré. Une fenêtre à
+# plusieurs boutons est signalée, jamais résolue.
+_DIALOG_SCAN = """
+tell application "System Events"
+  if not (exists process "Live") then return "NOPROC"
+  tell process "Live"
+    set dlgs to (windows whose subrole is "AXDialog")
+    if (count of dlgs) is 0 then return ""
+    set txt to ""
+    set btns to ""
+    repeat with e in (entire contents of item 1 of dlgs)
+      try
+        if role of e is "AXStaticText" then
+          set v to value of e
+          if v is not missing value and v is not "" then set txt to txt & v & " "
+        else if role of e is "AXButton" then
+          set d to description of e
+          if d is missing value then set d to name of e
+          if d is not missing value then set btns to btns & d & "|"
+        end if
+      end try
+    end repeat
+    return txt & "@@" & btns
+  end tell
+end tell
+"""
+
+# Le bouton n'a PAS de `name` — seulement une `description` (relevé à l'accessibilité le
+# 2026-08-22). Un `click button "OK"` classique ne le trouve donc jamais ; il faut parcourir
+# et comparer la description. C'est le genre de détail qui fait chercher une heure.
+_DIALOG_CLICK = """
+tell application "System Events" to tell process "Live"
+  set dlgs to (windows whose subrole is "AXDialog")
+  if (count of dlgs) is 0 then return "NODIALOG"
+  repeat with e in (entire contents of item 1 of dlgs)
+    try
+      if role of e is "AXButton" then
+        set d to description of e
+        if d is missing value then set d to name of e
+        if d is "OK" then
+          click e
+          return "CLICKED"
+        end if
+      end if
+    end try
+  end repeat
+  return "NOBUTTON"
+end tell
+"""
+
+
+def _osascript(src: str, timeout: float = 15) -> tuple[bool, str]:
+    try:
+        p = subprocess.run(["osascript", "-e", src],
+                           capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return False, "System Events n'a pas répondu"
+    out = ((p.stdout or "") + (p.stderr or "")).strip()
+    return p.returncode == 0, out
+
+
+def dialog() -> tuple[str, list[str]] | None:
+    """La fenêtre modale ouverte dans Live : (texte, boutons). None s'il n'y en a pas.
+
+    Rend aussi None quand la lecture est impossible (Live absent, autorisation refusée) :
+    ce module ne SAIT alors pas s'il y a une fenêtre, et dire l'incapacité est le travail
+    du check d'accessibilité — pas d'une fausse alerte ici.
+    """
+    ok, out = _osascript(_DIALOG_SCAN)
+    if not ok or out in ("", "NOPROC") or "@@" not in out:
+        return None
+    txt, _, btns = out.partition("@@")
+    return txt.strip(), [b for b in btns.split("|") if b.strip()]
+
+
+def dismiss_dialog() -> tuple[bool, str]:
+    """Clique OK sur la fenêtre modale de Live, si et seulement si c'est son seul bouton.
+
+    Rend (True, "") quand il n'y a rien à congédier : l'appelant n'a pas à distinguer
+    « pas de fenêtre » de « fenêtre congédiée », les deux le laissent libre d'agir.
+    """
+    d = dialog()
+    if d is None:
+        return True, ""
+    txt, btns = d
+    if [b.upper() for b in btns] != ["OK"]:
+        return False, (f"Ableton attend une réponse à une fenêtre qui propose un choix "
+                       f"({', '.join(btns) or 'boutons non lus'}) — à traiter à la main : "
+                       f"« {txt} »")
+    ok, out = _osascript(_DIALOG_CLICK)
+    if ok and out == "CLICKED":
+        return True, f"fenêtre congédiée : « {txt} »"
+    return False, f"fenêtre non congédiée ({out or 'sans détail'}) : « {txt} »"

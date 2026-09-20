@@ -71,15 +71,13 @@ def cmd_preflight(cfg: dict, args) -> int:
     mode = _mode(cfg, args)
     tag = " (DRY-RUN — rien n'est lancé)" if dry else ""
     print(f"[{_hr()}] Mise en place du rig — mode {mode}{tag}\n")
-    launch.bring_up(cfg, log=print, dry_run=dry)
+    # La sortie d'Ableton est APPLIQUÉE, pas vérifiée — mais c'est `launch.open_set` qui
+    # s'en charge désormais, juste après que Live soit en ligne et AVANT le rangement des
+    # fenêtres. Le faire ici, une fois toute la mise en place terminée, laissait Live
+    # planté sur sa fenêtre « section audio désactivée » pendant les étapes intermédiaires,
+    # qui pilotent elles aussi son interface et échouaient donc à leur tour (2026-08-22).
+    launch.bring_up(cfg, log=print, dry_run=dry, mode=mode)
 
-    # La sortie d'Ableton est APPLIQUÉE, pas vérifiée. À la mise en place on ne sait pas ce
-    # que la session précédente a laissé — et le journal de Live ne le dit pas de façon
-    # fiable, puisqu'il n'écrit qu'au changement. Poser la valeur coûte deux clics et
-    # supprime la question ; la vérification qui suit devient alors concluante au lieu de
-    # se prononcer sur une trace périmée.
-    ok, msg = liveaudio.apply(cfg, mode, dry)
-    print(f"  {'✔' if ok else '✖'} Sortie Ableton — {msg}")
     # APRÈS la sortie audio, jamais avant : les premières mesures sortiraient sinon sur
     # l'interface qu'on vient justement de corriger.
     launch.start_scene(cfg, log=print, dry_run=dry)

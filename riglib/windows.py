@@ -121,24 +121,63 @@ end tell''')
 
 
 def _minimize(bid: str) -> tuple[bool, str]:
-    # Les fenêtres se réduisent une par une via l'attribut d'accessibilité AXMinimized ;
-    # certaines (palettes, HUD) ne l'exposent pas — d'où le `try` qui les saute au lieu
-    # de faire échouer tout le lot.
-    return _osascript(f'''
+    """Réduire dans le Dock — ce qui suppose que l'app soit VISIBLE, et qu'elle ait des
+    fenêtres.
+
+    Trois choses mesurées le 2026-08-22, la première fois que ce chemin a tourné en vrai
+    (il dormait dans le code depuis le début, cf. TASKS.md) :
+
+    - une app MASQUÉE (⌘H) expose quand même ses fenêtres à System Events, donc on peut
+      les COMPTER sans rien déranger — mais poser AXMinimized dessus ne montre rien : le
+      Dock ne fait pas de vignette pour l'app masquée. D'où le démasquage préalable, et
+      seulement s'il y a une fenêtre à réduire ;
+    - Bome Network et Bome MIDI Translator Pro tournent avec ZÉRO fenêtre ouverte. Les
+      démasquer pour rien les remettrait dans le ⌘Tab sans rien réduire ;
+    - l'ancienne version répondait « réduite (0 fenêtre(s)) » — un succès vide, exactement
+      le mode d'échec que ce dépôt combat depuis le 22/08 au matin. Zéro fenêtre est
+      désormais dit comme tel, et des fenêtres dont AUCUNE n'accepte AXMinimized est
+      une VRAIE erreur, pas un demi-succès.
+    """
+    ok, out = _osascript(f'''
 tell application "System Events"
   set ps to (every process whose bundle identifier is "{bid}")
   if (count of ps) is 0 then return "absent"
+  set p to item 1 of ps
+  set ws to windows of p
+  if (count of ws) is 0 then return "sans-fenetre"
+  -- Démasquer AVANT de réduire : une fenêtre minimisée depuis une app masquée ne
+  -- laisse aucune vignette dans le Dock, donc rien de ce qu'on vient chercher.
+  set visible of p to true
   set n to 0
-  repeat with p in ps
-    repeat with w in (windows of p)
-      try
-        set value of attribute "AXMinimized" of w to true
-        set n to n + 1
-      end try
-    end repeat
+  repeat with w in ws
+    try
+      set value of attribute "AXMinimized" of w to true
+      -- ON RELIT. Écrire l'attribut peut « réussir » sans que la fenêtre bouge :
+      -- Bome Network l'accepte et reste ouverte (mesuré le 2026-08-22). Compter
+      -- l'écriture, c'est compter la tentative — le défaut que ce dépôt corrige
+      -- partout depuis ce matin. Seul l'état relu fait foi.
+      if (value of attribute "AXMinimized" of w) is true then set n to n + 1
+    end try
   end repeat
-  return "réduite (" & n & " fenêtre(s))"
+  return "n=" & n & "/" & (count of ws)
 end tell''')
+    if not ok:
+        return False, out
+    if out == "absent":
+        return True, "absent"
+    if out == "sans-fenetre":
+        return True, "aucune fenêtre ouverte"
+    n, total = (int(x) for x in out.removeprefix("n=").split("/"))
+    if n == 0:
+        # Repli sur le masquage plutôt qu'un rouge : le but est qu'aucune fenêtre ne
+        # traîne à l'écran, et ⌘H l'atteint. La vignette du Dock est perdue — on le DIT,
+        # pour ne pas laisser croire qu'elle est là. Bome Network est le cas connu : sa
+        # fenêtre accepte AXMinimized et l'ignore.
+        hid, hmsg = _hide(bid)
+        if hid:
+            return True, f"refuse de se réduire ({total} fenêtre(s)) → masquée"
+        return False, f"{total} fenêtre(s) ouverte(s), ni réductible ni masquable : {hmsg}"
+    return True, f"réduite ({n} fenêtre(s))" + (f", {total - n} refusée(s)" if n < total else "")
 
 
 def apply_one(cfg: dict, app_path: str, dry_run: bool = False,

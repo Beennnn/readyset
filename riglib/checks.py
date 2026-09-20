@@ -19,8 +19,8 @@ import glob
 import json
 import os
 import subprocess
-import threading
 from pathlib import Path
+import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -409,6 +409,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
                             "régler la sortie une fois : la ligne apparaîtra et cette "
                             "vérification deviendra possible"))
 
+
     short = dev.split(" (")[0]
     ok = any(w.lower() in dev.lower() for w in wants)
 
@@ -421,7 +422,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
     # correctif règle la sortie.
     if short.lower().startswith("no device"):
         stamp = (when_iso or "").replace("T", " ")[:16]
-        return Result("audio:live", "Ableton ne produit pas de son", FAIL,
+        return Result("audio:live", label, FAIL,
                       _hint(f"aucun périphérique de sortie (No Device{', du ' + stamp if stamp else ''})",
                             "Live ne sortira aucun son tant que ce n'est pas réglé"))
 
@@ -449,6 +450,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
                                 f"(dernière trace : {short}, du {stamp})",
                                 "régler la sortie pour en avoir le cœur net"))
 
+
     # Ableton fermé → rien à constater : on rend la dernière valeur connue, datée,
     # sans verdict. Même motif de détection que le check « Ableton lancé », pour que
     # les deux lignes ne puissent pas se contredire.
@@ -460,7 +462,7 @@ def check_live_output(cfg: dict, mode: str) -> Result:
 
     if ok:
         return Result("audio:live", label, OK, short)
-    return Result("audio:live", "Ableton ne produit pas de son", FAIL,
+    return Result("audio:live", label, FAIL,
                   _hint(f"sort sur {short}",
                         "attendu : " + " ou ".join(wants) +
                         " — à changer dans Live > Préférences > Audio"))
@@ -833,8 +835,22 @@ def check_bome_iphone(cfg: dict) -> Result:
 # (and a polling dashboard) share one call instead of shelling out repeatedly.
 # ready : une lecture a abouti au moins une fois (sinon on ne conclut RIEN sur
 # l'audio). running : une sonde est en vol, inutile d'en lancer une seconde.
-_profile_cache: dict = {"ts": 0.0, "data": None, "ready": False, "running": False}
+# `stalled` : la dernière lecture a EXPIRÉ (pas échoué — expiré). C'est la signature d'un
+# coreaudiod figé : le processus est là, mais plus personne n'obtient de réponse de lui,
+# et plus aucune app ne sort de son. Vécu le 2026-09-12 (9 h de silence après une boucle
+# d'écriture de réglages déclenchée par un pilote tiers). Le check `sys:coreaudio` lit ce
+# drapeau ; il ne coûte donc aucun processus de plus — la sonde audio existante suffit.
+_profile_cache: dict = {"ts": 0.0, "data": None, "ready": False, "running": False,
+                        "stalled": False}
 _PROFILE_TTL = 10.0
+
+
+def audio_cache_reset() -> None:
+    """Oublie l'état « figé » et force une relecture au prochain check — appelé par le
+    correctif qui relance coreaudiod, pour que la ligne repasse au vert dès que le
+    service répond, sans attendre la fin du TTL."""
+    _profile_cache["stalled"] = False
+    _profile_cache["ts"] = 0.0
 
 
 def _audio_probe() -> None:
@@ -846,6 +862,12 @@ def _audio_probe() -> None:
         ).stdout
         _profile_cache["data"] = json.loads(out)
         _profile_cache["ready"] = True
+        _profile_cache["stalled"] = False
+    except subprocess.TimeoutExpired:
+        # Vingt secondes sans réponse, ce n'est pas « lent », c'est figé : en temps
+        # normal l'inventaire prend 1 à 3 s. On garde la dernière lecture (voir ci-dessous)
+        # ET on lève le drapeau, pour que `check_coreaudio` le dise en rouge.
+        _profile_cache["stalled"] = True
     except Exception:
         # Échec ou blocage : on GARDE la dernière lecture valable plutôt que de la
         # remplacer par du vide, qui ferait clignoter en rouge des appareils bien
@@ -1026,6 +1048,80 @@ def check_accessibility(cfg: dict) -> Result:
                         "ne peuvent être réglés automatiquement"))
 
 
+_DLG_CACHE: dict = {"at": 0.0, "val": None}
+_DLG_TTL = 10.0
+
+
+def check_live_dialog(cfg: dict) -> Result | None:
+    """Ableton attend-il qu'on clique dans une fenêtre ? Ligne ABSENTE quand tout va bien.
+
+    Une fenêtre modale dans Live n'est pas un détail d'affichage : elle rend l'app sourde à
+    tout le reste — au ⌘, du correctif de sortie, au rangement des fenêtres, et à n'importe
+    quel geste que le rig voudrait faire. Le 2026-08-22, Ableton est resté planté sur « La
+    section audio est désactivée » pendant que le tableau affichait 26 lignes sans jamais
+    mentionner la seule chose qui bloquait tout.
+
+    Le silence quand il n'y a rien (`None`) est délibéré : c'est un événement, pas un
+    équipement. Une ligne verte « aucune fenêtre en attente » ajouterait du bruit permanent
+    pour un état qui n'arrive presque jamais — même choix que les « applis en trop », qui
+    n'apparaissent que lorsqu'il y en a.
+    """
+    if not _pgrep(cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live")):
+        return None
+    # Sans l'autorisation, on ne peut pas REGARDER : ne rien afficher plutôt qu'un faux
+    # calme — le check d'accessibilité, lui, est déjà rouge et porte l'information.
+    if _AX_CACHE["ok"] is False:
+        return None
+    now = time.monotonic()
+    if now - _DLG_CACHE["at"] > _DLG_TTL:
+        from . import liveaudio
+        _DLG_CACHE.update(at=now, val=liveaudio.dialog())
+    d = _DLG_CACHE["val"]
+    if not d:
+        return None
+    txt, btns = d
+    label = "Ableton attend une réponse"
+    single_ok = [b.upper() for b in btns] == ["OK"]
+    return Result("audio:live-dialog", label, FAIL,
+                  _hint(f"fenêtre ouverte : « {txt} »",
+                        "tant qu'elle est là, Ableton ignore tout le reste"
+                        if single_ok else
+                        f"elle propose un choix ({', '.join(btns)}) — à traiter à la main, "
+                        "le rig ne clique jamais dans une fenêtre qui peut faire perdre un set"))
+
+
+def _coreaudiod_pid() -> int | None:
+    r = subprocess.run(["pgrep", "-x", "coreaudiod"], capture_output=True, text=True)
+    first = r.stdout.split()
+    return int(first[0]) if first else None
+
+
+def check_coreaudio(cfg: dict) -> Result:
+    """Le service audio de macOS (coreaudiod) tourne-t-il ET répond-il ?
+
+    C'est le check qui explique tous les autres quand « il n'y a plus de son » : la
+    sortie par défaut est bonne, l'interface est détectée, Ableton pointe dessus — et
+    rien ne sort, parce que le processus qui mixe tout ça est figé. Sans cette ligne,
+    on cherche le défaut dans les apps ; avec, on lit la cause en une ligne et le bouton
+    est à côté. Un coreaudiod figé n'est jamais acceptable, dans aucun mode : pas de
+    sévérité configurable, c'est rouge.
+    """
+    label = "Service audio macOS (coreaudiod)"
+    pid = _coreaudiod_pid()
+    if pid is None:
+        # launchd le ressuscite normalement en ~1 s ; le voir absent deux fois de suite
+        # veut dire qu'il boucle en crash — le relancer à la main ne suffira pas.
+        return Result("sys:coreaudio", label, FAIL,
+                      _hint("coreaudiod ne tourne pas",
+                            "launchd devrait le relancer seul ; s'il reste absent, "
+                            "un pilote audio tiers le fait planter au démarrage"))
+    if _profile_cache["stalled"]:
+        return Result("sys:coreaudio", label, FAIL,
+                      "figé : le processus tourne mais ne répond plus — aucune app "
+                      "ne peut sortir de son tant qu'il n'est pas relancé")
+    return Result("sys:coreaudio", label, OK, f"répond (pid {pid})")
+
+
 def check_default_output(cfg: dict) -> Result:
     """The macOS default sound output must be the Mac itself (built-in), not an
     external / AirPlay / conferencing device."""
@@ -1083,24 +1179,62 @@ def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
             for a in apps.unexpected(cfg)]
 
 
+def _guard(label: str, fn) -> list:
+    """Exécute un check ; s'il lève, rend une ligne EN ERREUR au lieu de tout emporter.
+
+    Sans ce filet, une seule exception remontait jusqu'à `do_GET`, la connexion se
+    fermait vide, et le client ne voyait pas « un check en panne » mais « serveur
+    injoignable ». C'est ce qui a rendu la panne du 2026-08-18 si opaque : l'agent
+    tournait, le port répondait, et rien ne sortait — pendant 18 heures.
+
+    Un rig à 24 checks sur 25 reste utilisable ; un dashboard muet, non. Et le check qui
+    a lâché le DIT, avec son exception : c'est une information, pas un silence.
+    """
+    try:
+        out = fn()
+    except Exception as exc:
+        return [Result(f"err:{label}", label, WARN,
+                       _hint(f"ce check a échoué : {type(exc).__name__} — {exc}",
+                             "les autres checks restent valables ; celui-ci est à corriger "
+                             "dans le code, pas sur le rig"))]
+    if out is None:
+        return []
+    return out if isinstance(out, list) else [out]
+
+
 def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
             manual: dict | None = None, phone: dict | None = None) -> list[Result]:
     manual = manual or {}
-    results = check_apps(cfg) + check_streamdeck(cfg) + check_midi(cfg)
-    results += [check_keyboard(cfg, mode), check_breath(cfg, mode)]
-    results += [check_stage_network(cfg, mode)]
-    results += check_lamps(cfg, mode)
-    results += [check_bome_iphone(cfg), check_vpn(cfg)]
-    results += [check_accessibility(cfg)]
-    results += check_unexpected_apps(cfg, mode)
-    results += [check_mac_power(cfg, mode),
-                check_iphone_charge(cfg, mode, acked=bool(manual.get("iphone_charge")),
-                                    phone=phone)]
-    results.append(check_amphetamine(cfg, mode))
+    todo = [
+        ("Applications", lambda: check_apps(cfg)),
+        ("Stream Decks", lambda: check_streamdeck(cfg)),
+        ("Ports MIDI", lambda: check_midi(cfg)),
+        ("Clavier", lambda: check_keyboard(cfg, mode)),
+        ("Breath controller", lambda: check_breath(cfg, mode)),
+        ("Réseau de scène", lambda: check_stage_network(cfg, mode)),
+        ("Lampes", lambda: check_lamps(cfg, mode)),
+        ("Lien iPhone", lambda: check_bome_iphone(cfg)),
+        ("VPN", lambda: check_vpn(cfg)),
+        ("Autorisation Accessibilité", lambda: check_accessibility(cfg)),
+        ("Applis en trop", lambda: check_unexpected_apps(cfg, mode)),
+        ("Alimentation Mac", lambda: check_mac_power(cfg, mode)),
+        ("Charge iPhone", lambda: check_iphone_charge(
+            cfg, mode, acked=bool(manual.get("iphone_charge")), phone=phone)),
+        ("Amphetamine", lambda: check_amphetamine(cfg, mode)),
+    ]
     if with_audio:
-        results += [check_default_output(cfg), check_audio(cfg, mode)]
-        results += check_audio_devices(cfg, mode)
-        results.append(check_live_output(cfg, mode))
+        todo += [
+            # En tête du bloc audio : quand il est rouge, il EST la cause des suivants.
+            ("Service audio", lambda: check_coreaudio(cfg)),
+            ("Sortie par défaut", lambda: check_default_output(cfg)),
+            ("Interface audio", lambda: check_audio(cfg, mode)),
+            ("Périphériques audio", lambda: check_audio_devices(cfg, mode)),
+            ("Sortie d'Ableton", lambda: check_live_output(cfg, mode)),
+            ("Fenêtre d'Ableton", lambda: check_live_dialog(cfg)),
+        ]
+    results: list[Result] = []
+    for label, fn in todo:
+        results += _guard(label, fn)
     # Les checks réglés sur "off" rendent None : ils disparaissent ici, une bonne fois,
     # plutôt que chaque appelant ait à s'en soucier.
     return [r for r in results if r is not None]
