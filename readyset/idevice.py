@@ -1,21 +1,21 @@
-"""Lire la batterie de l'iPhone DEPUIS le Mac, via libimobiledevice.
+"""Read the iPhone's battery FROM the Mac, through libimobiledevice.
 
-Le Mac ne sait rien du téléphone par lui-même — mesuré le 2026-08-19 : le Bluetooth
-n'expose que son adresse et sa puissance de signal (pas de champ batterie, contrairement
-aux AirPods), `pmset -g accps` ne connaît que la batterie interne, et le lien Bome prouve
-que le téléphone est JOIGNABLE, pas qu'il est branché — un iPhone sur le Wi-Fi et
-débranché tient ce lien pendant qu'il se vide.
+The Mac knows nothing about the phone by itself — measured on 2026-08-19: Bluetooth only
+exposes its address and its signal strength (no battery field, unlike the AirPods),
+`pmset -g accps` only knows about the internal battery, and the Bome link proves the
+phone is REACHABLE, not that it is plugged in — an iPhone on Wi-Fi and unplugged holds
+that link while it drains.
 
-`ideviceinfo` est la seule voie qui donne le niveau ET l'état d'alimentation sans rien
-demander au téléphone. C'est ce qui la rend précieuse : elle peut BATTRE régulièrement,
-là où une automatisation iOS ne part qu'au branchement. Le battement est ce qui fait
-vivre la pente de la batterie (readyset/checks/), donc le seul démenti possible d'un
-« en charge » devenu faux.
+`ideviceinfo` is the only path that gives the level AND the power state without asking
+the phone for anything. That is what makes it precious: it can BEAT regularly, where an
+iOS automation only fires on plug-in. The beat is what keeps the battery slope alive
+(readyset/checks/), hence the only possible rebuttal of a "charging" that has become
+false.
 
-Prérequis, une fois pour toutes : iPhone branché en USB, déverrouillé, « Se fier », puis
-« Afficher cet iPhone lorsqu'il est en Wi-Fi » dans le Finder. Sans ça tout ici rend
-None — c'est un SUPPLÉMENT, jamais un prérequis : le téléphone peut toujours publier son
-état lui-même (POST /api/phone), et les deux sources alimentent le même historique.
+Prerequisites, once and for all: iPhone plugged in over USB, unlocked, "Trust", then
+"Show this iPhone when on Wi-Fi" in the Finder. Without that everything here returns
+None — this is a SUPPLEMENT, never a prerequisite: the phone can always publish its own
+state itself (POST /api/phone), and both sources feed the same history.
 """
 
 from __future__ import annotations
@@ -25,10 +25,10 @@ import subprocess
 
 BATTERY_DOMAIN = "com.apple.mobile.battery"
 
-# Cherché explicitement, et pas seulement dans le PATH : sous launchd celui-ci se limite
-# à /usr/bin:/bin:/usr/sbin:/sbin, où Homebrew n'est pas. Un `which` y échouerait alors
-# que la commande marche parfaitement dans un terminal — et le dashboard resterait
-# aveugle sans jamais dire pourquoi.
+# Looked up explicitly, and not only in the PATH: under launchd the latter is limited to
+# /usr/bin:/bin:/usr/sbin:/sbin, where Homebrew is not. A `which` would fail there while
+# the command works perfectly in a terminal — and the dashboard would stay blind without
+# ever saying why.
 _CANDIDATES = ("/opt/homebrew/bin/ideviceinfo", "/usr/local/bin/ideviceinfo")
 
 
@@ -40,7 +40,7 @@ def binary(cfg: dict) -> str | None:
 
 
 def _run(exe: str, args: list[str]) -> dict[str, str] | None:
-    """Une lecture du domaine batterie → {clé: valeur}, ou None si l'appareil est absent."""
+    """One read of the battery domain → {key: value}, or None if the device is absent."""
     try:
         p = subprocess.run([exe, *args, "-q", BATTERY_DOMAIN],
                            capture_output=True, text=True, timeout=8)
@@ -57,16 +57,15 @@ def _run(exe: str, args: list[str]) -> dict[str, str] | None:
 
 
 def read(cfg: dict) -> dict | None:
-    """{"battery": int, "charging": bool, "via": "usb"|"wifi"} — None si rien à lire.
+    """{"battery": int, "charging": bool, "via": "usb"|"wifi"} — None if nothing to read.
 
-    USB d'abord, réseau ensuite : quand le câble est là, il répond toujours, alors que
-    la lecture par le réseau est rapportée comme intermittente en amont
-    (libimobiledevice#947). On ne veut pas d'un chemin fiable écarté par un chemin
-    incertain.
+    USB first, network second: when the cable is there, it always answers, whereas the
+    network read is reported as intermittent upstream (libimobiledevice#947). We do not
+    want a reliable path pushed aside by an uncertain one.
 
-    « Branché » se lit sur ExternalConnected, pas sur BatteryIsCharging : à 100 % un
-    téléphone sur secteur ne charge plus, et prendre le second ferait clignoter la ligne
-    en rouge précisément quand tout va bien.
+    "Plugged in" is read from ExternalConnected, not from BatteryIsCharging: at 100 % a
+    phone on mains power stops charging, and taking the second one would make the line
+    blink red precisely when everything is fine.
     """
     exe = binary(cfg)
     if not exe:

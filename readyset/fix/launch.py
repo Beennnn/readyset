@@ -1,4 +1,4 @@
-"""Bring-up sequence — launch the readyset apps in order, then open the gig set.
+"""Bring-up sequence — launch the rig apps in order, then open the gig set.
 
 Poll-for-readiness rather than fixed sleeps: after launching Bome we wait until
 its virtual MIDI ports actually appear before opening the Ableton set, so the set
@@ -18,21 +18,21 @@ import mido
 from .. import windows, liveaudio
 
 
-# Message-sentinelle : dire « déjà lancée » n'est pas dire « lancée », et l'appelant a
-# besoin de la nuance — pour le glyphe qu'il affiche comme pour le délai qu'il s'épargne.
+# Sentinel message: saying "already launched" is not saying "launched", and the caller
+# needs the nuance — both for the glyph it displays and for the delay it saves itself.
 ALREADY = "déjà lancée"
 
 
 def running_from(app_path: str) -> list[str]:
-    """Les processus qui tournent DEPUIS ce bundle précis.
+    """The processes running FROM this precise bundle.
 
-    On compare des CHEMINS, pas des noms : deux installations de la même application
-    portent le même nom ET le même identifiant de bundle — Ableton en est la preuve, avec
-    « Suite » et « Suite 3 » tous deux en com.ableton.live. Seul le chemin les sépare.
+    We compare PATHS, not names: two installations of the same application carry the same
+    name AND the same bundle identifier — Ableton is the proof of it, with "Suite" and
+    "Suite 3" both under com.ableton.live. Only the path separates them.
 
-    Sans ce garde-fou, `open -a` reste inoffensif sur une app déjà lancée (il ne fait que
-    la mettre au premier plan) SAUF si une autre copie tourne : là il en démarre une
-    seconde, et deux instances se disputent les mêmes interfaces audio et MIDI.
+    Without that guard rail, `open -a` stays harmless on an already-launched app (all it
+    does is bring it to the foreground) EXCEPT when another copy is running: there it
+    starts a second one, and two instances fight over the same audio and MIDI interfaces.
     """
     prefix = str(Path(app_path)).rstrip("/") + "/Contents/MacOS/"
     r = subprocess.run(["ps", "-Ao", "command="], capture_output=True, text=True)
@@ -44,9 +44,9 @@ def _open_app(app_path: str, hidden: bool = False) -> tuple[bool, str]:
         return False, f"introuvable : {app_path}"
     if running_from(app_path):
         return True, ALREADY
-    # -g : ne pas passer au premier plan. -j : démarrer masquée. Les deux se règlent au
-    # LANCEMENT, donc sans autorisation Accessibilité — c'est le moyen le plus propre de
-    # ne jamais voir clignoter la fenêtre d'une app qui n'a rien à faire à l'écran.
+    # -g: do not come to the foreground. -j: start hidden. Both are settled at LAUNCH
+    # time, hence without any Accessibility permission — it is the cleanest way never to
+    # see the window of an app that has no business on screen flash by.
     cmd = ["open", "-a", app_path] + (["-g", "-j"] if hidden else [])
     r = subprocess.run(cmd, capture_output=True, text=True)
     if r.returncode != 0:
@@ -82,9 +82,9 @@ def launch_apps(cfg: dict, log=print, dry_run: bool = False) -> None:
         ok, msg = _open_app(app, hidden=hidden)
         glyphe = "↷" if msg == ALREADY else ("▶" if ok else "✖")
         log(f"  {glyphe} {name} — {msg}")
-        # Le délai de stabilisation attend qu'une app FRAÎCHEMENT lancée soit prête. Une
-        # app déjà là l'est depuis longtemps : attendre deux secondes de plus par app
-        # allongeait la mise en place pour rien, précisément dans le cas le plus courant.
+        # The settle delay waits for a FRESHLY launched app to be ready. An app that was
+        # already there has been ready for a long time: waiting two more seconds per app
+        # lengthened the bring-up for nothing, precisely in the most common case.
         if ok and msg != ALREADY:
             time.sleep(settle)
 
@@ -110,39 +110,39 @@ def _live_processes() -> list[str]:
 
 
 def _loopback_port(cfg: dict) -> str:
-    """Le port MIDI dont l'apparition prouve que Live a fini de charger.
+    """The MIDI port whose appearance proves Live has finished loading.
 
-    Il se LIT dans la config : c'est un nom d'installation, pas une constante du moteur —
-    le codant en dur, on a gardé « Ableton Loopback » dans le code des mois après que le
-    bus ait été renommé. Le premier `midi_required` est le bon défaut : c'est par
-    définition le port sans lequel le rig ne marche pas.
+    It is READ from the config: it is an installation name, not a constant of the engine —
+    by hard-coding it, we kept "Ableton Loopback" in the code for months after the bus had
+    been renamed. The first `midi_required` is the right default: it is by definition the
+    port without which the rig does not work.
     """
     ports = cfg.get("checks", {}).get("midi_required") or []
     return ports[0] if ports else "Rig Bus"
 
 
 def _resolved_mode(cfg: dict, mode: str | None) -> str:
-    from .. import checks          # import tardif : `checks` est lourd et n'est pas requis
-    if mode:                      # pour lancer les apps — seulement pour régler le son.
+    from .. import checks          # late import: `checks` is heavy and is not required
+    if mode:                      # to launch the apps — only to set the sound.
         return mode
     return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
 
 
 def warn_if_output_missing(cfg: dict, mode: str, log=print) -> bool:
-    """La sortie attendue est-elle seulement BRANCHÉE ? Dit AVANT d'ouvrir le set.
+    """Is the expected output even PLUGGED IN? Said BEFORE opening the set.
 
-    C'est la seule forme de « régler la sortie avant de lancer Ableton » qui existe : Live
-    restaure lui-même son périphérique au démarrage et n'accepte aucun réglage tant qu'il
-    n'est pas lancé (ni AppleScript, ni préférences lisibles, ni API Python — voir le
-    README de `ableton-live-output`). Ce qu'on PEUT faire, c'est refuser de découvrir le
-    problème après coup : si le P-225 n'est pas branché, Live va s'ouvrir sur rien, poser
-    sa fenêtre modale, et la suite de la mise en place se fera contre une app sourde.
-    Autant l'annoncer à la ligne où c'est encore réparable — en branchant un câble.
+    This is the only form of "set the output before launching Ableton" that exists: Live
+    restores its own device at start-up and accepts no setting as long as it is not
+    running (no AppleScript, no readable preferences, no Python API — see the README of
+    `ableton-audio-output`). What we CAN do is refuse to discover the problem after the
+    fact: if the expected interface is not plugged in, Live will open onto nothing, put up
+    its modal dialog, and the rest of the bring-up will be fought against a deaf app.
+    Better to announce it on the line where it is still repairable — by plugging a cable.
     """
     from .. import checks
     wants = cfg["modes"][mode].get("live_output") or []
     if not wants or not checks._audio_ready():
-        return True               # rien d'attendu, ou inventaire pas encore lu : on se tait
+        return True               # nothing expected, or inventory not read yet: stay quiet
     names = [it.get("_name", "") for it in checks._audio_items()]
     if any(w.lower() in n.lower() for w in wants for n in names):
         return True
@@ -173,11 +173,11 @@ def open_set(cfg: dict, log=print, dry_run: bool = False, mode: str | None = Non
     if not Path(app).exists():
         log(f"  ✖ Ableton introuvable : {app}")
         return
-    # Ne JAMAIS ajouter un second Live. Le 2026-08-29, une clé de config mal nommée a
-    # fait retomber le moteur sur une autre installation d'Ableton, et ce « open » a
-    # lancé Suite à côté de Suite 3 qui tournait : deux Live se disputant les mêmes
-    # interfaces audio et MIDI. Ouvrir le projet dans l'instance ATTENDUE reste bon —
-    # macOS le charge dans le Live déjà là. C'est la mauvaise install qu'on refuse.
+    # NEVER add a second Live. On 2026-08-29, a badly named config key made the engine
+    # fall back on another Ableton installation, and this "open" launched Suite next to
+    # the Suite 3 that was running: two Lives fighting over the same audio and MIDI
+    # interfaces. Opening the project in the EXPECTED instance stays fine — macOS loads
+    # it into the Live already there. It is the wrong install that we refuse.
     autres = [c for c in _live_processes() if not c.startswith(str(app))]
     if autres:
         log(f"  ✖ un autre Ableton tourne déjà — {Path(app).stem} ne sera pas lancé :")
@@ -191,12 +191,12 @@ def open_set(cfg: dict, log=print, dry_run: bool = False, mode: str | None = Non
         return
     log(f"  ▶ ouverture de « {Path(project).name} » dans {Path(app).stem}")
     log(f"  … attente du port « {_loopback_port(cfg)} »")
-    # Un rappel a mi-parcours, sans aucune autorisation systeme : la cause la plus
-    # frequente d'une attente qui s'eternise est un dialogue qui attend une reponse -
-    # « Live s'est ferme de maniere inattendue, recuperer le travail ? » apres un
-    # plantage. Il bloque le chargement, donc le port ne peut pas apparaitre, et rien
-    # a l'ecran ne le dit tant qu'on regarde le terminal. Une ligne suffit a orienter
-    # le regard vers la fenetre, la ou l'automatisation demande une autorisation.
+    # A reminder halfway through, without any system permission: the most frequent cause
+    # of a wait that drags on is a dialog waiting for an answer - "Live quit unexpectedly,
+    # recover the work?" after a crash. It blocks the loading, so the port cannot appear,
+    # and nothing on screen says so as long as you are looking at the terminal. One line
+    # is enough to steer the eye towards the window, there where automating it would
+    # require a permission.
     if _wait_for(lambda: _midi_port_present(_loopback_port(cfg)), timeout=20, interval=1):
         log("  ✔ Ableton en ligne")
         return
@@ -208,11 +208,11 @@ def open_set(cfg: dict, log=print, dry_run: bool = False, mode: str | None = Non
         log("  ⚠️  Ableton pas encore prêt après 60s — gros set, plugins qui chargent, "
             "ou une fenêtre qui attend une réponse")
 
-    # Le son se règle ICI, pas dans la passe de correctifs qui suit. Deux raisons, toutes
-    # deux payées le 2026-08-22 : c'est le premier instant où c'est POSSIBLE (Live doit
-    # tourner), et c'est le dernier où c'est encore INOFFENSIF — le rangement des fenêtres
-    # qui vient juste après pilote lui aussi l'interface, et une fenêtre modale non
-    # congédiée le fait échouer à son tour. Congédier d'abord, régler ensuite, ranger après.
+    # The sound is set HERE, not in the fix pass that follows. Two reasons, both paid for
+    # on 2026-08-22: this is the first moment where it is POSSIBLE (Live has to be
+    # running), and it is the last where it is still HARMLESS — the window tidying that
+    # comes right after also drives the interface, and an un-dismissed modal dialog makes
+    # it fail in turn. Dismiss first, set next, tidy after.
     cleared, note = liveaudio.dismiss_dialog()
     if note:
         log(f"  {'🧹' if cleared else '✖'} {note}")
@@ -239,12 +239,12 @@ def ensure_amphetamine_session(cfg: dict, log=print, dry_run: bool = False) -> N
 
 
 def tidy_windows(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Range les fenêtres en fin de bring-up (voir readyset/windows.py).
+    """Tidy the windows at the end of the bring-up (see readyset/windows.py).
 
-    Après le lancement, même masquées au démarrage, des apps déjà ouvertes avant le
-    préflight peuvent traîner à l'écran — et Ableton, lui, vient de passer devant en
-    ouvrant le set. Ce passage final laisse donc l'écran dans l'état de scène : le set
-    devant, le reste rangé.
+    After the launch, even when started hidden, apps that were already open before the
+    preflight may linger on screen — and Ableton itself has just come to the front by
+    opening the set. So this final pass leaves the screen in stage state: the set in
+    front, the rest tidied away.
     """
     if not cfg.get("windows", {}).get("after_preflight", True):
         return
@@ -263,13 +263,13 @@ def bring_up(cfg: dict, log=print, dry_run: bool = False, mode: str | None = Non
 
 
 def _attendre_chargement(motif: str, calme: float, plafond: float, log) -> bool:
-    """Attend que le DAW se taise. Rend faux s'il n'y a rien à observer.
+    """Wait until the DAW goes quiet. Returns false if there is nothing to observe.
 
-    Une durée fixe est un pari sur la taille du set, et elle se trompe des deux côtés :
-    trop courte, la scène part dans un set à moitié chargé ; trop longue, on regarde
-    l'écran sans rien faire pendant la mise en place. Le journal, lui, dit la vérité —
-    le DAW y écrit sans arrêt pendant qu'il charge, et cesse quand il a fini (mesuré :
-    silence quatre secondes après la dernière action).
+    A fixed duration is a bet on the size of the set, and it gets it wrong on both sides:
+    too short, the scene fires into a half-loaded set; too long, you stare at the screen
+    doing nothing during the bring-up. The log, on the other hand, tells the truth — the
+    DAW writes to it non-stop while it loads, and stops when it is done (measured: silence
+    four seconds after the last action).
     """
     fichiers = [f for f in glob.glob(os.path.expanduser(motif)) if os.path.exists(f)]
     if not fichiers:
@@ -291,24 +291,24 @@ def _attendre_chargement(motif: str, calme: float, plafond: float, log) -> bool:
 
 
 def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
-    """Lance une scène du set, une fois celui-ci chargé.
+    """Fire a scene of the set, once the set is loaded.
 
-    Deux messages, dans cet ordre : un CC dont la VALEUR est le numéro de scène, puis
-    une note qui déclenche la scène sélectionnée. Ce couple n'est pas inventé ici — c'est
-    le protocole que la surface de contrôle du rig parle déjà (scène 0 = remise à zéro,
-    1 = arrêt, 3 et au-delà = les morceaux). Le réutiliser évite un second mapping dans
-    le DAW, et surtout évite deux vérités sur la même chose.
+    Two messages, in that order: a CC whose VALUE is the scene number, then a note that
+    triggers the selected scene. That pair is not invented here — it is the protocol the
+    rig's control surface already speaks (scene 0 = reset, 1 = stop, 3 and beyond = the
+    songs). Reusing it avoids a second mapping in the DAW, and above all avoids two
+    truths about the same thing.
 
-    Séparé de open_set volontairement : ouvrir un set et le faire JOUER sont deux
-    décisions distinctes, et la seconde ne doit pas partir quand on rouvre le set en
-    cours de soirée pour vérifier un réglage. C'est la mise en place qui l'appelle, après
-    avoir posé la sortie audio — dans cet ordre, sinon les premières mesures sortiraient
-    sur l'interface qu'on vient de corriger.
+    Kept apart from open_set deliberately: opening a set and making it PLAY are two
+    distinct decisions, and the second must not fire when the set is reopened in the
+    middle of the evening to check a setting. It is the bring-up that calls it, after
+    having set the audio output — in that order, otherwise the first bars would come out
+    on the interface we have just corrected.
     """
     sc = cfg["set"].get("start_scene") or {}
     port = sc.get("port", "")
     if not port:
-        return                       # non configuré : rien à faire, et rien à dire
+        return                       # not configured: nothing to do, and nothing to say
     canal = int(sc.get("channel", 1)) - 1
     num_cc, scene = int(sc.get("select_cc", 2)), int(sc.get("scene", 0))
     note = int(sc.get("trigger_note", 38))
@@ -331,11 +331,11 @@ def start_scene(cfg: dict, log=print, dry_run: bool = False) -> None:
         with mido.open_output(cible) as out:
             out.send(mido.Message("control_change", channel=canal,
                                   control=num_cc, value=scene))
-            # Note-on SEUL, comme la surface : {cc:1,2,0} puis {noteon:1,38,127}. J'y
-            # avais ajouté un note-off par hygiène ; le rig tourne ainsi depuis des mois
-            # sans note suspendue, donc l'inquiétude était théorique et l'ajout une
-            # divergence gratuite avec le protocole de référence.
+            # Note-on ALONE, like the surface: {cc:1,2,0} then {noteon:1,38,127}. A
+            # note-off had been added here out of hygiene; the rig has been running this
+            # way for months without a hanging note, so the worry was theoretical and the
+            # addition a gratuitous divergence from the reference protocol.
             out.send(mido.Message("note_on", channel=canal, note=note, velocity=127))
         log(f"  ▶ scène {scene} lancée — CC {num_cc} puis note {note}, canal {canal + 1}")
-    except Exception as exc:         # un démarrage raté ne doit pas couler la mise en place
+    except Exception as exc:         # a failed start must not sink the whole bring-up
         log(f"  ✖ départ du set : {exc}")

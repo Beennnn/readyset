@@ -49,11 +49,11 @@ DEFAULTS: dict = {
             # delay_seconds is the fallback when no log can be found, where guessing is
             # all that is left.
             "log_glob": "",
-            # Doit DÉPASSER l'intervalle du plus bavard des écrivains périodiques du
-            # journal, sinon le silence entre deux de ses lignes se lit comme la fin du
-            # chargement. Ici un script de contrôle en écrit une toutes les 5 s pendant
-            # tout le démarrage : 2 s auraient déclenché dans un trou, sur un set encore
-            # en train de charger. Sept secondes laissent la marge.
+            # Must EXCEED the interval of the chattiest periodic writer in the log,
+            # otherwise the silence between two of its lines reads as the end of the
+            # loading. Here a control script writes one every 5 s throughout the whole
+            # start-up: 2 s would have fired inside a gap, on a set that was still
+            # loading. Seven seconds leave the margin.
             "quiet_seconds": 7.0,
             "max_seconds": 25.0,
             "delay_seconds": 12,
@@ -70,57 +70,57 @@ DEFAULTS: dict = {
         "amphetamine_session": True,   # start an anti-sleep session during bring-up
     },
     "server": {
-        # Interface d'écoute du dashboard. "127.0.0.1" = cette machine seulement.
-        # "0.0.0.0" l'ouvre au réseau LOCAL — c'est ce qui permet au téléphone de
-        # publier son état (POST /api/phone) et de consulter la page depuis la scène.
-        # À ne faire QUE sur un réseau de confiance : le serveur expose aussi /api/fix,
-        # /api/quit-apps, /api/windows et /api/preflight, qui LANCENT et FERMENT des
-        # choses sur le Mac. Il n'y a pas d'authentification — le pare-feu du réseau
-        # est la seule barrière.
+        # The dashboard's listening interface. "127.0.0.1" = this machine only.
+        # "0.0.0.0" opens it to the LOCAL network — that is what lets the phone publish
+        # its state (POST /api/phone) and lets you consult the page from the stage.
+        # ONLY do this on a trusted network: the server also exposes /api/fix,
+        # /api/quit-apps, /api/windows and /api/preflight, which LAUNCH and CLOSE things
+        # on the Mac. There is no authentication — the network's firewall is the only
+        # barrier.
         "host": "127.0.0.1",
-        # Au-delà, le dernier rapport du téléphone est considéré périmé et la ligne
-        # revient à « à confirmer ». Une heure, pas cinq minutes : le téléphone publie
-        # sur ÉVÉNEMENT (branché / débranché), pas en battement régulier — « branché il
-        # y a 20 min » reste vrai, alors qu'une fenêtre courte l'aurait déclaré périmé
-        # sans que rien n'ait changé. L'âge est affiché sur la ligne : c'est lui qui
-        # permet de juger, pas un seuil.
-        # Si le téléphone se met à battre régulièrement (une publication toutes les N
-        # minutes plutôt qu'au seul branchement), descendre cette valeur juste au-dessus
-        # de N : le silence devient alors un signal en soi — « le téléphone n'a rien dit
-        # depuis… », qui désigne le téléphone et non la prise. Rien d'autre à changer :
-        # toute publication est un battement.
+        # Past this, the phone's last report is considered stale and the line falls back
+        # to « à confirmer ». One hour, not five minutes: the phone publishes on EVENT
+        # (plugged in / unplugged), not on a regular heartbeat — « plugged in 20 min ago »
+        # is still true, whereas a short window would have declared it stale without
+        # anything having changed. The age is displayed on the line: that is what lets
+        # you judge, not a threshold.
+        # If the phone starts beating regularly (one publication every N minutes rather
+        # than only on plug-in), lower this value to just above N: silence then becomes a
+        # signal in itself — « the phone has said nothing since… », which points at the
+        # phone and not at the socket. Nothing else to change: every publication is a
+        # heartbeat.
         "phone_stale_seconds": 3600,
-        # --- la pente de la batterie, qui SERT DE DÉMENTI au drapeau -----------------
-        # « en charge » est un événement : vrai à l'instant du branchement, et plus
-        # jamais revérifié. Un câble qui lâche, une multiprise éteinte, un chargeur mort
-        # ne changent rien à ce qui a été dit — mais la batterie, elle, se met à
-        # descendre. C'est la seule chose qui puisse contredire le drapeau, et elle ne
-        # demande pas un battement serré : deux points suffisent à voir une pente.
-        "trend_window_seconds": 10800,     # on ne regarde pas plus loin que 3 h en arrière
-        # Un pour cent PERDU suffit à conclure : une batterie qui charge ne recule pas.
-        # D'où un écart minimal court — le temps qu'un pour cent tombe, quelques minutes,
-        # soit moins que ne dure un soundcheck. C'est ce qui rend le démenti utilisable
-        # au moment où on s'en sert.
+        # --- the battery's slope, which SERVES AS A REBUTTAL to the flag --------------
+        # « charging » is an event: true at the instant of plugging in, and never
+        # rechecked. A cable that gives out, a power strip switched off, a dead charger
+        # change nothing about what was said — but the battery itself starts going
+        # down. That is the only thing that can contradict the flag, and it does not
+        # need a tight heartbeat: two points are enough to see a slope.
+        "trend_window_seconds": 10800,     # we look no further back than 3 h
+        # ONE per cent LOST is enough to conclude: a charging battery does not go back.
+        # Hence a short minimum span — the time for one per cent to drop, a few minutes,
+        # which is less than a soundcheck lasts. That is what makes the rebuttal usable
+        # at the moment you need it.
         "trend_min_span_seconds": 180,
-        # ESTIMER L'AUTONOMIE demande bien plus de recul que constater une baisse : à
-        # 1 % près sur 3 minutes, la pente vaut ±20 %/h et l'estimation ne veut rien
-        # dire. Sous cet écart on dit « elle descend », sans chiffrer combien de temps.
+        # ESTIMATING THE RUNTIME LEFT takes far more hindsight than observing a drop: at
+        # 1 % accuracy over 3 minutes, the slope is worth ±20 %/h and the estimate means
+        # nothing. Below that span we say « it is going down », without quantifying how long.
         "trend_autonomy_span_seconds": 1800,
-        # En dessous, le téléphone ne passera pas la soirée : c'est une erreur, pas une
-        # remarque. Trois heures = le temps d'arriver, d'installer, de jouer.
+        # Below this, the phone will not last the evening: that is an error, not a
+        # remark. Three hours = the time to arrive, to set up, to play.
         "autonomy_min_hours": 3.0,
-        # Cadence à laquelle le Mac interroge lui-même le téléphone (ideviceinfo).
-        # 0 = ne pas interroger. C'est le seul battement RÉGULIER possible : une
-        # automatisation iOS ne part qu'au branchement, alors que la pente de la batterie
-        # a besoin de plusieurs points. Sans appairage, la lecture rend None sans bruit.
+        # Rate at which the Mac polls the phone itself (ideviceinfo).
+        # 0 = do not poll. It is the only REGULAR heartbeat possible: an iOS automation
+        # only fires on plug-in, whereas the battery's slope needs several points.
+        # Without a pairing, the read returns None without a sound.
         "idevice_poll_seconds": 60,
-        "idevice_bin": "",              # vide = cherché dans le PATH puis dans Homebrew
-        # --- spectre audio servi sur /api/audio/spectrum -----------------------------
-        # La source se résout par son NOM : les index avfoundation changent d'un
-        # redémarrage à l'autre, et un index figé finirait par écouter le micro en croyant
-        # écouter le mix. La capture démarre au premier appel et s'arrête toute seule
-        # après `idle_stop` sans requête — tenir un périphérique audio ouvert en
-        # permanence sur une machine de scène est exactement ce qu'on veut éviter.
+        "idevice_bin": "",              # empty = looked up in PATH then in Homebrew
+        # --- audio spectrum served on /api/audio/spectrum -----------------------------
+        # The source is resolved by its NAME: avfoundation indices change from one
+        # reboot to the next, and a frozen index would end up listening to the mic while
+        # believing it listens to the mix. The capture starts on the first call and stops
+        # by itself after `idle_stop` with no request — holding an audio device open
+        # permanently on a stage machine is exactly what we want to avoid.
         "spectrum_source": "Wave Link Stream",
         "spectrum_bands": 16,
         "spectrum_idle_stop_seconds": 20,
@@ -156,8 +156,8 @@ DEFAULTS: dict = {
         # accept (substring of the service name); `off_cmds` overrides how a given VPN
         # is cut (substring → shell command) when the generic method doesn't fit.
         "vpn": {"ignore": [], "off_cmds": {}},
-        # Apps ouvertes dont le rig n'a pas besoin (warn en live, info en studio). `allow`
-        # = jamais proposées à la fermeture. Le Finder y est d'office : macOS le relance.
+        # Open apps the rig does not need (warn in live, info in studio). `allow` = never
+        # offered for closing. The Finder is in there by default: macOS relaunches it.
         "unexpected_apps": {"allow": ["Finder"]},
     },
     # Window policy per app — everything RUNS, only Ableton is SEEN. See readyset/windows.py.
@@ -168,7 +168,7 @@ DEFAULTS: dict = {
         "after_preflight": True,    # tidy the screen at the end of a bring-up
     },
     # Two rigs, one tool. Start "live"; when the studio router is reachable, "auto"
-    # resolves to "studio". The dashboard tirette forces it; CLI: --mode live|studio|auto.
+    # resolves to "studio". The dashboard slider forces it; CLI: --mode live|studio|auto.
     "mode": {"default": "auto"},
     "modes": {
         "live": {
@@ -176,9 +176,9 @@ DEFAULTS: dict = {
             "keyboard_ok": ["Piano"],              # your main keyboard's MIDI port name
             "keyboard_warn": [],
             "live_output": ["Piano"],              # Ableton's audio output device on stage
-            # Réglage HISTORIQUE, gardé pour les rig.toml qui ne connaissent que lui : il
-            # ne sait dire que « vérifié » ou « pas du tout vérifié ». La forme actuelle est
-            # `amphetamine_severity` (fail | warn | info | off) — voir checks.py.
+            # HISTORICAL setting, kept for the rig.toml files that only know this one: it
+            # can only say « checked » or « not checked at all ». The current form is
+            # `amphetamine_severity` (fail | warn | info | off) — see checks.py.
             "require_amphetamine": True,
             "breath_severity": "fail",
             "interface_severity": "fail",
@@ -190,7 +190,7 @@ DEFAULTS: dict = {
             "keyboard_ok": ["Piano"],
             "keyboard_warn": ["microKey"],
             "live_output": ["MacBook", "USB Audio"],
-            "require_amphetamine": False,   # historique — cf. amphetamine_severity
+            "require_amphetamine": False,   # historical — cf. amphetamine_severity
             "breath_severity": "warn",
             "interface_severity": "warn",
             "mac_power_severity": "warn",

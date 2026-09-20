@@ -11,9 +11,9 @@
 //   • Floating pill — a top-centre badge with the counts ("❌ N  ⚠ M  Rig"). Warn/fail only.
 //     Its buttons: fix-all, open the dashboard, and the details — which pop THE menu, the
 //     same one the menu-bar icon carries (problem list + per-problem 🔧 fix via POST
-//     /api/fix, then the actions). Un panneau translucide tenait ce rôle jusqu'au
-//     2026-08-19 : illisible sur fond clair, et une seconde surface à tenir à jour en
-//     parallèle du menu. Un menu natif est opaque partout et n'existe qu'en un exemplaire.
+//     /api/fix, then the actions). A translucent panel held that role until
+//     2026-08-19: unreadable on a light background, and a second surface to keep in sync
+//     alongside the menu. A native menu is opaque everywhere and exists in a single copy.
 //   • Flashing alarm — a pulsing red FRAME the moment something breaks AFTER the screen
 //     was clean, around a panel that does NOT blink: type icon, what broke, what to do,
 //     and a ⚡ button that runs the remedy on the spot (see alarm.swift). Regression-
@@ -55,11 +55,11 @@ enum RigStatus {
         case "fail": return .fail; default: return .unreachable
         }
     }
-    /// nil = glyphe template monochrome (suit le clair/sombre du système).
-    /// `.ok` est VERT depuis le 2026-08-18 : en template, « tout va bien » et « le glyphe
-    /// coloré est désactivé » se ressemblaient trait pour trait, donc un rig vert ne se
-    /// distinguait pas d'une option éteinte. Le vert est une information, pas du décor —
-    /// il dit « vérifié à l'instant, rien à corriger », ce qu'un glyphe neutre ne dit pas.
+    /// nil = monochrome template glyph (follows the system's light/dark mode).
+    /// `.ok` has been GREEN since 2026-08-18: as a template, "all is well" and "the coloured
+    /// glyph is disabled" looked alike stroke for stroke, so a green rig could not be told
+    /// apart from a switched-off option. Green is information, not decoration — it says
+    /// "checked just now, nothing to fix", which a neutral glyph does not say.
     var glyphColor: NSColor? {
         switch self {
         case .ok: return .systemGreen; case .warn: return .systemOrange
@@ -82,48 +82,48 @@ enum RigStatus {
 struct Problem {
     let key, label, status, detail, glyph: String
     let remedy: String?
-    /// Les sous-éléments d'un check composite (le soundcheck et ses gestes), tels que
-    /// `/api/state` les donne. Vide pour un check ordinaire. L'icône illustre le geste
-    /// à faire et se lit avant le mot ; elle peut être absente.
+    /// The sub-items of a composite check (the soundcheck and its gestures), exactly as
+    /// `/api/state` gives them. Empty for an ordinary check. The icon illustrates the
+    /// gesture to perform and is read before the word; it may be absent.
     let parts: [(name: String, ok: Bool, icon: String)]
-    /// Le remède ne fait qu'OUVRIR la porte — le geste reste humain (l'autorisation
-    /// d'accessibilité s'accorde dans les Réglages Système, et rien d'autre ne peut la
-    /// donner). Un remède pareil réussit toujours et laisse le check rouge : le compter
-    /// parmi « ce que le bouton sait régler » serait un mensonge de plus au moment où
-    /// on cherche justement à savoir ce qui restera à faire.
+    /// The remedy only OPENS the door — the gesture stays human (the accessibility
+    /// permission is granted in System Settings, and nothing else can grant it). Such a
+    /// remedy always succeeds and leaves the check red: counting it among "what the
+    /// button knows how to settle" would be one more lie at the very moment when one is
+    /// trying to find out what will be left to do.
     let manual: Bool
-    /// Le domaine auquel le check appartient — « Système », « Audio », « Soundcheck »…
-    /// Vient du moteur, et c'est le MÊME découpage que les zones du dashboard : deux
-    /// surfaces, une seule carte mentale à retenir.
+    /// The domain the check belongs to — "System", "Audio", "Soundcheck"…
+    /// Comes from the engine, and it is the SAME split as the dashboard's zones: two
+    /// surfaces, a single mental map to remember.
     let group: String
-    /// ERREUR LIÉE — la panne AMONT qui explique celle-ci, quand le moteur en connaît
-    /// une (readyset/core/cascade.py). Le Stream Deck Plus alimente le XL, le clavier et le
-    /// breath : quand son câble saute, ces trois-là tombent avec lui sans être en cause.
-    /// `nil` = panne autonome, celle qui demande vraiment un geste à elle.
+    /// KNOCK-ON FAILURE — the UPSTREAM failure that explains this one, when the engine
+    /// knows of one (readyset/core/cascade.py). The Stream Deck Plus powers the XL, the
+    /// keyboard and the breath: when its cable drops, those three fall with it without
+    /// being at fault. `nil` = standalone failure, the one that really needs its own gesture.
     let causedBy: String?
-    /// Le lien, en toutes lettres : « alimenté par le Stream Deck Plus ». C'est lui qui
-    /// dit OÙ regarder — un numéro de clé ne fait aller chercher personne.
+    /// The link, spelled out: "powered by the Stream Deck Plus". It is what says WHERE to
+    /// look — a key number sends nobody looking anywhere.
     let causedWhy: String
-    /// Les pannes que celle-ci explique, par leur libellé. Non vide = c'est LA cause, et
-    /// elle passe devant tout le reste : la réparer éteint les autres d'un coup.
+    /// The failures this one explains, by their label. Non-empty = this is THE cause, and
+    /// it goes ahead of everything else: repairing it clears the others in one go.
     let causes: [String]
 
     var isConsequence: Bool { causedBy != nil }
     var isCause: Bool { !causes.isEmpty }
 }
 
-/// L'ordre dans lequel des pannes se LISENT — et il n'est pas celui dans lequel elles
-/// arrivent.
+/// The order in which failures are READ — and it is not the order in which they
+/// happen.
 ///
-/// Trois règles, dans cet ordre : la cause d'abord (elle explique les autres, et son
-/// geste les répare toutes), puis les bloquants, puis l'alphabet pour que deux relevés
-/// successifs ne fassent pas danser la liste sous les yeux. Chaque conséquence est
-/// ensuite collée SOUS sa cause : entre les deux, la moindre ligne étrangère casse le
-/// lien qu'on cherche justement à rendre visible.
+/// Three rules, in this order: the cause first (it explains the others, and its gesture
+/// repairs them all), then the blockers, then the alphabet so that two successive polls
+/// do not make the list dance before your eyes. Each consequence is then stuck UNDER
+/// its cause: between the two, the slightest foreign line breaks the very link one is
+/// trying to make visible.
 ///
-/// Une conséquence dont la cause n'est pas dans la liste (elle est orange et les
-/// avertissements sont masqués, par exemple) redevient une panne ordinaire — sans quoi
-/// elle disparaîtrait purement et simplement de l'affichage.
+/// A consequence whose cause is not in the list (it is orange and warnings are hidden,
+/// for instance) becomes an ordinary failure again — without which it would simply and
+/// purely vanish from the display.
 func orderedByCause(_ probs: [Problem]) -> [Problem] {
     let present = Set(probs.map(\.key))
     let rank: (Problem) -> (Int, Int, String) = {
@@ -147,18 +147,18 @@ enum Pref {
     static let pill = "pref.floatingPill"
     static let notify = "pref.notifyOnChange"
     static let warnings = "pref.showWarnings", autofix = "pref.autoFix"
-    /// Le clignotement quand quelque chose LÂCHE alors que l'écran était propre (alarm.swift).
+    /// The flashing when something BREAKS while the screen was clean (alarm.swift).
     static let alarm = "pref.alarmFlash"
-    /// Coupure d'alimentation du Stream Deck — OFF par défaut, et c'est délibéré : le
-    /// port se désigne par un identifiant (« 32-2 2 ») dérivé de l'énumération USB, qui
-    /// change dès qu'on rebranche ailleurs. Constaté le 2026-08-19 : le hub est passé du
-    /// dock à un port direct du Mac, et la config figée une heure plus tôt ne désignait
-    /// plus rien. Une entrée qui coupe une alimentation ne doit pas s'offrir tant que sa
-    /// cible n'a pas été confirmée.
+    /// Stream Deck power cut — OFF by default, and that is deliberate: the port is
+    /// designated by an id ("32-2 2") derived from the USB enumeration, which changes as
+    /// soon as you replug elsewhere. Observed on 2026-08-19: the hub moved from the dock
+    /// to a port directly on the Mac, and the config frozen an hour earlier designated
+    /// nothing any more. An entry that cuts a power supply must not offer itself as long
+    /// as its target has not been confirmed.
     static let streamDeck = "pref.streamDeckPower"
-    /// Pause : l'app reste vivante mais ne regarde plus rien et n'affiche plus rien.
-    /// Persistée à dessein — l'app ne peut pas être quittée, donc launchd la relance ;
-    /// une pause en mémoire seule serait annulée par le premier redémarrage.
+    /// Pause: the app stays alive but watches nothing and displays nothing any more.
+    /// Persisted on purpose — the app cannot be quit, so launchd relaunches it; a pause
+    /// held in memory alone would be cancelled by the first restart.
     static let paused = "pref.paused"
     static let screenMode = "pref.screenMode"      // "main" (default) | "all" | "custom"
     static let screenIDs = "pref.screenIDs"        // display IDs for "custom"
@@ -215,13 +215,13 @@ final class PillBar: NSView {
     func setGradient(_ top: NSColor, _ bottom: NSColor) { grad.colors = [top.cgColor, bottom.cgColor] }
 }
 
-/// NSTabViewController repose le titre de la fenêtre sur le libellé de l'onglet courant
-/// à chaque bascule — d'où une fenêtre « Sans titre » au premier affichage, puis un titre
-/// qui change en naviguant. On le refixe après coup pour garder un titre stable.
+/// NSTabViewController resets the window title to the current tab's label on every
+/// switch — hence an "Untitled" window on first display, then a title that changes as
+/// you navigate. We set it back afterwards to keep a stable title.
 final class SettingsTabController: NSTabViewController {
-    // Le premier onglet est sélectionné pendant la construction, quand `view.window` est
-    // encore nil : le redimensionnement ci-dessous ne s'appliquerait donc jamais à
-    // l'ouverture, et la fenêtre garderait sa taille initiale. On le rejoue à l'affichage.
+    // The first tab is selected during construction, while `view.window` is still nil:
+    // the resize below would therefore never apply on opening, and the window would keep
+    // its initial size. We replay it when the view appears.
     override func viewDidAppear() {
         super.viewDidAppear()
         fit(to: tabViewItems[safe: selectedTabViewItemIndex])
@@ -235,10 +235,10 @@ final class SettingsTabController: NSTabViewController {
     private func fit(to item: NSTabViewItem?) {
         guard let win = view.window else { return }
         win.title = T("settings.title", "readyset Settings")
-        // La fenêtre garderait sinon la hauteur de l'onglet le plus haut, laissant un grand
-        // vide sous les onglets plus courts. On la retaille sur le contenu réel, en gardant
-        // le bord HAUT fixe : `setFrame` ancre en bas, donc sans compenser l'origine la
-        // fenêtre semblerait sauter vers le haut à chaque changement d'onglet.
+        // The window would otherwise keep the height of the tallest tab, leaving a big gap
+        // under the shorter tabs. We resize it to the real content, keeping the TOP edge
+        // fixed: `setFrame` anchors at the bottom, so without compensating the origin the
+        // window would seem to jump upwards on every tab change.
         guard let page = item?.viewController?.view else { return }
         let size = NSSize(width: max(page.fittingSize.width, win.contentLayoutRect.width),
                           height: page.fittingSize.height)
@@ -250,8 +250,8 @@ final class SettingsTabController: NSTabViewController {
 }
 
 extension Array {
-    /// Indice tolérant : `selectedTabViewItemIndex` vaut -1 tant qu'aucun onglet n'est
-    /// sélectionné, ce qui ferait planter un accès direct.
+    /// Forgiving index: `selectedTabViewItemIndex` is -1 as long as no tab is selected,
+    /// which would crash a direct access.
     subscript(safe i: Int) -> Element? { indices.contains(i) ? self[i] : nil }
 }
 
@@ -270,33 +270,33 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     var baseSymbol: NSImage?
     var borders: [(win: NSWindow, view: BorderView)] = []
     var alarms: [(win: NSPanel, view: AlarmView)] = []
-    /// Ce qui a lâché depuis la dernière ardoise propre — voir alarm.swift.
+    /// What has broken since the last clean slate — see alarm.swift.
     var alarm = AlarmState()
     var pills: [(win: NSPanel, bar: PillBar)] = []
     var current: RigStatus = .ok
     var curWarns = 0, curFails = 0
-    /// Le mode DEMANDÉ (auto | live | studio) — c'est bien le demandé et non le résolu :
-    /// « Auto » doit rester coché quand il choisit studio tout seul, sinon le menu laisse
-    /// croire qu'on a figé le mode à la main.
+    /// The REQUESTED mode (auto | live | studio) — the requested one, not the resolved one:
+    /// "Auto" must stay ticked when it picks studio by itself, otherwise the menu suggests
+    /// the mode has been pinned by hand.
     var requestedMode = "auto"
-    /// Mode EFFECTIF rendu par /api/state, à ne pas confondre avec `requestedMode` : en
-    /// « auto » le rig résout lui-même vers live ou studio, donc le mode DEMANDÉ ne dit
-    /// pas où on se trouve. `nil` = moteur injoignable, donc mode non prouvé.
+    /// EFFECTIVE mode returned by /api/state, not to be confused with `requestedMode`: in
+    /// "auto" the rig resolves to live or studio by itself, so the REQUESTED mode does not
+    /// say where we are. `nil` = engine unreachable, hence mode not proven.
     var effectiveMode: String?
-    /// Alimentation du port qui porte le Stream Deck. `nil` = pas d'état prouvé : soit
-    /// sd-power est absent, soit ses ports ne sont pas figés, soit l'un d'eux ne répond
-    /// plus. Dans les trois cas on n'offre aucune action plutôt que d'en offrir une qui
-    /// échouerait en silence.
+    /// Power on the port carrying the Stream Deck. `nil` = no proven state: either
+    /// sd-power is missing, or its ports are not pinned down, or one of them no longer
+    /// answers. In all three cases we offer no action rather than offering one that would
+    /// fail in silence.
     var streamDeckPowered: Bool?
-    /// Le bouton des Réglages, gardé pour pouvoir réécrire son libellé à chaque sondage.
+    /// The Settings button, kept so its label can be rewritten on every poll.
     private var sdButton: NSButton?
     var problems: [Problem] = []
     var lastFixAttempt: [String: Date] = [:]     // auto-fix throttle: don't re-fire a key within 60 s
     var settingsWin: NSWindow?                    // the classic Settings window
 
-    /// L'adresse du moteur. Surchargeable par RIG_URL — c'est ce qui rend une ALERTE
-    /// vérifiable : on la pointe vers un faux moteur qui passe du vert au rouge à la
-    /// demande, au lieu de devoir casser le vrai rig pour voir si le signal part.
+    /// The engine's address. Overridable by RIG_URL — that is what makes an ALERT
+    /// testable: point it at a fake engine that goes from green to red on demand, instead
+    /// of having to break the real rig to see whether the signal fires.
     let url = ProcessInfo.processInfo.environment["RIG_URL"] ?? "http://127.0.0.1:8765"
     var stateURL: String { url + "/api/state" }
     var fixURL: String { url + "/api/fix" }
@@ -315,9 +315,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         refresh()
         let t = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
             self?.refresh()
-            // Sondé au même rythme plutôt qu'à l'ouverture du menu : `fill(_:)` reconstruit
-            // tout d'un bloc et de façon synchrone, il ne peut donc pas attendre un appel
-            // externe. Le coût est un uhubctl toutes les 5 s, mesuré à 0,1 s.
+            // Polled at the same rate rather than on menu opening: `fill(_:)` rebuilds
+            // everything in one synchronous block, so it cannot wait for an external call.
+            // The cost is one uhubctl every 5 s, measured at 0.1 s.
             self?.refreshStreamDeck()
         }
         RunLoop.main.add(t, forMode: .common); timer = t
@@ -339,18 +339,18 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let bv = BorderView(frame: NSRect(origin: .zero, size: screen.frame.size))
             bw.contentView = bv; borders.append((bw, bv))
 
-            // L'alarme a sa PROPRE fenêtre plutôt que d'enrichir le liseré : le cadre y
-            // clignote, le panneau y reste fixe, et elle porte un bouton — trois choses que
-            // le liseré ne fait pas.
+            // The alarm gets its OWN window rather than enriching the border: the frame
+            // flashes there, the panel stays fixed there, and it carries a button — three
+            // things the border does not do.
             //
-            // Un PANNEAU NON ACTIVANT, comme la pastille, et pour la même raison : cliquer
-            // « Corriger » ne doit PAS passer Ableton au second plan. Une fenêtre ordinaire
-            // aurait activé l'app à chaque clic — et sur scène, perdre le premier plan
-            // d'Ableton coûte plus cher que la panne qu'on répare.
+            // A NON-ACTIVATING PANEL, like the pill, and for the same reason: clicking
+            // "Fix" must NOT push Ableton to the background. An ordinary window would have
+            // activated the app on every click — and on stage, losing Ableton's foreground
+            // costs more than the failure being repaired.
             //
-            // `ignoresMouseEvents` reste FAUX (le bouton doit recevoir son clic) : c'est
-            // `hitTest` de la vue qui rend `nil` partout ailleurs, donc tout ce qui n'est pas
-            // le bouton traverse la vitre comme s'il n'y avait rien.
+            // `ignoresMouseEvents` stays FALSE (the button must receive its click): it is
+            // the view's `hitTest` that returns `nil` everywhere else, so anything that is
+            // not the button passes through the glass as if there were nothing there.
             let aw = NSPanel(contentRect: screen.frame, styleMask: [.nonactivatingPanel, .borderless],
                              backing: .buffered, defer: false)
             configureFloatingPanel(aw)
@@ -358,8 +358,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let av = AlarmView(frame: NSRect(origin: .zero, size: screen.frame.size))
             av.card.onFix = { [weak self] in self?.fixAlarm() }
             av.card.onStop = { [weak self] in self?.silenceAlarm() }
-            // Cinq minutes : assez pour finir le morceau en cours et le suivant, trop peu
-            // pour qu'une panne se fasse oublier jusqu'à la fin du set.
+            // Five minutes: enough to finish the current song and the next one, too little
+            // for a failure to be forgotten until the end of the set.
             av.card.onSnooze = { [weak self] in self?.snoozeAlarm(300) }
             av.card.onConfirmCharge = { [weak self] in self?.confirmCharge() }
             aw.contentView = av; alarms.append((aw, av))
@@ -386,17 +386,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return t.count <= n ? t : String(t.prefix(n - 1)) + "…"
     }
 
-    /// Largeur visée pour une ligne de la section « problèmes », en caractères. Au-delà,
-    /// macOS élargit le menu jusqu'à sa limite puis tronque — et c'est la fin de la ligne,
-    /// donc l'explication, qui saute. Ce qui ne rentre pas passe en info-bulle.
+    /// Target width for a line of the "problems" section, in characters. Beyond it, macOS
+    /// widens the menu up to its limit then truncates — and it is the end of the line, so
+    /// the explanation, that is dropped. What does not fit moves into the tooltip.
     private let menuTitleBudget = 56
-    /// Range des libellés courts sur le moins de lignes possible sans dépasser `width`
-    /// caractères. Sert aux gestes du soundcheck : les huit tiennent en deux lignes au
-    /// lieu de huit, et le menu ne se déroule plus sur tout l'écran pour deux mots par
-    /// ligne. La largeur est calée sur la ligne du check juste au-dessus (~75 caractères,
-    /// titre + décompte + icônes) : au-delà, ce sont ces lignes-ci qui décideraient de la
-    /// largeur du menu. Le compte de caractères vaut ce qu'il vaut avec une police
-    /// proportionnelle — on ne cherche pas l'alignement, juste à ne pas déborder.
+    /// Packs short labels onto as few lines as possible without exceeding `width`
+    /// characters. Used for the soundcheck gestures: the eight of them fit on two lines
+    /// instead of eight, and the menu no longer unrolls down the whole screen for two
+    /// words per line. The width is set on the check line just above (~75 characters,
+    /// title + count + icons): beyond that, these very lines would be the ones deciding
+    /// the menu's width. A character count is worth what it is worth with a proportional
+    /// font — we are not after alignment, only after not overflowing.
     private func packed(_ items: [String], width: Int) -> [String] {
         var rows: [String] = []
         var cur = ""
@@ -412,9 +412,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // ---- Poll --------------------------------------------------------------
     var paused: Bool { Pref.on(Pref.paused, default: false) }
 
-    /// Entrer ou sortir de pause. En entrant on DÉMONTE ce qui est à l'écran au lieu
-    /// d'attendre le prochain tour : sans ça le cadre et la pastille resteraient affichés,
-    /// et la pause ne tiendrait pas sa promesse — ne plus rien montrer.
+    /// Enter or leave pause. On entering we TEAR DOWN what is on screen instead of
+    /// waiting for the next round: without that the border and the pill would stay
+    /// displayed, and the pause would not keep its promise — to show nothing any more.
     @objc func togglePause() {
         Pref.set(Pref.paused, !paused)
         if paused { alarm.silence() }
@@ -467,8 +467,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
             DispatchQueue.main.async {
                 self?.requestedMode = wantedMode
-                // Repasse à nil quand le moteur n'a pas répondu : sans ça un dernier mode
-                // connu périmé autoriserait une coupure sur une information morte.
+                // Back to nil when the engine did not answer: without that a stale
+                // last-known mode would authorise a power cut on dead information.
                 self?.effectiveMode = liveMode
                 self?.apply(status, warns: warns, fails: fails, problems: probs)
             }
@@ -479,10 +479,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let old = current
         current = status; curWarns = warns; curFails = fails; self.problems = problems
 
-        // Ce que l'alarme surveille : les bloquants toujours, les avertissements seulement
-        // si on a demandé à les voir. Le même réglage commande donc les deux surfaces —
-        // masquer les oranges dans la liste et se les prendre en plein écran serait une
-        // contradiction, et c'est la surface la plus voyante qui perdrait la confiance.
+        // What the alarm watches: blockers always, warnings only if they were asked for.
+        // The same setting therefore drives both surfaces — hiding the oranges in the list
+        // and then taking them full screen would be a contradiction, and it is the most
+        // conspicuous surface that would lose the trust.
         let watched = problems.filter { $0.status == "fail" || Pref.on(Pref.warnings, default: true) }
         alarm.update(status: status, problems: watched)
 
@@ -534,7 +534,7 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // ---- Overlays ----------------------------------------------------------
     private func applyOverlay() {
-        // En pause, aucun des trois affichages ne sort — c'est le sens même de la pause.
+        // While paused, none of the three displays comes out — that is what pause means.
         let showBorder = !paused && Pref.on(Pref.border, default: true) && current.showsOverlay
         let showPill = !paused && Pref.on(Pref.pill, default: true) && current.showsOverlay
         let showAlarm = !paused && Pref.on(Pref.alarm, default: true) && alarm.firing
@@ -577,9 +577,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         summary.font = .systemFont(ofSize: 14, weight: .bold); summary.textColor = .white
         bar.stack.addArrangedSubview(summary)
 
-        // Le MÊME geste unique que le menu (2026-08-22) : deux surfaces qui proposaient
-        // deux verbes et deux portées, c'était une hésitation de plus au moment où il en
-        // faut zéro. La barre ne s'affiche que quand ça cloche — la condition est acquise.
+        // The SAME single gesture as the menu (2026-08-22): two surfaces offering two
+        // verbs and two scopes was one more hesitation at the moment when zero is needed.
+        // The bar only shows when something is wrong — the condition is already met.
         bar.stack.addArrangedSubview(barButton("wand.and.stars", "Tout préparer",
                                                "Lancer les apps, appliquer tous les correctifs, re-vérifier",
                                                #selector(prepareAll), green: true))
@@ -624,30 +624,30 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Interactions ------------------------------------------------------
-    /// Le détail, au clic sur la barre flottante : le MÊME menu que l'icône de la barre
-    /// de menus. Avant, c'était un panneau translucide posé sous la barre — illisible sur
-    /// un fond clair, et une surface de plus à maintenir en parallèle du menu. Un menu
-    /// natif est opaque, lisible partout, et porte déjà chaque correctif ; le dashboard
-    /// reste à un cran, en tête de liste.
+    /// The details, on a click on the floating bar: the SAME menu as the menu-bar icon.
+    /// Before, it was a translucent panel laid under the bar — unreadable on a light
+    /// background, and one more surface to maintain alongside the menu. A native menu is
+    /// opaque, readable everywhere, and already carries every fix; the dashboard stays
+    /// one notch away, at the top of the list.
     @objc func showDetails(_ sender: NSButton) {
         let menu = NSMenu()
         fill(menu)
-        // Point en coordonnées ÉCRAN (`in: nil`) : passer la vue laisse macOS caler la
-        // liste sur le point et déborder l'en-tête au-dessus du bord haut — la barre est
-        // collée en haut de l'écran — d'où une flèche de défilement et un titre invisible.
+        // Point in SCREEN coordinates (`in: nil`): passing the view lets macOS pin the
+        // list on the point and push the header above the top edge — the bar is stuck to
+        // the top of the screen — hence a scroll arrow and an invisible title.
         guard let win = sender.window else { return }
         let r = win.convertToScreen(sender.convert(sender.bounds, to: nil))
         menu.popUp(positioning: nil, at: NSPoint(x: r.minX, y: r.minY - 6), in: nil)
     }
 
     @objc func applyFix(_ sender: NSMenuItem) { if let k = sender.representedObject as? String { runFix(k) } }
-    /// POSTe une action du moteur, puis rafraîchit.
+    /// POSTs an engine action, then refreshes.
     ///
-    /// Le menu et les boutons du dashboard tapent EXACTEMENT les mêmes endpoints : c'est
-    /// la seule façon d'avoir les mêmes actions des deux côtés sans qu'une liste dérive
-    /// de l'autre. Sur scène on n'ouvre pas une page web pour ranger des fenêtres, et
-    /// devoir se rappeler laquelle des deux surfaces sait faire quoi est exactement ce
-    /// qu'on veut éviter.
+    /// The menu and the dashboard buttons hit EXACTLY the same endpoints: that is the
+    /// only way to have the same actions on both sides without one list drifting from
+    /// the other. On stage you do not open a web page to tidy windows, and having to
+    /// remember which of the two surfaces knows how to do what is exactly what we want
+    /// to avoid.
     private func act(_ path: String, _ body: [String: Any] = [:]) {
         guard let u = URL(string: url + path) else { return }
         var rq = URLRequest(url: u); rq.httpMethod = "POST"; rq.timeoutInterval = 120
@@ -658,17 +658,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }.resume()
     }
 
-    /// L'action unique : lance tout, répare, range, re-vérifie. Voir /api/preflight.
+    /// The single action: launch everything, repair, tidy, re-check. See /api/preflight.
     @objc func prepareAll() { act("/api/preflight", ["dry": false]) }
     @objc func setModeAuto() { act("/api/mode", ["mode": "auto"]) }
     @objc func setModeLive() { act("/api/mode", ["mode": "live"]) }
     @objc func setModeStudio() { act("/api/mode", ["mode": "studio"]) }
-    /// Le seul check que le Mac ne peut pas mesurer : on le déclare.
+    /// The only check the Mac cannot measure: we declare it.
     @objc func confirmCharge() { act("/api/manual", ["key": "iphone_charge", "value": true]) }
 
-    /// Ferme les applis dont le rig n'a pas besoin — APRÈS confirmation nommant chacune.
-    /// Une app peut tenir un document non enregistré ; c'est la seule action du menu qui
-    /// puisse faire perdre du travail, donc la seule qui pose une question.
+    /// Quits the apps the rig does not need — AFTER a confirmation naming each one.
+    /// An app may be holding an unsaved document; this is the only action in the menu
+    /// that can make work be lost, hence the only one that asks a question.
     @objc func quitOthers() {
         guard let u = URL(string: stateURL) else { return }
         URLSession.shared.dataTask(with: u) { [weak self] data, _, _ in
@@ -709,29 +709,28 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fill(menu)
     }
 
-    /// Le contenu du menu, construit une seule fois pour l'icône de la barre de menus ET
-    /// pour la barre flottante : deux listes séparées finiraient par diverger, et il
-    /// faudrait se rappeler laquelle des deux sait faire quoi — exactement ce qu'on veut
-    /// éviter un soir de concert.
+    /// The menu's content, built once for the menu-bar icon AND for the floating bar:
+    /// two separate lists would end up diverging, and one would have to remember which
+    /// of the two knows how to do what — exactly what we want to avoid on a gig night.
     private func fill(_ menu: NSMenu) {
         menu.removeAllItems()
-        // Validation explicite : ouvert depuis la barre flottante (une fenêtre qui ne
-        // devient jamais active), l'auto-activation de macOS grise des entrées pourtant
-        // valides — le sous-menu Mode, entre autres. Nos cibles sont toutes posées à la
-        // main, donc on décide nous-mêmes : seuls l'en-tête et le « tout est ok » sont
-        // désactivés, plus bas.
+        // Explicit validation: opened from the floating bar (a window that never becomes
+        // active), macOS auto-enabling greys out entries that are nevertheless valid — the
+        // Mode submenu, among others. Our targets are all set by hand, so we decide for
+        // ourselves: only the header and the "everything is ok" line are disabled, further
+        // down.
         menu.autoenablesItems = false
         let head = NSMenuItem(title: "🎹 Rig — \(current.label)", action: nil, keyEquivalent: "")
         head.isEnabled = false; menu.addItem(head)
         menu.addItem(.separator())
 
-        // Le dashboard en premier (2026-08-20) : c'est la sortie vers TOUT le reste — les
-        // détails qu'une ligne de menu tronque, le journal, les courbes. Une seule entrée
-        // pour la fenêtre web, d'ailleurs : le journal des actions vit dans la même page,
-        // donc deux lignes ouvraient exactement la même URL.
-        // L'extinction de l'alarme passe en TÊTE, au-dessus même du dashboard : c'est la
-        // seule entrée qu'on cherche à tâtons pendant que l'écran clignote, et elle
-        // n'existe que dans ce cas-là.
+        // The dashboard first (2026-08-20): it is the way out to EVERYTHING else — the
+        // details a menu line truncates, the log, the curves. A single entry for the web
+        // window, by the way: the action log lives in the same page, so two lines opened
+        // exactly the same URL.
+        // Silencing the alarm goes to the TOP, above even the dashboard: it is the only
+        // entry one gropes for while the screen is flashing, and it only exists in that
+        // case.
         if alarm.firing {
             add(menu, T("menu.silence", "🔕 Silence the alarm"), #selector(silenceAlarm),
                 tip: T("menu.silence.tip",
@@ -743,15 +742,15 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         add(menu, T("menu.dashboard", "🌐 Open the dashboard"), #selector(open))
         menu.addItem(.separator())
 
-        // Les actions d'abord, le détail des problèmes en bas (2026-08-20) : sa longueur
-        // varie — huit gestes de soundcheck manquants, et il poussait les actions hors de
-        // portée. Sous elles, chaque action garde la même place d'un soir à l'autre.
-        // Réglages et Quitter restent tout en dernier, à la place que macOS leur donne
-        // partout ailleurs : le détail se glisse AU-DESSUS d'eux, pas après.
-        // Le menu porte les MÊMES actions que la barre du dashboard, en sections : d'abord
-        // le mode, puis LA seule action à connaître, puis ce qui cloche, puis les gestes
-        // ponctuels qui y répondent. Ce découpage est le même dans les deux surfaces ;
-        // c'est ce qui permet de ne pas avoir à se rappeler où est quoi.
+        // Actions first, the detail of the problems at the bottom (2026-08-20): its length
+        // varies — eight missing soundcheck gestures, and it pushed the actions out of
+        // reach. Below them, each action keeps the same place from one night to the next.
+        // Settings and Quit stay right at the end, in the place macOS gives them
+        // everywhere else: the detail slips in ABOVE them, not after.
+        // The menu carries the SAME actions as the dashboard's bar, in sections: first the
+        // mode, then THE one action to know about, then what is wrong, then the one-off
+        // gestures that answer it. This split is the same on both surfaces; that is what
+        // makes it unnecessary to remember where anything is.
         let mode = NSMenuItem(title: T("menu.mode", "Mode"), action: nil, keyEquivalent: "")
         let sub = NSMenu()
         for (title, sel, key) in [(T("mode.auto", "🅰 Auto"), #selector(setModeAuto), "auto"),
@@ -760,22 +759,22 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let mi = NSMenuItem(title: title, action: sel, keyEquivalent: "")
             mi.target = self; mi.state = (requestedMode == key) ? .on : .off
             sub.addItem(mi)
-            // « Auto » coché ne dit pas OÙ il a atterri, et c'est pourtant la seule chose
-            // qui compte avant de brancher : le rig résout tout seul vers live ou studio.
-            // La ligne se colore aux mêmes teintes que le dashboard (bleu = studio, ambre
-            // = live) pour que la couleur veuille dire la même chose sur les deux surfaces.
+            // "Auto" ticked does not say WHERE it landed, and yet that is the only thing
+            // that counts before plugging in: the rig resolves to live or studio by itself.
+            // The line is coloured in the same hues as the dashboard (blue = studio, amber
+            // = live) so that the colour means the same thing on both surfaces.
             if key == "auto" && requestedMode == "auto" {
                 sub.addItem(resolvedModeItem())
             }
         }
-        // Activation explicite : validation manuelle oblige, un parent de sous-menu sans
-        // action resterait grisé — et macOS masque alors sa flèche.
+        // Explicit enabling: manual validation obliges, a submenu parent with no action
+        // would stay greyed out — and macOS then hides its arrow.
         mode.submenu = sub; mode.isEnabled = true; menu.addItem(mode)
 
-        // CE QUI RESTE À PRÉPARER D'ABORD, le geste qui le fera ensuite (2026-08-22) :
-        // une ligne par problème, son correctif dans le titre — cliquer la ligne le lance.
-        // Le bouton était au-dessus ; on le lisait donc avant de savoir s'il y avait lieu
-        // de le cliquer, et il restait proposé sur un rig déjà prêt.
+        // WHAT IS LEFT TO PREPARE FIRST, the gesture that will do it next (2026-08-22):
+        // one line per problem, its fix in the title — clicking the line runs it.
+        // The button used to be above; it was therefore read before knowing whether there
+        // was any reason to click it, and it stayed on offer on an already-ready rig.
         menu.addItem(.separator())
         let probs = Pref.on(Pref.warnings, default: true) ? problems : problems.filter { $0.status == "fail" }
         if probs.isEmpty {
@@ -784,48 +783,48 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false; menu.addItem(none)
         }
-        // DEUX SECTIONS, par NATURE D'ACTION (2026-08-22, demande de Benoît) — et non
-        // plus par domaine. Grouper par domaine disait de quoi ça parle ; ça ne disait
-        // pas qui doit bouger, qui est la seule question qu'on se pose en ouvrant ce
-        // menu. Les deux sections répondent chacune à un geste : cliquer le bouton, ou
-        // se lever. Le domaine n'est pas perdu pour autant — il passe en préfixe gris
-        // sur la ligne, où il coûte zéro ligne de menu.
+        // TWO SECTIONS, by NATURE OF THE ACTION (requested on 2026-08-22) — and no
+        // longer by domain. Grouping by domain said what it was about; it did not say
+        // who has to move, which is the only question one asks when opening this
+        // menu. Each of the two sections answers one gesture: click the button, or
+        // get up. The domain is not lost for all that — it becomes a grey prefix on
+        // the line, where it costs zero menu lines.
         //
-        // Le bouton vit DANS la section qu'il répare : c'est ce qui le rend lisible d'un
-        // coup d'œil (« voilà ce qu'il va faire, et le voilà »). S'il n'y a rien
-        // d'automatique à faire, la section n'existe pas, donc le bouton non plus — un
-        // « Tout préparer » sous une liste de gestes humains ne promettrait rien.
+        // The button lives INSIDE the section it repairs: that is what makes it readable
+        // at a glance ("here is what it will do, and here it is"). If there is nothing
+        // automatic to do, the section does not exist, so neither does the button — a
+        // "Tout préparer" under a list of human gestures would promise nothing.
         let ordered = probs.filter { $0.parts.isEmpty } + probs.filter { !$0.parts.isEmpty }
         let fixable = ordered.filter { $0.remedy != nil && !$0.manual }
         let byHand  = ordered.filter { $0.remedy == nil || $0.manual }
 
         if fixable.isEmpty {
-            // « Rien à réparer » se DIT, sinon la section disparaît sans qu'on sache si
-            // elle est vide ou si le menu a oublié quelque chose — et c'est la bonne
-            // nouvelle du soir : tout ce qui pouvait se régler tout seul l'est déjà.
+            // "Nothing to repair" is SAID, otherwise the section disappears without one
+            // knowing whether it is empty or whether the menu forgot something — and it is
+            // the good news of the night: all that could settle itself already has.
             let none = NSMenuItem(title: T("menu.autoOk", "✅ Automatic settings are fine"),
                                   action: nil, keyEquivalent: "")
             none.isEnabled = false; menu.addItem(none)
         } else {
             menu.addItem(sectionHead(T("menu.sec.fixable", "Fixable automatically")))
             for p in fixable { addProblem(menu, p) }
-            // Le bouton PORTE SON COMPTE (2026-08-22, demande de Benoît) : « Tout
-            // préparer » avait l'air d'un geste à faire même quand il n'avait rien à
-            // faire. « Réparer 2 points » dit ce qui va se passer, et le fait qu'il
-            // n'apparaisse plus du tout quand ce compte tombe à zéro n'est alors plus
-            // une disparition mystérieuse mais la suite logique.
+            // The button CARRIES ITS COUNT (requested on 2026-08-22): "Tout
+            // préparer" looked like a gesture to perform even when it had nothing
+            // to do. "Fix 2 points" says what is going to happen, and the fact that
+            // it no longer appears at all when that count drops to zero is then no
+            // longer a mysterious disappearance but the logical follow-on.
             let label = String(format: fixable.count == 1 ? T("menu.fixOne", "✨ Fix %d point")
                                                           : T("menu.fixN", "✨ Fix %d points"),
                                fixable.count)
             let go = NSMenuItem(title: label, action: #selector(prepareAll), keyEquivalent: "")
             go.target = self
-            // Indenté avec les lignes qu'il répare, et en gras : un geste, sous ce qu'il
-            // fait. Posé hors section, il se lisait comme un constat de plus (22/08).
+            // Indented with the lines it repairs, and in bold: a gesture, under what it
+            // does. Placed outside the section, it read as one more observation (22/08).
             go.indentationLevel = 1
             go.attributedTitle = NSAttributedString(string: label, attributes: [
                 .font: NSFont.boldSystemFont(ofSize: NSFont.menuFont(ofSize: 0).pointSize)])
             go.toolTip = T("menu.prepare.tip", """
-                           Launches the readyset apps, opens the set, tidies the windows, then applies \
+                           Launches the rig apps, opens the set, tidies the windows, then applies \
                            every fix it can — and re-checks everything. The ✋ lines stay yours to do.
                            """)
             menu.addItem(go)
@@ -839,10 +838,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         menu.addItem(.separator())
 
-        // Les deux gestes ponctuels APRÈS la liste (2026-08-20) : ce sont des réponses à
-        // ce qu'on vient d'y lire — « iPhone pas en charge », « une app de trop est
-        // ouverte ». Au-dessus, on les lisait avant de savoir s'il y avait lieu de les
-        // faire ; en dessous, la main descend de la ligne rouge vers son geste.
+        // The two one-off gestures AFTER the list (2026-08-20): they are answers to what
+        // one has just read in it — "iPhone not charging", "one app too many is open".
+        // Above, they were read before knowing whether there was any reason to perform
+        // them; below, the hand comes down from the red line towards its gesture.
         add(menu, T("menu.charge", "🔋 Confirm the iPhone is charging"), #selector(confirmCharge))
         add(menu, T("menu.quitOthers", "🧹 Quit the other apps…"), #selector(quitOthers))
         menu.addItem(.separator())
@@ -850,9 +849,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let settings = NSMenuItem(title: T("menu.settings", "⚙︎ Settings…"),
                                   action: #selector(showSettings), keyEquivalent: ",")
         settings.target = self; menu.addItem(settings)
-        // Plus de « Quitter » : l'app est un filet de sécurité, et un filet qu'on peut
-        // fermer par mégarde ne protège plus. Ce qu'on veut vraiment quand on clique
-        // Quitter, c'est qu'elle cesse de se manifester — c'est exactement la pause.
+        // No more "Quit": the app is a safety net, and a net one can close by mistake no
+        // longer protects. What one really wants when clicking Quit is for it to stop
+        // making itself heard — which is exactly what the pause is.
         add(menu, paused ? T("menu.resume", "▶︎ Resume monitoring")
                          : T("menu.pause", "⏸ Pause — stop reacting to anything"),
             #selector(togglePause))
@@ -866,11 +865,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    /// Fenêtre Réglages en ONGLETS (NSTabViewController style .toolbar) — le gabarit
-    /// natif des Réglages macOS. Avant : les trois sections empilées dans une seule
-    /// colonne, soit 732 px de haut une fois les explications ajoutées. Les onglets
-    /// ramènent chaque page à sa propre hauteur et la fenêtre se redimensionne toute
-    /// seule en changeant d'onglet.
+    /// Settings window in TABS (NSTabViewController, .toolbar style) — the native
+    /// template of macOS Settings. Before: the three sections stacked in a single
+    /// column, i.e. 732 px tall once the explanations had been added. Tabs bring each
+    /// page back to its own height and the window resizes all by itself when changing
+    /// tab.
     private func makeSettingsWindow() -> NSWindow {
         let tabs = SettingsTabController()
         tabs.tabStyle = .toolbar
@@ -930,29 +929,29 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let w = NSWindow(contentViewController: tabs)
         w.title = T("settings.title", "readyset Settings")
         w.isReleasedWhenClosed = false
-        // .resizable : la largeur venait de `fittingSize`, qui sous-estime un NSGridView
-        // imbriqué dans un NSStackView — d'où du texte rogné à droite dès qu'un libellé
-        // s'allonge. Rester redimensionnable évite que le prochain libellé un peu long
-        // re-produise le bug.
+        // .resizable: the width came from `fittingSize`, which underestimates an NSGridView
+        // nested in an NSStackView — hence text clipped on the right as soon as a label
+        // gets longer. Staying resizable keeps the next slightly long label from
+        // reproducing the bug.
         w.styleMask.insert(.resizable)
-        w.styleMask.remove(.miniaturizable)   // une fenêtre de réglages ne se réduit pas
+        w.styleMask.remove(.miniaturizable)   // a settings window does not minimise
         return w
     }
 
-    /// Une page d'onglet : les vues empilées, avec les marges des Réglages macOS.
+    /// One tab page: the views stacked, with the margins of macOS Settings.
     private func settingsPage(_ views: [NSView]) -> NSView {
-        // Cale flexible en dernier : la fenêtre prend la hauteur de l'onglet le PLUS haut,
-        // et sans cette cale le NSGridView se dilate pour occuper le surplus — d'où des
-        // trous entre les lignes du plus court. La cale absorbe tout l'excédent, les
-        // réglages restent collés en haut, quel que soit l'onglet.
+        // Flexible spacer last: the window takes the height of the TALLEST tab, and
+        // without this spacer the NSGridView expands to fill the surplus — hence gaps
+        // between the rows of the shortest one. The spacer absorbs all the excess, the
+        // settings stay stuck to the top, whatever the tab.
         let filler = NSView()
         filler.setContentHuggingPriority(.init(1), for: .vertical)
         let stack = NSStackView(views: views + [filler])
         stack.orientation = .vertical; stack.alignment = .leading; stack.spacing = 20
         stack.edgeInsets = NSEdgeInsets(top: 20, left: 24, bottom: 20, right: 24)
         for v in views { v.setContentHuggingPriority(.required, for: .vertical) }
-        // Plancher de largeur : la largeur d'enroulement des explications (330) + la colonne
-        // des icônes + celle de l'interrupteur + les marges.
+        // Width floor: the wrapping width of the explanations (330) + the icon column
+        // + the switch column + the margins.
         stack.widthAnchor.constraint(greaterThanOrEqualToConstant: 470).isActive = true
         return stack
     }
@@ -974,10 +973,10 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private struct Row {
         let icon: String, label: String, hint: String, key: String, def: Bool
         let warning: Bool, onChange: () -> Void
-        /// Un contrôle POSÉ À GAUCHE de la bascule, pour un réglage qui commande aussi une
-        /// action immédiate — l'alimentation du Stream Deck, seul cas à ce jour. Deux
-        /// lignes séparées diraient moins bien qu'il s'agit d'une seule chose : la bascule
-        /// autorise le pilotage, le bouton l'exerce.
+        /// A control PLACED TO THE LEFT of the toggle, for a setting that also drives an
+        /// immediate action — the Stream Deck's power, the only case so far. Two separate
+        /// rows would say less well that this is a single thing: the toggle authorises the
+        /// control, the button exercises it.
         let extra: (() -> NSView)?
         init(_ icon: String, _ label: String, _ hint: String, _ key: String, _ def: Bool,
              warning: Bool = false, extra: (() -> NSView)? = nil, _ onChange: @escaping () -> Void) {
@@ -986,16 +985,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Plus de titre de section : l'onglet le porte déjà. Le répéter au-dessus de la
-    /// grille ferait doublon avec le libellé de l'onglet sélectionné.
+    /// No more section title: the tab already carries it. Repeating it above the grid
+    /// would duplicate the label of the selected tab.
     private func settingsSection(_ rows: [Row]) -> NSView {
         let box = NSStackView(); box.orientation = .vertical; box.alignment = .leading; box.spacing = 10
         let grid = NSGridView(); grid.translatesAutoresizingMaskIntoConstraints = false
         grid.rowSpacing = 16; grid.columnSpacing = 14
         for row in rows {
-            // Colonne d'icônes : un symbole par réglage, en pastille teintée façon Réglages
-            // système. Ce n'est pas décoratif — c'est le repère qu'on retrouve d'un coup
-            // d'œil quand on revient changer UN réglage précis, sans relire les libellés.
+            // Icon column: one symbol per setting, in a tinted badge in the System Settings
+            // manner. It is not decorative — it is the landmark one finds again at a glance
+            // when coming back to change ONE precise setting, without re-reading the labels.
             let tint: NSColor = row.warning ? .systemOrange : .controlAccentColor
             let badge = NSView()
             badge.wantsLayer = true
@@ -1016,8 +1015,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 glyph.centerYAnchor.constraint(equalTo: badge.centerYAnchor),
             ])
 
-            // Le ⚠️ dans le libellé ferait doublon avec la pastille orange : la couleur du
-            // titre et celle de l'icône disent déjà « attention ».
+            // A ⚠️ in the label would duplicate the orange badge: the colour of the title
+            // and that of the icon already say "careful".
             let title = NSTextField(labelWithString: row.label)
             if row.warning { title.textColor = .systemOrange }
             let hint = NSTextField(labelWithString: row.hint)
@@ -1033,8 +1032,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let sw = PrefSwitch(); sw.key = row.key; sw.onChange = row.onChange
             sw.state = Pref.on(row.key, default: row.def) ? .on : .off
             sw.target = self; sw.action = #selector(switchToggled(_:))
-            // yPlacement est porté par la LIGNE, pas par la colonne : sans ça l'interrupteur
-            // se cale en haut du bloc titre+hint au lieu d'être centré en face.
+            // yPlacement is carried by the ROW, not by the column: without that the switch
+            // settles at the top of the title+hint block instead of being centred opposite.
             let control: NSView
             if let extra = row.extra {
                 let pair = NSStackView(views: [extra(), sw])
@@ -1092,29 +1091,29 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
     // KeepAlive=true would respawn a plain terminate, so bootout the LaunchAgent (stays quit
     // until next login, where RunAtLoad brings it back).
-    /// Quitter, pour de bon — mais seulement pour cette fois.
+    /// Quit, for good — but only this once.
     ///
-    /// C'était un `launchctl bootout` : la seule façon de ne pas être relancé, tant que
-    /// l'agent portait `KeepAlive: true`. Le prix en était caché et sévère — décharger
-    /// l'agent le laisse déchargé, donc readyset ne revenait plus AU LOGIN SUIVANT non plus,
-    /// et il fallait un `bootstrap` à la main pour s'en apercevoir.
+    /// It used to be a `launchctl bootout`: the only way not to be relaunched, as long as
+    /// the agent carried `KeepAlive: true`. The price was hidden and severe — unloading
+    /// the agent leaves it unloaded, so readyset no longer came back AT THE NEXT LOGIN
+    /// either, and a manual `bootstrap` was needed to notice it.
     ///
-    /// L'agent est passé à `KeepAlive: { SuccessfulExit: false }`, qui ne relance que sur
-    /// un code de sortie non nul. Une sortie propre suffit donc, et elle laisse le service
-    /// en place pour la prochaine ouverture de session. Ce qui tombe tout seul est encore
-    /// rattrapé ; ce qu'on ferme exprès reste fermé.
+    /// The agent moved to `KeepAlive: { SuccessfulExit: false }`, which only relaunches on
+    /// a non-zero exit code. A clean exit is therefore enough, and it leaves the service
+    /// in place for the next login session. What falls over on its own is still caught;
+    /// what one closes on purpose stays closed.
     @objc func quit() { NSApp.terminate(nil) }
 
     @objc func silenceAlarm() { alarm.silence(); applyOverlay() }
-    /// Le report revient tout seul : le sondage tourne toutes les 5 s et rappelle
-    /// `applyOverlay`, qui redemande `firing` — lequel regarde l'heure. Pas de minuterie à
-    /// armer, donc rien qui puisse se perdre si l'app est relancée entre-temps.
+    /// The snooze comes back on its own: the poll runs every 5 s and calls `applyOverlay`
+    /// again, which re-asks `firing` — which looks at the clock. No timer to arm, hence
+    /// nothing that could be lost if the app is relaunched in the meantime.
     func snoozeAlarm(_ seconds: TimeInterval) { alarm.snooze(seconds); applyOverlay() }
 
-    /// Le bouton du panneau : lance le remède de CHAQUE panne de l'alarme, et d'elles
-    /// seules. Pas `/api/preflight` (« Tout préparer ») — celui-là relance des apps et
-    /// rouvre le set, ce qu'on ne veut pas d'un bouton pressé en plein morceau parce que
-    /// l'alimentation a sauté. On répare ce qui vient de casser, rien de plus.
+    /// The panel's button: runs the remedy of EVERY failure in the alarm, and of those
+    /// alone. Not `/api/preflight` ("Tout préparer") — that one relaunches apps and
+    /// reopens the set, which is not what we want from a button pressed mid-song because
+    /// the power dropped. We repair what has just broken, nothing more.
     @objc func fixAlarm() {
         for p in alarm.fixable { runFix(p.key) }
     }
@@ -1132,17 +1131,17 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             UNNotificationRequest(identifier: "rig-change-\(current.rank)", content: c, trigger: nil))
     }
 
-    // ---- Alimentation du Stream Deck ---------------------------------------
+    // ---- Stream Deck power -------------------------------------------------
     //
-    // Les hubs internes du dock annoncent « ppps » (per-port power switching — couper le
-    // +5 V d'un port précis par une commande USB standard). `~/.local/bin/sd-power` envoie
-    // cette commande via uhubctl, sur le port qui porte le hub du Stream Deck : tout ce qui
-    // est branché derrière tombe avec lui.
+    // The dock's internal hubs advertise "ppps" (per-port power switching — cutting the
+    // +5 V of one precise port with a standard USB command). `~/.local/bin/sd-power` sends
+    // that command via uhubctl, on the port carrying the Stream Deck's hub: everything
+    // plugged in behind it falls with it.
     //
-    // Exécuté LOCALEMENT, et non par un POST vers /api comme le reste de ce menu. C'est
-    // délibéré : le cas où l'on veut le plus sûrement rétablir un Stream Deck coupé est
-    // celui où le moteur est à terre — le faire transiter par l'API le rendrait
-    // indisponible exactement quand il sert.
+    // Run LOCALLY, and not through a POST to /api like the rest of this menu. That is
+    // deliberate: the case where one most surely wants to restore a cut Stream Deck is
+    // the one where the engine is down — routing it through the API would make it
+    // unavailable exactly when it is of use.
 
     private var sdPowerPath: String { NSHomeDirectory() + "/.local/bin/sd-power" }
 
@@ -1159,8 +1158,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             var out = ""
             do {
                 try p.run()
-                // Lire AVANT waitUntilExit : attendre la fin du process d'abord
-                // interbloquerait les deux dès que la sortie remplit le tampon du tube.
+                // Read BEFORE waitUntilExit: waiting for the process to finish first
+                // would deadlock both as soon as the output fills the pipe's buffer.
                 let d = pipe.fileHandleForReading.readDataToEndOfFile()
                 p.waitUntilExit()
                 out = String(data: d, encoding: .utf8) ?? ""
@@ -1170,18 +1169,18 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     func refreshStreamDeck() {
-        // Option éteinte = aucun appel à uhubctl. Le sondage n'est pas gratuit : il touche
-        // le bus USB toutes les 5 s, ce qu'on ne fait pas pour une entrée qui ne s'affiche
-        // même pas.
+        // Option switched off = no call to uhubctl. The polling is not free: it touches
+        // the USB bus every 5 s, which we do not do for an entry that is not even being
+        // displayed.
         guard Pref.on(Pref.streamDeck, default: false) else {
             streamDeckPowered = nil
             updateStreamDeckButton()
             return
         }
         sdPower("status") { [weak self] out in
-            // Sortie vide et « inconnu » mènent au même endroit : aucun état prouvé, donc
-            // aucune action offerte. sd-power rend « inconnu » quand une cible de sa config
-            // ne répond plus — un port renuméroté, typiquement.
+            // Empty output and "inconnu" lead to the same place: no proven state, hence
+            // no action offered. sd-power returns "inconnu" when a target in its config no
+            // longer answers — a renumbered port, typically.
             if out.contains("État : on")       { self?.streamDeckPowered = true }
             else if out.contains("État : off") { self?.streamDeckPowered = false }
             else                               { self?.streamDeckPowered = nil }
@@ -1189,11 +1188,11 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// Le bouton PORTE l'état et la permission : pas d'action séparée couper/rallumer,
-    /// pas de boîte de dialogue. Il vit dans les Réglages et nulle part ailleurs
-    /// (2026-08-20) — le menu se lit en montant sur scène, et couper l'alimentation d'un
-    /// port USB n'est pas un geste de scène. La bascule d'à côté commande le sondage ;
-    /// sans elle, aucun état n'est connu et le bouton n'a rien à proposer.
+    /// The button CARRIES the state and the permission: no separate cut/restore action,
+    /// no dialog box. It lives in the Settings and nowhere else
+    /// (2026-08-20) — the menu is read while walking on stage, and cutting the power of a
+    /// USB port is not a stage gesture. The toggle next to it drives the polling;
+    /// without it, no state is known and the button has nothing to offer.
     private func makeStreamDeckButton() -> NSView {
         let b = NSButton(title: "", target: self, action: #selector(toggleStreamDeck))
         b.bezelStyle = .rounded
@@ -1203,8 +1202,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return b
     }
 
-    /// Rejoué à chaque sondage : la fenêtre Réglages n'est construite qu'une fois, donc
-    /// sans ça le bouton garderait le libellé qu'il avait à son ouverture.
+    /// Replayed on every poll: the Settings window is built only once, so without this
+    /// the button would keep the label it had when it was opened.
     private func updateStreamDeckButton() {
         guard let b = sdButton else { return }
         guard Pref.on(Pref.streamDeck, default: false) else {
@@ -1212,16 +1211,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         switch streamDeckPowered {
         case .some(false):
-            // Rallumer n'est JAMAIS bloqué : ni hors studio, ni moteur injoignable. Le
-            // garde-fou protège le geste risqué, pas le retour à l'état sûr — refuser un
-            // rallumage laisserait le Stream Deck mort sans issue.
+            // Restoring is NEVER blocked: not outside studio, not on an unreachable
+            // engine. The guardrail protects the risky gesture, not the return to the safe
+            // state — refusing a restore would leave the Stream Deck dead with no way out.
             b.title = T("sd.restore", "Restore"); b.isEnabled = true
         case .some(true) where effectiveMode == "studio":
             b.title = T("sd.cut", "Cut"); b.isEnabled = true
         case .some(true):
-            // Couper en live, c'est perdre le pilotage du set au pire moment. Un mode
-            // inconnu compte comme un refus : on ne peut alors PAS prouver qu'on n'est
-            // pas en live, et le doute doit pencher du côté qui ne casse pas le concert.
+            // Cutting in live means losing control of the set at the worst moment. An
+            // unknown mode counts as a refusal: one then CANNOT prove one is not in
+            // live, and the doubt must lean to the side that does not break the gig.
             let m = effectiveMode ?? T("sd.modeUnknown", "mode unknown")
             b.title = T("sd.studioOnly", "Studio only") + " (\(m))"; b.isEnabled = false
         case .none:
@@ -1230,35 +1229,35 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func toggleStreamDeck() {
-        // Revalidation au clic : le menu a pu être construit plusieurs secondes plus tôt et
-        // le mode bascule tout seul entre-temps. On ne coupe que sur un studio confirmé
-        // à cet instant ; sinon on se contente de rafraîchir, et le libellé dira pourquoi.
+        // Revalidation on click: the menu may have been built several seconds earlier and
+        // the mode may flip by itself in the meantime. We only cut on a studio confirmed
+        // at that instant; otherwise we merely refresh, and the label will say why.
         guard streamDeckPowered == false || effectiveMode == "studio" else {
             refreshStreamDeck(); return
         }
-        // « on »/« off » explicites plutôt que « toggle » : le script relirait l'état de
-        // son côté, ce qui rouvrirait la course que la revalidation ci-dessus vient de
-        // fermer.
+        // Explicit "on"/"off" rather than "toggle": the script would re-read the state
+        // on its own side, which would reopen the very race the revalidation above has
+        // just closed.
         sdPower(streamDeckPowered == false ? "on" : "off") { [weak self] _ in
             self?.refreshStreamDeck()
         }
     }
 
-    /// La ligne « voici où Auto a atterri ». Désactivée — il n'y a rien à cliquer, le mode
-    /// se choisit par les trois entrées au-dessus. La couleur passe par un attributedTitle :
-    /// un item désactivé est gris par défaut, et gris se lirait « indisponible » alors que
-    /// c'est l'information la plus utile du sous-menu.
+    /// The "here is where Auto landed" line. Disabled — there is nothing to click, the
+    /// mode is chosen through the three entries above. The colour goes through an
+    /// attributedTitle: a disabled item is grey by default, and grey would read as
+    /// "unavailable" whereas this is the most useful information in the submenu.
     private func resolvedModeItem() -> NSMenuItem {
-        // Mêmes teintes que le dashboard (--accent / --warn) : la couleur doit vouloir dire
-        // la même chose sur les deux surfaces, sinon elle n'apprend rien.
+        // Same hues as the dashboard (--accent / --warn): the colour must mean the same
+        // thing on both surfaces, otherwise it teaches nothing.
         let studio = NSColor(red: 0.29, green: 0.62, blue: 1.00, alpha: 1)   // #4a9eff
         let live   = NSColor(red: 0.96, green: 0.73, blue: 0.26, alpha: 1)   // #f4b942
         let text: String, colour: NSColor
         switch effectiveMode {
         case "studio": text = T("mode.resolved", "→ currently") + "  " + T("mode.studio", "🎧 Studio"); colour = studio
         case "live":   text = T("mode.resolved", "→ currently") + "  " + T("mode.live", "🎤 Live");     colour = live
-        // Moteur injoignable : le mode n'est pas prouvé. Gris, et c'est juste — là,
-        // l'information EST « on ne sait pas ».
+        // Engine unreachable: the mode is not proven. Grey, and rightly so — here, the
+        // information IS "we do not know".
         default:       text = T("mode.resolvedUnknown", "→ currently unknown"); colour = .secondaryLabelColor
         }
         let mi = NSMenuItem(title: text, action: nil, keyEquivalent: "")
@@ -1273,24 +1272,24 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     // ---- Menu helper -------------------------------------------------------
-    /// Une ligne de problème, telle qu'elle apparaît dans l'une ou l'autre section.
-    /// Extraite le 2026-08-22 quand la liste s'est scindée en deux : le même rendu des
-    /// deux côtés est la seule chose qui permette de comparer les deux colonnes d'un
-    /// coup d'œil.
+    /// One problem line, as it appears in either of the two sections.
+    /// Extracted on 2026-08-22 when the list split in two: the same rendering on both
+    /// sides is the only thing that makes it possible to compare the two columns at a
+    /// glance.
     private func addProblem(_ menu: NSMenu, _ p: Problem) {
-        // Le domaine en préfixe GRIS plutôt qu'en intertitre : il dit de quoi ça parle
-        // sans consommer une ligne de menu, et sans concurrencer la question qui structure
-        // désormais le menu — qui doit bouger.
+        // The domain as a GREY prefix rather than a subheading: it says what this is
+        // about without consuming a menu line, and without competing with the question
+        // that now structures the menu — who has to move.
         let dot = p.status == "fail" ? "🔴" : "🟠"
         let lead = p.group.isEmpty ? "" : "\(p.group) · "
-        // Le titre ne porte plus que le nom du check : le détail débordait et macOS le
-        // tronquait par la fin, donc par l'explication. Il vit dans l'info-bulle, où rien
-        // ne le coupe.
+        // The title now carries only the check's name: the detail overflowed and macOS
+        // truncated it from the end, hence from the explanation. It lives in the tooltip,
+        // where nothing cuts it.
         var title = "\(dot) \(lead)\(shorten(p.label, menuTitleBudget - lead.count - 8))"
-        // 🔧 = le bouton sait le faire ; ✋ = la ligne ouvre la porte, le geste reste à toi.
+        // 🔧 = the button can do it; ✋ = the line opens the door, the gesture stays yours.
         if let rem = p.remedy { title += "   \(p.manual ? "✋" : "🔧") \(shorten(rem, 22))" }
-        // Sans correctif, la ligne ouvre le dashboard plutôt que d'être inerte : macOS
-        // grise une ligne sans action, or c'est la lisibilité qu'on vient chercher.
+        // With no fix, the line opens the dashboard rather than being inert: macOS greys
+        // out a line with no action, and readability is precisely what we are after here.
         let mi = NSMenuItem(title: title,
                             action: p.remedy == nil ? #selector(open) : #selector(applyFix(_:)),
                             keyEquivalent: "")
@@ -1304,9 +1303,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
         mi.toolTip = p.detail.isEmpty ? p.label : "\(p.label)\n\(p.detail)"
         menu.addItem(mi)
-        // Un geste manquant n'est pas une panne : c'est une preuve qui manque, et rien à
-        // cliquer — d'où des lignes indentées sous leur check, sans action. Plusieurs par
-        // ligne : à huit gestes, une ligne chacun faisait la moitié du menu pour deux mots.
+        // A missing gesture is not a failure: it is a missing proof, and nothing to click
+        // — hence lines indented under their check, with no action. Several per line: at
+        // eight gestures, one line each made up half the menu for two words.
         for row in packed(p.parts.filter { !$0.ok }.map { "\($0.icon.isEmpty ? "◦" : $0.icon) \($0.name)" },
                           width: menuTitleBudget - 4) {
             let sub = NSMenuItem(title: row, action: nil, keyEquivalent: "")
@@ -1316,9 +1315,9 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    /// L'intertitre d'un domaine : petit, gris, non cliquable — il structure sans
-    /// prétendre être une action. Les groupes viennent du moteur, donc ils portent déjà
-    /// les mots du dashboard.
+    /// A domain's subheading: small, grey, not clickable — it structures without
+    /// claiming to be an action. The groups come from the engine, so they already carry
+    /// the dashboard's words.
     private func sectionHead(_ title: String) -> NSMenuItem {
         let mi = NSMenuItem(title: title, action: nil, keyEquivalent: "")
         mi.isEnabled = false
@@ -1328,8 +1327,8 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         return mi
     }
 
-    /// `tip` : ce que le geste fait vraiment, là où rien ne le tronque — un titre de menu,
-    /// macOS le coupe, et c'est toujours la fin qui saute, donc la nuance.
+    /// `tip`: what the gesture really does, where nothing truncates it — a menu title
+    /// gets cut by macOS, and it is always the end that is dropped, hence the nuance.
     private func add(_ menu: NSMenu, _ title: String, _ sel: Selector, tip: String? = nil) {
         let mi = NSMenuItem(title: title, action: sel, keyEquivalent: ""); mi.target = self
         mi.toolTip = tip
@@ -1337,16 +1336,16 @@ final class Delegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 }
 
-// Point d'entrée. `@main` plutôt que des instructions au premier niveau : dès qu'on
-// compile plus d'un fichier, Swift ne les accepte QUE dans un fichier nommé `main.swift`
-// — et renommer celui-ci aurait périmé tous les chemins qui le citent (build.sh, les
-// deux CLAUDE.md, le README). Un type @main dit exactement la même chose sous n'importe
-// quel nom de fichier.
+// Entry point. `@main` rather than top-level statements: as soon as more than one
+// file is compiled, Swift accepts them ONLY in a file named `main.swift` — and renaming
+// this one would have made every path citing it stale (build.sh, the two CLAUDE.md
+// files, the README). An @main type says exactly the same thing under any file name
+// whatsoever.
 @main
 enum RigMenuBarApp {
-    /// Retenu ici, et pas en variable locale : `NSApplication.delegate` ne possède pas son
-    /// délégué. En local il ne survivait que par accident — `run()` ne rend jamais la main,
-    /// donc la pile ne se dépile pas. Une propriété statique le garantit au lieu de l'espérer.
+    /// Held here, and not in a local variable: `NSApplication.delegate` does not own its
+    /// delegate. As a local it survived only by accident — `run()` never gives control
+    /// back, so the stack never unwinds. A static property guarantees it instead of hoping.
     private static let delegate = Delegate()
 
     static func main() {

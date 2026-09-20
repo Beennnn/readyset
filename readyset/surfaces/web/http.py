@@ -76,7 +76,7 @@ class _Handler(BaseHTTPRequestHandler):
             self._send(200, PAGE.encode("utf-8"), "text/html; charset=utf-8")
         elif self.path.startswith("/api/state"):
             snap = _STATE["data"]
-            if snap is None:                       # tout premier appel : on calcule
+            if snap is None:                       # very first call: we compute it
                 snap = build_state(self.cfg)
                 _STATE["data"], _STATE["ts"] = snap, time.time()
             self._json({**snap, "age": round(time.time() - _STATE["ts"], 1)})
@@ -84,8 +84,8 @@ class _Handler(BaseHTTPRequestHandler):
             self._json({"requested": _MODE["requested"] or self.cfg.get("mode", {}).get("default", "auto"),
                         "resolved": checks.resolve_mode(self.cfg, _MODE["requested"] or self.cfg.get("mode", {}).get("default", "auto"))})
         elif self.path.startswith("/api/gear"):
-            # Dessins servis en ligne : aucun fichier, aucun réseau — le dashboard doit
-            # rester entier sur un réseau de scène sans Internet.
+            # Drawings served inline: no file, no network — the dashboard has to stay
+            # whole on a stage network with no Internet.
             want = (parse_qs(urlparse(self.path).query).get("id") or [""])[0]
             svg = SVG.get(want)
             if not svg:
@@ -99,15 +99,15 @@ class _Handler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(body)
         elif self.path.startswith("/api/appicon"):
-            # L'icône réelle de l'app plutôt qu'un emoji générique : dans une liste où l'on
-            # s'apprête à FERMER des choses, on reconnaît WhatsApp à son logo bien avant
-            # d'avoir lu son nom. Le chemin est revalidé contre les apps réellement
-            # lancées — le serveur n'ouvre pas un fichier arbitraire parce qu'on le demande.
+            # The app's real icon rather than a generic emoji: in a list where one is
+            # about to CLOSE things, WhatsApp is recognised by its logo well before its
+            # name has been read. The path is revalidated against the apps that are
+            # actually running — the server does not open an arbitrary file on request.
             want = (parse_qs(urlparse(self.path).query).get("path") or [""])[0].rstrip("/")
-            # Les apps LANCÉES ne suffisent pas : Bome Network tourne en arrière-plan et
-            # n'apparaît jamais dans la liste des apps à présence écran. On y ajoute donc
-            # les apps que le rig lance lui-même, et celles que gear.py a résolues pour
-            # les checks. L'allowlist reste fermée — un chemin arbitraire est refusé.
+            # The RUNNING apps are not enough: Bome Network runs in the background and
+            # never shows up in the list of apps with a screen presence. So we add the
+            # apps the rig launches itself, and those gear.py resolved for the checks.
+            # The allowlist stays closed — an arbitrary path is refused.
             known = {a["path"] for a in apps.running_gui_apps()}
             known |= set(self.cfg.get("launch", {}).get("apps", []))
             known |= {app_path_for(self.cfg, lbl)
@@ -121,18 +121,18 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/png")
             self.send_header("Content-Length", str(len(png)))
-            # L'icône d'une app ne change pas ; sans ça le navigateur la retélécharge à
-            # chaque rafraîchissement (toutes les 4 s).
+            # An app's icon does not change; without this the browser re-downloads it on
+            # every refresh (every 4 s).
             self.send_header("Cache-Control", "max-age=86400")
             self.end_headers()
             self.wfile.write(png)
         elif self.path.startswith("/api/phone"):
             self._json(phone_snapshot(self.cfg))
         elif self.path.startswith("/api/audio/spectrum"):
-            # Hors de build_state, délibérément : une touche Stream Deck rafraîchit une
-            # dizaine de fois par seconde, alors que l'état complet se recalcule toutes les
-            # 4 s. Les mêler ferait payer une capture audio à chaque tour d'état — et un
-            # spectre vieux de 4 s ne ressemblerait à rien.
+            # Outside build_state, deliberately: a Stream Deck key refreshes about ten
+            # times a second, while the full state is recomputed every 4 s. Mixing them
+            # would make every state pass pay for an audio capture — and a spectrum 4 s
+            # old would look like nothing at all.
             self._json(spectrum.snapshot(self.cfg))
         elif self.path.startswith("/api/midi"):
             self._json(_MON.snapshot())
@@ -152,21 +152,21 @@ class _Handler(BaseHTTPRequestHandler):
                 _MANUAL[key] = bool(body.get("value", False))
             self._json({"ok": True, key: _MANUAL.get(key)})
         elif self.path == "/api/phone":
-            # Publié par le téléphone lui-même (un raccourci iOS, une automatisation),
-            # pas par le dashboard. Tout est optionnel : ce qui manque reste inconnu
-            # plutôt que d'être supposé faux. L'horodatage, lui, est posé ICI — l'heure
-            # du téléphone n'a pas à être crue, et c'est la fraîcheur qui compte.
+            # Published by the phone itself (an iOS shortcut, an automation), not by the
+            # dashboard. Everything is optional: what is missing stays unknown rather
+            # than being assumed false. The timestamp, though, is set HERE — the phone's
+            # clock is not to be trusted, and what counts is freshness.
             phone_record(charging=body.get("charging"), battery=body.get("battery"),
                          name=body.get("name"), source="phone")
             self._json({"ok": True, **phone_snapshot(self.cfg)})
         elif self.path == "/api/audiolevel":
-            # Mesure de signal à la demande — jamais dans la boucle de rafraîchissement :
-            # chaque appel crée un tap CoreAudio natif d'environ 1,5 s. Voir le README de
-            # audiolevel/ pour les deux pièges macOS que ce chemin contourne.
+            # Signal measurement on demand — never in the refresh loop: each call creates
+            # a native CoreAudio tap of about 1.5 s. See audiolevel/'s README for the two
+            # macOS pitfalls this path works around.
             self._json(audiolevel.measure(float(body.get("seconds", 1.5)),
                                           str(body.get("target", "ableton"))))
         elif self.path == "/api/midi/start":
-            _MON.configure(self.cfg)   # la chaîne du breath vient de rig.toml
+            _MON.configure(self.cfg)   # the breath chain comes from rig.toml
             _MON.start()
             self._json({"ok": True})
         elif self.path == "/api/midi/stop":
@@ -180,40 +180,39 @@ class _Handler(BaseHTTPRequestHandler):
             ok, msg = rem.run(dry)
             self._json({"ok": ok, "message": msg})
         elif self.path == "/api/quit-apps":
-            # La confirmation est côté page (case cochée + dialogue) ; ici on revalide
-            # quand même la sélection contre la liste des apps « en trop » calculée par
-            # le serveur — voir apps.quit_many.
+            # The confirmation is on the page side (ticked box + dialog); here we still
+            # revalidate the selection against the list of "surplus" apps computed by
+            # the server — see apps.quit_many.
             ok, msg = apps.quit_many(self.cfg, body.get("paths") or [], dry_run=dry)
             self._json({"ok": ok, "message": msg})
         elif self.path == "/api/windows":
-            # `all` = ranger Ableton aussi (sa politique est "keep" le reste du temps).
+            # `all` = tidy Ableton away too (its policy is "keep" the rest of the time).
             ok, msg = windows.tidy(self.cfg, log=lambda _: None, dry_run=dry,
                                    force=bool(body.get("all", False)))
             self._json({"ok": ok, "message": msg})
         elif self.path == "/api/preflight":
-            # UNE action, qui fait tout. « Préflight », « Tout corriger » et « Ranger les
-            # fenêtres » étaient trois boutons dont personne ne savait dire lequel faisait
-            # quoi — Benoît, 2026-08-18 : « on ne comprend pas ce qu'ils font, au final on
-            # voudrait une seule action magique qui fait tout ». La voici, dans l'ordre où
-            # les choses doivent arriver : d'abord monter le rig, ensuite réparer ce qui
-            # cloche encore, enfin re-vérifier pour rendre un verdict à jour.
+            # ONE action, that does everything. "Préflight", "Tout corriger" and "Ranger
+            # les fenêtres" were three buttons and nobody could say which one did what —
+            # the rig's owner, 2026-08-18: "we don't understand what they do, in the end
+            # we'd want a single magic action that does everything". Here it is, in the
+            # order in which things have to happen: first bring the rig up, then repair
+            # what is still wrong, finally re-check to deliver an up-to-date verdict.
             logs: list[str] = []
             launch.bring_up(self.cfg, log=logs.append, dry_run=dry)
 
-            # Les correctifs viennent APRÈS le lancement : la plupart des rouges d'avant
-            # (apps éteintes, set non ouvert) disparaissent d'eux-mêmes, et réparer ce qui
-            # n'existe plus n'aurait aucun sens.
+            # The fixes come AFTER the launch: most of the reds from before (apps not
+            # running, set not opened) disappear on their own, and repairing what no
+            # longer exists would make no sense at all.
             mode = checks.resolve_mode(self.cfg, _MODE["requested"]
                                        or self.cfg.get("mode", {}).get("default", "auto"))
             todo = [r for r in checks.run_all(self.cfg, mode, manual=_MANUAL)
                     if r.status in (checks.FAIL, checks.WARN)]
-            # Compter les TENTATIVES comme des réparations était le pire défaut de cette
-            # action : le 2026-08-22, tous les correctifs d'interface ont été refusés par
-            # macOS (autorisation d'accessibilité manquante) et la mise en place a
-            # néanmoins répondu « 🔧 2 correctif(s) appliqué(s) », ok: true, en vert.
-            # Ableton tournait alors sur « No Device » — silence complet, annoncé comme
-            # un succès. Un rapport qui se trompe dans CE sens-là est pire que pas de
-            # rapport : il empêche d'aller regarder.
+            # Counting ATTEMPTS as repairs was this action's worst flaw: on 2026-08-22,
+            # every UI fix was refused by macOS (missing accessibility permission) and
+            # the setup nevertheless answered "🔧 2 correctif(s) appliqué(s)", ok: true,
+            # in green. Ableton was running on "No Device" at the time — complete
+            # silence, announced as a success. A report that errs in THAT direction is
+            # worse than no report at all: it stops you going to look.
             fixed, failed = 0, []
             for r in todo:
                 rem = remedy.resolve(self.cfg, r)
@@ -229,39 +228,39 @@ class _Handler(BaseHTTPRequestHandler):
                 logs.append(f"  🔧 {fixed} correctif(s) appliqué(s)")
             elif not failed:
                 logs.append("  🔧 aucun correctif automatique à appliquer")
-            # Le verdict passe EN TÊTE : c'est la première ligne lue, et souvent la seule.
+            # The verdict goes FIRST: it is the first line read, and often the only one.
             if failed:
                 head = [f"⛔ {len(failed)} correctif(s) N'ONT PAS pu être appliqués :"]
                 head += [f"   • {f}" for f in failed]
                 head.append("")
                 logs[:0] = head
 
-            # ON RANGE EN DERNIER, pas au milieu (2026-08-22). `bring_up` finit par
-            # tidy_windows, mais les correctifs tournent APRÈS lui : « Ouvrir le set »
-            # relance Ableton, « Relancer Bome » rouvre une fenêtre — toutes arrivées
-            # trop tard pour le rangement qui les précédait. Et une app qui vient de
-            # démarrer crée souvent sa fenêtre après les 2 s de settle : Bome Network
-            # s'est retrouvé VISIBLE et non réduit à la fin d'une mise en place, alors que
-            # sa politique dit « minimize ». Un second passage est idempotent — il ne
-            # coûte qu'une poignée de millisecondes quand il n'y a rien à ranger.
+            # WE TIDY LAST, not in the middle (2026-08-22). `bring_up` ends with
+            # tidy_windows, but the fixes run AFTER it: "Ouvrir le set" relaunches
+            # Ableton, "Relancer Bome" reopens a window — all of them arriving too late
+            # for the tidy-up that preceded them. And an app that has just started often
+            # creates its window after the 2 s settle: Bome Network ended up VISIBLE and
+            # not minimised at the end of a setup, even though its policy says
+            # "minimize". A second pass is idempotent — it only costs a handful of
+            # milliseconds when there is nothing to tidy away.
             if not dry and cfg_tidy_after(self.cfg):
-                time.sleep(1.0)   # laisse aux fenêtres tardives le temps d'exister
+                time.sleep(1.0)   # gives late windows the time to exist
                 windows.tidy(self.cfg, log=logs.append, dry_run=False)
 
-            # La fermeture des applis en trop n'est PAS ici : elle peut faire perdre un
-            # document non enregistré, donc elle garde sa confirmation nommant chaque app.
-            # Une action « magique » ne doit rien détruire sans qu'on l'ait vu venir.
+            # Closing the surplus apps is NOT here: it can lose an unsaved document, so
+            # it keeps its own confirmation naming every app. A "magic" action must never
+            # destroy anything without one having seen it coming.
             self._json({"ok": not failed, "message": "\n".join(logs)})
         else:
             self._json({"ok": False, "message": "route inconnue"}, code=404)
 
 
 def _lan_ip() -> str | None:
-    """L'adresse IPv4 de cette machine sur son réseau, sans rien émettre.
+    """This machine's IPv4 address on its network, without emitting anything.
 
-    Un socket UDP « connecté » ne fait que choisir une route : aucun paquet ne part.
-    L'adresse visée est dans TEST-NET-1 (192.0.2.0/24, RFC 5737), qui n'est routée nulle
-    part — impossible de joindre quoi que ce soit par accident.
+    A "connected" UDP socket only picks a route: no packet leaves. The address aimed at
+    is in TEST-NET-1 (192.0.2.0/24, RFC 5737), which is routed nowhere at all — it is
+    impossible to reach anything by accident.
     """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
@@ -272,13 +271,13 @@ def _lan_ip() -> str | None:
 
 
 def _bonjour_name() -> str:
-    """Le nom en .local sous lequel les autres machines trouvent ce Mac.
+    """The .local name under which the other machines find this Mac.
 
-    Piège : `socket.gethostname()` rend le nom du SHELL — ici « macbook-pro-benoit »,
-    qui ne résout que sur cette machine. Bonjour publie le LocalHostName, un troisième
-    nom (macOS en tient trois : ComputerName, HostName, LocalHostName) — ici
-    « MacBook-Pro-de-Benoit.local », le seul que le téléphone puisse joindre. Imprimer
-    l'autre revenait à donner la seule URL qui ne marche pas.
+    Pitfall: `socket.gethostname()` returns the SHELL name — say "my-macbook", which
+    only resolves on this machine. Bonjour publishes the LocalHostName, a third name
+    (macOS holds THREE: ComputerName, HostName, LocalHostName) — say
+    "My-MacBook.local", the only one the phone can reach. Printing the other one
+    amounted to handing out the one URL that does not work.
     """
     try:
         out = subprocess.run(["scutil", "--get", "LocalHostName"],
@@ -291,8 +290,8 @@ def _bonjour_name() -> str:
     return name if "." in name else f"{name}.local"
 
 
-# Un par navigateur, parce que leurs dictionnaires AppleScript diffèrent : Chrome
-# sélectionne un onglet par son INDICE dans la fenêtre, Safari par l'objet lui-même.
+# One per browser, because their AppleScript dictionaries differ: Chrome selects a tab
+# by its INDEX inside the window, Safari by the object itself.
 _RETROUVER_ONGLET = [
     ("Chrome", '''
 if application "Google Chrome" is running then
@@ -340,11 +339,11 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
     try:
         httpd = ThreadingHTTPServer((host, port), handler)
     except OSError as exc:
-        # Deux instances en collision, deux fois dans la meme journee. Le vrai degat
-        # n'est pas l'echec : c'est qu'il est SILENCIEUX pour qui regarde ailleurs. La
-        # seconde instance meurt, la premiere continue de servir la page, et si c'est
-        # elle qui est perimee on cherche le probleme partout sauf la. Dire QUI tient le
-        # port transforme une trace de pile en une ligne actionnable.
+        # Two instances colliding, twice in the same day. The real damage is not the
+        # failure: it is that the failure is SILENT for anyone looking elsewhere. The
+        # second instance dies, the first keeps serving the page, and if that one is the
+        # stale one you look for the problem everywhere but there. Saying WHO holds the
+        # port turns a stack trace into an actionable line.
         tenant = subprocess.run(["lsof", "-nP", f"-iTCP:{port}", "-sTCP:LISTEN"],
                                 capture_output=True, text=True).stdout.strip().splitlines()
         print(f"✖ le port {port} est deja pris — cette instance s'arrete ({exc})")
@@ -352,14 +351,14 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
             print(f"    tenu par : {ligne}")
         print("    → arrete l'autre instance avant de relancer celle-ci")
         raise SystemExit(1)
-    # Le navigateur local passe toujours par la boucle locale, même quand on écoute plus
-    # large : c'est l'adresse qui marche à coup sûr, y compris hors réseau.
+    # The local browser always goes through the loopback, even when we listen wider:
+    # that is the address that works for sure, off-network included.
     url = f"http://127.0.0.1:{port}/"
     print(f"Dashboard rig → {url}  (Ctrl-C pour arrêter)")
     if host not in ("127.0.0.1", "localhost", "::1"):
-        # Ouvert au réseau : dire OÙ, sinon il faut aller chercher son IP à la main pour
-        # configurer le téléphone. Et dire ce que ça implique — il n'y a pas de mot de
-        # passe, quiconque est sur ce réseau peut déclencher les actions du dashboard.
+        # Open to the network: say WHERE, otherwise one has to go and fetch one's IP by
+        # hand to configure the phone. And say what it implies — there is no password,
+        # anyone on this network can trigger the dashboard's actions.
         name = _bonjour_name()
         for label, u in ((".local", f"http://{name}:{port}/"),
                          ("IP    ", f"http://{_lan_ip()}:{port}/" if _lan_ip() else None)):
@@ -367,15 +366,15 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
                 print(f"  réseau local ({label}) → {u}")
         print("  ⚠ ouvert au réseau local, sans authentification — réseau de confiance "
               "uniquement (le dashboard lance et ferme des apps).")
-    # Le retour de la touche du rig : elle affiche un verdict, elle doit pouvoir en
-    # montrer le détail. Sans ça, lire « 2 · NB » oblige à revenir au clavier — le geste
-    # que la touche existait justement pour éviter.
+    # The rig key's talk-back: it displays a verdict, so it must be able to show the
+    # detail behind it. Without this, reading "2 · NB" forces a trip back to the
+    # keyboard — the very gesture the key existed to avoid.
     def _montrer() -> None:
-        # Chercher l'onglet AVANT d'en ouvrir un. webbrowser.open() en crée un nouveau à
-        # chaque appel : appuyer trois fois sur la touche laissait trois onglets du même
-        # tableau de bord, et sur scène on appuie plutôt deux fois qu'une. Le navigateur
-        # n'est interrogé que s'il tourne déjà — le réveiller pour chercher un onglet
-        # qu'il n'a pas serait exactement le contraire du but.
+        # Look for the tab BEFORE opening one. webbrowser.open() creates a new one on
+        # every call: pressing the key three times left three tabs of the same dashboard
+        # behind, and on stage one presses twice rather than once. The browser is only
+        # queried if it is already running — waking it up to look for a tab it does not
+        # have would be exactly the opposite of the goal.
         for nav, script in _RETROUVER_ONGLET:
             try:
                 r = subprocess.run(["osascript", "-e", script % url],
@@ -384,11 +383,11 @@ def serve(cfg: dict, port: int = 8765, open_browser: bool = True,
                     print(f"[jauge]  (retour : onglet {nav} remis au premier plan)", flush=True)
                     return
                 if r.returncode != 0:
-                    # Le cas courant, et il est INVISIBLE sans cette ligne : un service
-                    # lancé par launchd n'a pas l'autorisation d'automatiser un
-                    # navigateur tant qu'elle n'a pas été accordée. Le repli ouvre alors
-                    # un onglet de plus à chaque appui, sans que rien n'en dise la cause.
-                    # → Réglages Système → Confidentialité → Automatisation.
+                    # The common case, and it is INVISIBLE without this line: a service
+                    # started by launchd does not have permission to automate a browser
+                    # until that permission has been granted. The fallback then opens one
+                    # more tab on every press, with nothing saying why.
+                    # → System Settings → Privacy → Automation.
                     print(f"[jauge]  ({nav} injoignable : {r.stderr.strip()[:120]})", flush=True)
             except Exception as exc:
                 print(f"[jauge]  ({nav} : {exc})", flush=True)

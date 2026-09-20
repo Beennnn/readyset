@@ -1,54 +1,53 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: GPL-3.0-or-later
-"""Pont Ableton Link → une ligne JSON par tick sur stdout.
+"""Ableton Link bridge → one JSON line per tick on stdout.
 
-POURQUOI CE FICHIER EST UN PROCESS À PART, ET NON UN MODULE DE `readyset`
-======================================================================
+WHY THIS FILE IS A SEPARATE PROCESS, AND NOT A MODULE OF `readyset`
+===================================================================
 
-**Licence.** `aalink` embarque [Ableton Link](https://github.com/Ableton/link), qui est
-**GPLv2-or-later** (double licence : le closed-source exige un accord commercial avec
-Ableton). Le projet a déjà tranché ce point ailleurs et l'a écrit : « GPL (via
-aalink/Link) est confiné à UN process — `beatsync.py` » (README de `~/dev/music/midi`).
-Ce fichier est le second occupant de cette règle, pas une exception à celle-ci. Le
-corollaire vaut surtout pour l'aval : `readyset`, lui, porte une LICENSE et a vocation
-à être publié — **ne jamais y remonter ce fichier sans traiter la licence d'abord**, et
-ne jamais importer `aalink` depuis `readyset/`.
+**Licence.** `aalink` embeds [Ableton Link](https://github.com/Ableton/link), which is
+**GPLv2-or-later** (dual licence: closed-source requires a commercial agreement with
+Ableton). The project has already settled this point elsewhere and written it down: "GPL
+(through aalink/Link) is confined to ONE process — `beatsync.py`" (README of
+`~/dev/music/midi`). This file is the second occupant of that rule, not an exception to
+it. The corollary matters most downstream: `readyset` itself carries a LICENSE and is
+meant to be published — **never move this file up into it without handling the licence
+first**, and never import `aalink` from `readyset/`.
 
-**Boucle d'événements.** `aalink` impose asyncio ; le serveur du rig est un
-`http.server` synchrone servi par des fils. Deux modèles de concurrence dans le même
-process, c'est une source de blocages pour un gain nul.
+**Event loop.** `aalink` mandates asyncio; the rig's server is a synchronous
+`http.server` served by threads. Two concurrency models in the same process is a source
+of deadlocks for zero gain.
 
-**Cycle de vie.** Un pair Link qui rejoint et quitte la session en boucle pollue la
-session de TOUS les autres pairs, Live compris. Un process dédié qu'on démarre et
-qu'on arrête franchement est un pair propre ; un thread accroché à la vie du serveur
-ne l'est pas.
+**Life cycle.** A Link peer joining and leaving the session in a loop pollutes the
+session of ALL the other peers, Live included. A dedicated process that is started and
+stopped outright is a clean peer; a thread hooked onto the server's lifetime is not.
 
-C'est le même patron que `readyset/spectrum.py` avec ffmpeg : un sous-process qui produit
-un flux, un fil qui le lit, un dernier état partagé.
+It is the same pattern as `readyset/spectrum.py` with ffmpeg: a subprocess producing a
+stream, a thread reading it, one shared last state.
 
-CE QU'IL FAUT SAVOIR DE LINK POUR LIRE CE QUI SUIT
-==================================================
+WHAT YOU NEED TO KNOW ABOUT LINK TO READ WHAT FOLLOWS
+=====================================================
 
-- `tempo` est le BPM de la **session**, pas celui de Live : n'importe quel pair peut
-  l'écrire et tout le monde suit. Ce pont **ne l'écrit jamais** — il regarde, il ne
-  mène pas. (`beatsync.py`, lui, écrit ; deux écrivains se battraient.)
-- `beat` est une timeline de battements **continue et monotone** qui avance **même sans
-  aucun pair et même à l'arrêt**. Ce n'est pas la position dans le morceau de Live.
-- `phase` est la position dans la mesure, dans `[0, quantum)`. C'est elle qui rend un
-  affichage de tempo lisible en jouant : sans elle on affiche un nombre qui ne bouge pas.
-- `peers` est le nombre d'AUTRES pairs. **`peers == 0` est le piège de ce module** :
-  Link renvoie alors un tempo parfaitement bien formé (120 par défaut) et une phase qui
-  tourne, alors que rien n'est synchronisé avec rien. Un afficheur qui ne distingue pas
-  ce cas ment. On le remonte tel quel et c'est au consommateur de le traiter.
-- `playing` est le transport partagé (start/stop sync), un axe SÉPARÉ du beat : un pair
-  peut être à l'arrêt pendant que `beat` continue d'avancer.
+- `tempo` is the BPM of the **session**, not Live's: any peer can write it and everybody
+  follows. This bridge **never writes it** — it watches, it does not lead. (`beatsync.py`
+  does write; two writers would fight each other.)
+- `beat` is a **continuous, monotonic** beat timeline that advances **even without any
+  peer and even while stopped**. It is not the position inside Live's song.
+- `phase` is the position within the bar, in `[0, quantum)`. It is what makes a tempo
+  display readable while playing: without it we show a number that does not move.
+- `peers` is the number of OTHER peers. **`peers == 0` is this module's trap**: Link then
+  returns a perfectly well-formed tempo (120 by default) and a phase that keeps turning,
+  while nothing is synchronised with anything. A display that does not tell that case
+  apart is lying. We report it as-is and it is up to the consumer to handle it.
+- `playing` is the shared transport (start/stop sync), an axis SEPARATE from the beat: a
+  peer can be stopped while `beat` keeps advancing.
 
-PROTOCOLE DE SORTIE
-===================
+OUTPUT PROTOCOL
+===============
 
-Une ligne JSON par tick sur **stdout**, rien d'autre — les journaux vont sur **stderr**,
-sinon ils se mêleraient au flux que le lecteur analyse (piège déjà rencontré en testant
-un add-on maison). Un tick illisible se jette sans tuer le flux.
+One JSON line per tick on **stdout**, nothing else — the logs go to **stderr**, otherwise
+they would mix into the stream the reader parses (a trap already met while testing a
+home-made add-on). An unreadable tick is discarded without killing the stream.
 """
 
 from __future__ import annotations
@@ -57,14 +56,14 @@ import asyncio
 import json
 import sys
 
-# Cadence d'émission. 10 Hz est très au-dessus du besoin : le consommateur EXTRAPOLE la
-# phase localement à partir de (tempo, beat, âge) — la phase est une fonction
-# déterministe de l'horloge, pas une valeur qu'il faut échantillonner vite. Ce qu'on
-# gagne à 10 Hz, c'est la fraîcheur du tempo et du nombre de pairs quand ils changent.
+# Emission rate. 10 Hz is far above what is needed: the consumer EXTRAPOLATES the phase
+# locally from (tempo, beat, age) — the phase is a deterministic function of the clock,
+# not a value that has to be sampled fast. What 10 Hz buys is the freshness of the tempo
+# and of the peer count when they change.
 TICK_SECONDS = 0.1
 
-# Quantum par défaut : 4 battements = une mesure à 4 temps. Link ne garantit
-# l'alignement de phase qu'entre pairs de MÊME quantum, d'où le fait qu'il soit réglable.
+# Default quantum: 4 beats = one bar in 4/4. Link only guarantees phase alignment between
+# peers of the SAME quantum, which is why it is configurable.
 DEFAULT_QUANTUM = 4.0
 
 
@@ -73,18 +72,18 @@ def _log(msg: str) -> None:
 
 
 async def _run(quantum: float) -> None:
-    import aalink  # importé ici pour que l'absence du paquet soit un message, pas une trace
+    import aalink  # imported here so a missing package is a message, not a traceback
 
-    # Sans le paramètre `loop` : aalink le déprécie et le déduit de la boucle courante.
+    # Without the `loop` parameter: aalink deprecates it and deduces it from the current loop.
     link = aalink.Link(120)
     link.quantum = quantum
     link.enabled = True
     _log(f"link bridge up (quantum={quantum})")
     try:
         while True:
-            # Lecture à la demande depuis le fil applicatif : Link n'exige un callback
-            # audio que pour du placement d'événements à l'échantillon près, ce qui
-            # n'est pas notre affaire ici.
+            # Read on demand from the application thread: Link only requires an audio
+            # callback for sample-accurate event placement, which is not our business
+            # here.
             print(json.dumps({
                 "tempo": round(link.tempo, 3),
                 "beat": round(link.beat, 4),
@@ -95,8 +94,8 @@ async def _run(quantum: float) -> None:
             }), flush=True)
             await asyncio.sleep(TICK_SECONDS)
     finally:
-        # Quitter la session proprement plutôt que de disparaître : les autres pairs
-        # voient le départ tout de suite au lieu d'attendre une expiration.
+        # Leave the session cleanly rather than vanish: the other peers see the
+        # departure right away instead of waiting for a timeout.
         link.enabled = False
         _log("link bridge down")
 
@@ -112,13 +111,13 @@ def main() -> int:
     try:
         asyncio.run(_run(quantum))
     except ModuleNotFoundError:
-        # Le cas le plus probable, et il a une réponse en une ligne — la donner plutôt
-        # que de laisser une trace Python que personne ne lira dans un journal d'add-on.
+        # The most likely case, and it has a one-line answer — give it rather than leave
+        # a Python traceback nobody will read in an add-on log.
         _log("aalink absent — installez-le : python3 -m pip install aalink")
         return 3
     except KeyboardInterrupt:
         return 0
-    except Exception as exc:  # noqa: BLE001 — le pont ne doit jamais faire tomber son parent
+    except Exception as exc:  # noqa: BLE001 — the bridge must never bring its parent down
         _log(f"pont Link interrompu : {exc}")
         return 1
     return 0

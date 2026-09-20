@@ -55,9 +55,10 @@ def _present(substr: str) -> str | None:
 
 
 def check_keyboard(cfg: dict, mode: str) -> Result:
-    """Three tiers: a preferred keyboard (keyboard_ok, e.g. Digital Piano / P-225) →
-    green; only a fallback (keyboard_warn, e.g. microKey Air) → yellow; none → red.
-    So in the studio microKey alone works but warns; the P-225 always satisfies."""
+    """Three tiers: a preferred keyboard (keyboard_ok, e.g. Digital Piano / the stage
+    keyboard) → green; only a fallback (keyboard_warn, e.g. microKey Air) → yellow;
+    none → red. So in the studio microKey alone works but warns; the stage keyboard
+    always satisfies."""
     m = cfg["modes"][mode]
     ok_list = m.get("keyboard_ok", m.get("keyboard", []))
     warn_list = m.get("keyboard_warn", [])

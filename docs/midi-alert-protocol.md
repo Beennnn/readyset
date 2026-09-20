@@ -36,7 +36,7 @@ family of checks. Values are counts, clamped to 0..127 (a CC carries nothing wid
 | 119 | **Y** | system: power, sleep, accessibility, the Mac's default output |
 | 120 | **X** | an application that should not be running |
 
-The families are **the prefix check keys already carry** (`app:Ableton`, `midi:P-Series`,
+The families are **the prefix check keys already carry** (`app:Ableton`, `midi:Main Bus`,
 `sys:macpower`), so a new check joins its family by itself, with no table to keep in
 step. The *order* fixes the CC numbers and must never be re-sorted: a letter that moved
 to another CC between two versions would silently make a key display something else,

@@ -19,20 +19,20 @@ def available() -> bool:
 
 
 def measure(seconds: float = 1.5, target: str = "ableton") -> dict:
-    """Mesure une fenêtre de signal. À N'APPELER QUE SUR DEMANDE, jamais en boucle.
+    """Measure a window of signal. TO BE CALLED ON DEMAND ONLY, never in a loop.
 
-    Deux pièges documentés dans audiolevel/README.md, et c'est pour eux que cette
-    fonction ne ressemble pas à un `subprocess.run` ordinaire :
+    Two traps documented in audiolevel/README.md, and it is because of them that this
+    function does not look like an ordinary `subprocess.run`:
 
-    1. L'autorisation audio (TCC) se demande au PROCESSUS APPELANT. Lancé depuis un
-       terminal, l'aide obtient le tap ; lancé par le service launchd, elle peut rester
-       bloquée sur une autorisation qu'un processus d'arrière-plan ne sait pas réclamer.
-       On rend alors un message qui dit quoi faire, au lieu de figer le dashboard.
-    2. **Tuer une mesure bloquée coince CoreAudio** : un SIGKILL saute le nettoyage
-       (`AudioHardwareDestroyProcessTap`, destruction du périphérique agrégé) et laisse
-       des taps orphelins qui empêchent les suivants — donc, potentiellement, du son
-       perturbé en plein concert. D'où l'arrêt en DEUX temps : SIGTERM, un délai de
-       grâce pour que le nettoyage tourne, et le SIGKILL seulement en dernier recours.
+    1. The audio permission (TCC) is requested from the CALLING PROCESS. Launched from a
+       terminal, the helper gets the tap; launched by the launchd service, it may stay
+       stuck on a permission that a background process does not know how to claim. We
+       then return a message saying what to do, instead of freezing the dashboard.
+    2. **Killing a stuck measurement jams CoreAudio**: a SIGKILL skips the cleanup
+       (`AudioHardwareDestroyProcessTap`, destruction of the aggregate device) and leaves
+       orphaned taps behind that block the following ones — hence, potentially, disturbed
+       sound in the middle of a gig. Hence the TWO-step stop: SIGTERM, a grace period so
+       the cleanup can run, and the SIGKILL only as a last resort.
     """
     if not available():
         return {"error": "helper non compilé — lance audiolevel/build.sh"}
@@ -41,7 +41,7 @@ def measure(seconds: float = 1.5, target: str = "ableton") -> dict:
     try:
         out = (proc.communicate(timeout=seconds + 8)[0] or "").strip()
     except subprocess.TimeoutExpired:
-        proc.terminate()                      # laisse le nettoyage CoreAudio se faire
+        proc.terminate()                      # lets the CoreAudio cleanup happen
         try:
             proc.communicate(timeout=5)
         except subprocess.TimeoutExpired:

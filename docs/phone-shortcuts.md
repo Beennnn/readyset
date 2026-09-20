@@ -21,7 +21,7 @@ retains messages ~12 h — fine for a gig, not for "is it charging right now, 2 
 ## The topic
 
 Pick a hard-to-guess topic (anyone who knows it can post to it). It lives in **`rig.toml`**
-(private), not here. Example used by the checks: `benoit-rig-phone-<suffix>`.
+(private), not here. Example used by the checks: `my-rig-phone-<random-suffix>`.
 
 ## Message format
 
@@ -40,7 +40,7 @@ message). The rig greps for `"<key>=..."`:
 1. Shortcuts app → *Automation* tab → **+** → *Create Personal Automation*.
 2. Trigger: **Charger** → *Is Connected*.
 3. Add action **Get Contents of URL**:
-   - URL: `https://ntfy.sh/benoit-rig-phone-<suffix>`
+   - URL: `https://ntfy.sh/my-rig-phone-<random-suffix>`
    - (expand) **Method: POST**, **Request Body: Text**, body = `charging=1`
 4. **Run Immediately** (toggle off "Ask Before Running"). Done.
 
@@ -65,8 +65,8 @@ message). The rig greps for `"<key>=..."`:
 From any machine, simulate the phone:
 
 ```bash
-curl -d "charging=1" https://ntfy.sh/benoit-rig-phone-<suffix>
-bin/phone-state.sh benoit-rig-phone-<suffix> charging 21600 && echo GREEN || echo "à confirmer"
+curl -d "charging=1" https://ntfy.sh/my-rig-phone-<random-suffix>
+bin/phone-state.sh my-rig-phone-<random-suffix> charging 21600 && echo GREEN || echo "à confirmer"
 ```
 
 (There's a ~25 s cache in `phone-state.sh`; wait or delete `/tmp/rig-phone-charging.cache`.)

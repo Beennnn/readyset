@@ -10,7 +10,7 @@ specific lives in `rig.toml`.
 ```bash
 readyset preflight     # bring everything up, then verify it
 readyset check         # verify only — no launching, no side effects
-readyset watch         # keep watching while you work, and shout when it breaks
+readyset monitor       # keep watching while you work, and shout when it breaks
 ```
 
 ---
@@ -73,23 +73,23 @@ one below.
 
 ## Where this code comes from
 
-`readyset` is the **downstream** half of a pair, and that shapes what you find
-here.
+`readyset` used to be the **downstream** half of a pair. Upstream was a private
+repository holding one real installation: its serial numbers, its service
+agents, its file paths, its venues. Everything was born there, on hardware that
+had to work, and moved here once it had proved itself over several outings
+**and** turned out to name no product.
 
-Upstream is a private repository holding one real installation: its serial
-numbers, its service agents, its file paths, its venues. Everything starts
-there, on hardware that has to work. When something proves itself over several
-outings **and** turns out to name no product, it moves here.
+The split was made on 2026-08-18, after the generic and the specific had grown
+about 2800 lines apart inside a single codebase. It was undone on 2026-09-20:
+two repositories with one author meant every change had to be made twice, and
+the halves drifted anyway. There is now one codebase — this one.
 
-The rule that keeps the two from drifting is one sentence: **nothing is born
-here.** This repository receives; it does not break ground. It was split out on
-2026-08-18, after the generic and the specific had grown about 2800 lines apart
-inside a single codebase.
-
-The practical consequence, if you are here to use it: what you get is the part
-that has already survived somewhere else. And if you ever find an application
-name, a serial number or a hostname in the code rather than in a config file,
-that is a bug — it means the boundary leaked.
+What the split bought is kept as a rule rather than as a repository: **nothing
+machine-specific is written in the code.** Anything that names an application,
+a serial number, a hostname or a file path lives in `rig.toml`, which is
+git-ignored. Hardware that needs a picture lives in
+`readyset/devices/devices.toml`, as data. If you ever find one of those in the
+source instead, that is a bug.
 
 ## Requirements
 

@@ -17,9 +17,9 @@ DIR="$(cd "$(dirname "$0")" && pwd)"
 APP="$DIR/RigMenuBar.app"
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS"
-# Tous les .swift du dossier, pas seulement rigmenubar.swift : le fichier principal a
-# dépassé les 1 000 lignes, et ce qui a sa propre logique en sort (alarm.swift). Un
-# nouveau fichier est donc compilé sans que ce script ait à être retouché.
+# Every .swift in the folder, not just rigmenubar.swift: the main file has gone past
+# 1,000 lines, and whatever has its own logic moves out of it (alarm.swift). A new file
+# is therefore compiled without this script having to be touched.
 swiftc -O "$DIR"/*.swift -o "$APP/Contents/MacOS/RigMenuBar"
 # Localisations: one .lproj per language, copied verbatim. English needs no file —
 # it is the default value baked into every T() call, so a bundle with zero .lproj
@@ -61,11 +61,11 @@ PLIST
 codesign --force --deep --sign - "$APP" 2>/dev/null || true
 echo "✔ built $APP (ad-hoc signed, not notarized — see header comment)"
 
-# Et on INSTALLE. Le lanceur (launchd/com.readyset.menubar.plist) exécute
-# /Applications/RigMenuBar.app, pas la copie du dépôt : construire sans installer ne
-# changeait donc rien à ce qui tourne, en silence. Constaté le 2026-08-29 — les trois
-# boutons du panneau d'alarme avaient été recompilés sans effet visible, et rien ne le
-# disait. Un build qui ne déploie pas est un build qui ment.
+# And we INSTALL. The launcher (launchd/com.readyset.menubar.plist) runs
+# /Applications/RigMenuBar.app, not the copy in the repo: building without installing
+# therefore changed nothing to what is running, silently. Observed on 2026-08-29 — the
+# three buttons of the alarm panel had been recompiled with no visible effect, and
+# nothing said so. A build that does not deploy is a build that lies.
 DEST="/Applications/RigMenuBar.app"
 if pgrep -f "$DEST/Contents/MacOS/RigMenuBar" >/dev/null 2>&1; then
   launchctl bootout "gui/$UID/com.readyset.menubar" 2>/dev/null || true

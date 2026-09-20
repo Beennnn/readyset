@@ -12,12 +12,12 @@ from ..core.result import OK, INFO, WARN, FAIL, OFF, Result, _hint, _ago
 
 
 def _source_label(phone: dict | None) -> str:
-    """Qui a fait le relevé — le téléphone qui publie, ou le Mac qui interroge.
+    """Who took the reading — the phone publishing, or the Mac polling.
 
-    Ce n'est pas de la décoration : les deux n'ont pas les mêmes angles morts. Le
-    téléphone ne parle qu'au branchement (donc peut se taire longtemps sans que rien
-    n'aille mal) ; le Mac bat régulièrement mais s'arrête net si l'appairage saute.
-    Savoir laquelle des deux vient de parler, c'est savoir quoi aller vérifier.
+    This is not decoration: the two do not have the same blind spots. The phone only
+    speaks on plug-in (so it can stay quiet a long time without anything being wrong);
+    the Mac beats regularly but stops dead if the pairing drops. Knowing which of the
+    two has just spoken is knowing what to go and check.
     """
     src = (phone or {}).get("source", "")
     if src.startswith("mac:"):
@@ -47,18 +47,19 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
     if phone and phone.get("fresh") and phone.get("charging") is not None:
         batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
         tr = phone.get("trend") or {}
-        # La MESURE passe avant le DRAPEAU. « En charge » date du branchement et n'est
-        # plus revérifié ; une batterie qui recule, elle, est en train de se produire.
-        # Quand les deux se contredisent, c'est le drapeau qui a tort — câble sorti,
-        # multiprise éteinte, chargeur mort. Aucun de ces trois ne se déclare.
+        # The MEASUREMENT comes before the FLAG. « Charging » dates from the plug-in and
+        # is never rechecked; a battery going backwards, on the other hand, is happening
+        # right now. When the two contradict each other, it is the flag that is wrong —
+        # cable pulled out, power strip off, dead charger. None of those three announces
+        # itself.
         if tr.get("falling"):
             drop = (f"{tr['from']} → {tr['to']} % en {_ago(tr['span'])}")
             left = tr.get("hours_left")
             hmin = float(cfg.get("server", {}).get("autonomy_min_hours", 3.0))
             if left is not None and left < hmin:
-                # Le vrai risque du soir : pas « est-il branché ? » mais « tiendra-t-il
-                # jusqu'à la fin ? ». À ce rythme, non — et c'est une erreur, pas une
-                # remarque, parce qu'il n'y a plus de rattrapage une fois sur scène.
+                # The real risk of the evening: not « is it plugged in? » but « will it
+                # last to the end? ». At this rate, no — and that is an error, not a
+                # remark, because there is no catching up once you are on stage.
                 return Result("sys:iphonecharge", "iPhone en charge", FAIL,
                               _hint(f"il ne tiendra pas : {drop}, soit ~{left} h "
                                     f"d'autonomie (moins de {hmin:g} h)",
@@ -87,11 +88,11 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
     if acked:
         return Result("sys:iphonecharge", "iPhone en charge", OK, "confirmé manuellement")
     if phone and phone.get("seen"):
-        # Il a parlé, puis s'est tu. C'est un TROISIÈME état, et le seul qui désigne le
-        # téléphone lui-même : « pas de nouvelles » n'est pas « pas en charge », et surtout
-        # pas « on ne sait pas encore ». Un téléphone éteint, sorti du Wi-Fi ou dont
-        # l'automatisation ne part plus, c'est aussi le lien Bome qui va tomber — autant
-        # le dire ici plutôt que de laisser une ligne verte périmée le cacher.
+        # It spoke, then went quiet. This is a THIRD state, and the only one that points
+        # at the phone itself: « no news » is not « not charging », and above all not
+        # « we do not know yet ». A phone that is off, off the Wi-Fi or whose automation
+        # no longer fires also means the Bome link is about to drop — better to say so
+        # here than to let a stale green line hide it.
         last = "en charge" if phone.get("charging") else "PAS en charge"
         batt = f", {phone['battery']} %" if phone.get("battery") is not None else ""
         return Result("sys:iphonecharge", "iPhone en charge", sev,
@@ -99,10 +100,10 @@ def check_iphone_charge(cfg: dict, mode: str, acked: bool = False,
                             f"(dernier signe, par {_source_label(phone)} : {last}{batt})",
                             "téléphone éteint ou hors du Wi-Fi — le lien Bome en dépend "
                             "aussi — ou appairage perdu côté Mac ; sinon, confirmer à la main"))
-    # En live c'est BLOQUANT tant que ce n'est pas coché, et la ligne doit le dire :
-    # « à confirmer » tout seul se lit comme une formalité, alors que c'est la seule
-    # chose qui retient le rig. Au bureau, même phrase mais sans l'avertissement — il n'y
-    # bloque rien (voir iphone_power_severity par mode).
+    # In live it is BLOCKING until it is ticked, and the line has to say so: « à
+    # confirmer » on its own reads like a formality, whereas it is the only thing holding
+    # the rig back. At the desk, same sentence but without the warning — it blocks
+    # nothing there (see iphone_power_severity per mode).
     if sev == FAIL:
         return Result("sys:iphonecharge", "iPhone en charge", sev,
                       _hint("à confirmer — le Mac ne peut pas le détecter",

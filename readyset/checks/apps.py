@@ -36,19 +36,19 @@ def _pgrep_cmds(pattern: str) -> list[str]:
 
 
 def check_apps(cfg: dict) -> list[Result]:
-    # L'app que [set] désigne est la SEULE installation d'Ableton à tourner. Deux Live
-    # ouverts se disputent les interfaces audio et MIDI, et rien ne le disait : le check
-    # ne demandait que « au moins un process ». Constaté le 2026-08-29, Suite lancé à
-    # côté de Suite 3.
+    # The app that [set] names is the ONLY Ableton install allowed to run. Two open Live
+    # instances fight over the audio and MIDI interfaces, and nothing said so: the check
+    # only asked for « at least one process ». Observed on 2026-08-29, Suite launched
+    # next to Suite 3.
     want = cfg["set"].get("ableton_app", "")
     want_stem = Path(want).stem.lower() if want else ""
     out = []
     for label, pattern in cfg["checks"]["apps"].items():
         cmds = _pgrep_cmds(pattern)
-        # Le libellé dit l'ÉTAT, pas l'attente. « Ableton lancé » écrit en rouge affirme
-        # le contraire de ce qui se passe : on lit le texte avant la couleur, et il faut
-        # une seconde pour comprendre qu'il faut le lire à l'envers. Sur scène cette
-        # seconde-là coûte cher.
+        # The label states the STATE, not the expectation. « Ableton lancé » written in
+        # red asserts the opposite of what is happening: you read the text before the
+        # colour, and it takes a second to understand it has to be read backwards. On
+        # stage that second costs dear.
         if not cmds:
             status, titre, detail = FAIL, f"{label} non lancé", "process introuvable"
         elif len(cmds) > 1:
@@ -66,17 +66,17 @@ def check_apps(cfg: dict) -> list[Result]:
 
 
 def _amphetamine_severity(cfg: dict, mode: str) -> str:
-    """Sévérité de l'anti-veille dans ce mode — "fail" sur scène, et ce n'est pas négociable.
+    """Severity of the anti-sleep in this mode — "fail" on stage, and that is not negotiable.
 
-    Un Mac qui s'endort au deuxième morceau, c'est le set qui s'arrête : en live, une
-    session Amphetamine absente est une ERREUR, au même titre qu'un clavier débranché.
-    La règle est écrite ici plutôt que déduite d'un booléen pour qu'elle se lise dans la
-    config (`amphetamine_severity = "fail"`) au lieu de se deviner.
+    A Mac that falls asleep on the second song means the set stops: in live, a missing
+    Amphetamine session is an ERROR, in the same way an unplugged keyboard is. The rule
+    is written here rather than deduced from a boolean so that it reads in the config
+    (`amphetamine_severity = "fail"`) instead of having to be guessed.
 
-    `require_amphetamine` (booléen) reste lu pour les rig.toml qui ne connaissent que lui,
-    mais il ne sait dire que « vérifié » ou « pas vérifié » — d'où le piège qu'il portait :
-    le mettre à false en live ne baissait pas la sévérité, il FAISAIT DISPARAÎTRE la ligne.
-    Un rig sans anti-veille ressemblait alors à un rig sans problème.
+    `require_amphetamine` (boolean) is still read for the rig.toml files that only know
+    it, but it can only say « checked » or « not checked » — hence the trap it carried:
+    setting it to false in live did not lower the severity, it MADE THE LINE DISAPPEAR.
+    A rig with no anti-sleep then looked like a rig with no problem.
     """
     m = cfg["modes"].get(mode, {})
     if "amphetamine_severity" in m:
@@ -98,8 +98,8 @@ def check_amphetamine(cfg: dict, mode: str = "live") -> Result | None:
         out = subprocess.run(["pmset", "-g", "assertions"],
                              capture_output=True, text=True, timeout=5).stdout
     except Exception as exc:
-        # On ne SAIT pas : ni vert (rien n'a été observé), ni rouge (rien ne prouve la
-        # panne). L'avertissement est le seul niveau honnête ici.
+        # We do NOT know: neither green (nothing was observed), nor red (nothing proves
+        # the failure). The warning is the only honest level here.
         return Result("sys:amphetamine", "Amphetamine (anti-veille)", WARN, f"pmset: {exc}")
     active = "(Amphetamine)" in out
     return Result("sys:amphetamine", "Amphetamine (anti-veille)",
@@ -111,10 +111,10 @@ def check_amphetamine(cfg: dict, mode: str = "live") -> Result | None:
 
 
 def _process_age(pattern: str) -> float | None:
-    """Depuis combien de secondes ce process tourne — None s'il ne tourne pas.
+    """How many seconds this process has been running — None if it is not running.
 
-    `ps -o etime=` plutôt que `lstart` : un temps écoulé n'a ni format de date ni nom de
-    mois à interpréter, donc rien qui puisse changer avec la langue du système.
+    `ps -o etime=` rather than `lstart`: an elapsed time has neither a date format nor a
+    month name to interpret, so nothing that could change with the system's language.
     """
     try:
         pid = subprocess.run(["pgrep", "-f", pattern], capture_output=True, text=True,
@@ -137,10 +137,10 @@ def _process_age(pattern: str) -> float | None:
     return int(days) * 86400 + h * 3600 + m * 60 + sec
 
 
-# Le droit de piloter une interface se demande à macOS, se donne PAR PROCESSUS APPELANT,
-# et peut disparaître à une mise à jour du binaire. On le MESURE donc, comme tout le reste :
-# le sonder coûte ~80 ms, on le garde une minute — il ne change qu'à un clic humain dans
-# les Réglages Système.
+# The right to drive an interface is asked of macOS, granted PER CALLING PROCESS, and can
+# vanish when the binary is updated. So we MEASURE it, like everything else: probing costs
+# ~80 ms and we keep it for a minute — it only changes on a human click in the System
+# Settings.
 _AX_CACHE: dict = {"at": 0.0, "ok": None, "detail": ""}
 
 
@@ -148,17 +148,17 @@ _AX_TTL = 60.0
 
 
 def _accessibility_probe() -> tuple[bool, str]:
-    """Ce processus peut-il lire l'interface d'une AUTRE application ? Mesuré, pas supposé.
+    """Can this process read ANOTHER application's interface? Measured, not assumed.
 
-    Le geste sondé est volontairement le plus inoffensif qui exerce la même autorisation
-    que les correctifs : compter les fenêtres du Finder. Aucun clic, aucune frappe, rien
-    qui bouge à l'écran — ce check tourne dans la boucle d'état, y compris en plein set.
+    The gesture probed is deliberately the most harmless one that exercises the same
+    authorisation as the fixes: counting the Finder's windows. No click, no keystroke,
+    nothing that moves on screen — this check runs in the state loop, mid-set included.
 
-    ⚠️ macOS sépare la LECTURE d'interface (erreur -25211) de l'ENVOI DE FRAPPES
-    (erreur 1002), et un processus peut tenir la première sans la seconde — observé le
-    2026-08-22. Un vert ici prouve donc que le service est autorisé, pas que chaque geste
-    passera ; c'est pour ça que `liveaudio` retraduit AUSSI le refus au moment de l'appel
-    plutôt que de s'en remettre à ce check.
+    ⚠️ macOS separates interface READING (error -25211) from SENDING KEYSTROKES
+    (error 1002), and a process can hold the first without the second — observed on
+    2026-08-22. A green here therefore proves the service is authorised, not that every
+    gesture will go through; that is why `liveaudio` ALSO re-translates the refusal at
+    call time rather than relying on this check.
     """
     try:
         p = subprocess.run(
@@ -175,27 +175,27 @@ def _accessibility_probe() -> tuple[bool, str]:
 
 
 def check_accessibility(cfg: dict) -> Result:
-    """Le service a-t-il le droit de RÉPARER ? Sans lui, la moitié des correctifs mentent.
+    """Does the service have the right to REPAIR? Without it, half the fixes lie.
 
-    Deux correctifs pilotent une interface : régler la sortie d'Ableton (`live-output`) et
-    ranger les fenêtres. Tous deux passent par `osascript`, donc par l'autorisation
-    d'accessibilité du processus qui les lance — le service launchd, pas le terminal où
-    ça marchait à la main.
+    Two fixes drive an interface: setting Ableton's output (`live-output`) and tidying
+    the windows. Both go through `osascript`, hence through the accessibility grant of
+    the process that launches them — the launchd service, not the terminal where it
+    worked by hand.
 
-    Sans cette ligne, l'absence d'autorisation ne se découvrait qu'à l'instant du besoin,
-    c'est-à-dire pendant la mise en place : la sortie d'Ableton restait sur « No Device »,
-    le message d'erreur brut passait dans un journal que personne ne lit, et le rig se
-    déclarait prêt. Vécu le 2026-08-22, à 16:47. Une capacité non observée est exactement
-    ce que ce tableau existe pour refuser.
+    Without this line, the missing grant was only discovered at the instant it was
+    needed, that is to say during the bring-up: Ableton's output stayed on « No Device »,
+    the raw error message went into a log nobody reads, and the rig declared itself
+    ready. Lived through on 2026-08-22, at 16:47. An unobserved capability is exactly
+    what this table exists to refuse.
     """
     now = time.monotonic()
     if _AX_CACHE["ok"] is None or now - _AX_CACHE["at"] > _AX_TTL:
         ok, detail = _accessibility_probe()
         _AX_CACHE.update(at=now, ok=ok, detail=detail)
     label = "Autorisation de réparer (Accessibilité)"
-    # « à ce processus » et pas « au service » : la ligne dit vrai depuis le dashboard
-    # comme depuis un terminal, et le libellé rappelle au passage que la réponse peut
-    # différer d'un appelant à l'autre — c'est tout le piège.
+    # « à ce processus » and not « au service »: the line tells the truth from the
+    # dashboard as much as from a terminal, and the wording reminds you in passing that
+    # the answer can differ from one caller to the next — that is the whole trap.
     if _AX_CACHE["ok"]:
         return Result("sys:accessibility", label, OK, "accordée à ce processus")
     return Result("sys:accessibility", label, FAIL,
@@ -211,23 +211,23 @@ _DLG_TTL = 10.0
 
 
 def check_live_dialog(cfg: dict) -> Result | None:
-    """Ableton attend-il qu'on clique dans une fenêtre ? Ligne ABSENTE quand tout va bien.
+    """Is Ableton waiting for a click in a window? Line ABSENT when all is well.
 
-    Une fenêtre modale dans Live n'est pas un détail d'affichage : elle rend l'app sourde à
-    tout le reste — au ⌘, du correctif de sortie, au rangement des fenêtres, et à n'importe
-    quel geste que le rig voudrait faire. Le 2026-08-22, Ableton est resté planté sur « La
-    section audio est désactivée » pendant que le tableau affichait 26 lignes sans jamais
-    mentionner la seule chose qui bloquait tout.
+    A modal window in Live is not a display detail: it makes the app deaf to everything
+    else — to ⌘, to the output fix, to the window tidying, and to any gesture the rig
+    might want to make. On 2026-08-22, Ableton stayed stuck on « La section audio est
+    désactivée » while the table displayed 26 lines without ever mentioning the one thing
+    that was blocking everything.
 
-    Le silence quand il n'y a rien (`None`) est délibéré : c'est un événement, pas un
-    équipement. Une ligne verte « aucune fenêtre en attente » ajouterait du bruit permanent
-    pour un état qui n'arrive presque jamais — même choix que les « applis en trop », qui
-    n'apparaissent que lorsqu'il y en a.
+    The silence when there is nothing (`None`) is deliberate: this is an event, not a
+    piece of gear. A green line « no window waiting » would add permanent noise for a
+    state that almost never happens — same choice as the « applis en trop », which only
+    appear when there are any.
     """
     if not _pgrep(cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live")):
         return None
-    # Sans l'autorisation, on ne peut pas REGARDER : ne rien afficher plutôt qu'un faux
-    # calme — le check d'accessibilité, lui, est déjà rouge et porte l'information.
+    # Without the grant, we cannot LOOK: display nothing rather than a false calm — the
+    # accessibility check is already red and carries the information.
     if _AX_CACHE["ok"] is False:
         return None
     now = time.monotonic()
@@ -248,14 +248,14 @@ def check_live_dialog(cfg: dict) -> Result | None:
                         "le rig ne clique jamais dans une fenêtre qui peut faire perdre un set"))
 
 
-# Une ligne PAR app en trop, et pas un unique « 4 apps ouvertes » : chacune se juge
-# séparément (WhatsApp sur scène n'est pas Audio MIDI Setup), chacune a son bouton
-# « Quitter », et l'historique du monitor sait dire laquelle est apparue en cours de route.
+# One line PER extra app, and not a single « 4 apps ouvertes »: each is judged separately
+# (WhatsApp on stage is not Audio MIDI Setup), each has its own « Quitter » button, and the
+# monitor's history can say which one appeared along the way.
 def check_unexpected_apps(cfg: dict, mode: str) -> list[Result]:
-    """Apps ouvertes dont le rig n'a pas besoin — warn en live, info en studio.
+    """Open apps the rig does not need — warn in live, info in studio.
 
-    Jamais FAIL : une app en trop ne rend pas le rig injouable, elle le rend fragile.
-    En faire un bloquant apprendrait surtout à ignorer les rouges.
+    Never FAIL: an extra app does not make the rig unplayable, it makes it fragile.
+    Making it blocking would mostly teach you to ignore the reds.
     """
     default = WARN if mode == "live" else INFO
     sev = cfg["modes"][mode].get("unexpected_apps_severity", default)

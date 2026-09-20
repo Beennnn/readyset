@@ -1,6 +1,6 @@
 # devices.toml — the CATALOGUE of hardware this program can draw.
 #
-# WHY THIS IS DATA AND NOT CODE. Two Yamaha slab pianos (P-225, P-125) used to be
+# WHY THIS IS DATA AND NOT CODE. Two slab-piano models from one manufacturer used to be
 # hard-coded in a module that is otherwise generic. They are neither engine nor one
 # user's config: they are a catalogue. As data, three things come right at once — the
 # engine goes back to being generic, one person's gear leaves the source, and somebody

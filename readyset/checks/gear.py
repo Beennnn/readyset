@@ -103,10 +103,10 @@ def check_lamps(cfg: dict, mode: str) -> list[Result]:
     sev = cfg["checks"].get("lamp_severity", WARN)
     if sev == OFF:
         return []
-    # Une seule ligne pour toutes les lampes : elles s'allument ensemble, s'éteignent
-    # ensemble et se réparent du même geste. Une ligne par lampe répétait deux fois le
-    # même fait — et avec quatre lampes le tableau ne parlerait plus que d'elles. Le
-    # détail les NOMME quand même : c'est le nom qui manque quand une seule tombe.
+    # A single line for all the lamps: they come on together, go off together and are
+    # fixed with the same gesture. One line per lamp repeated the same fact twice — and
+    # with four lamps the table would talk about nothing else. The detail NAMES them all
+    # the same: the name is what is missing when only one of them drops.
     up, silent, missing = [], [], []
     for lamp in cfg["checks"].get("lamps", []):
         name = lamp.get("name", "?")
@@ -154,7 +154,7 @@ def _instant_amperage() -> int | None:
 
 def check_mac_power(cfg: dict, mode: str) -> Result:
     """Mac must be on AC. Unplugged → mode-based (fail live / warn studio). Plugged BUT
-    the battery is draining (load > adapter) → always FAIL ('se vide même en charge')."""
+    the battery is draining (load > adapter) → always FAIL ('draining even while charging')."""
     sev = cfg["modes"][mode].get("mac_power_severity", "warn")
     try:
         out = subprocess.run(["pmset", "-g", "batt"], capture_output=True, text=True, timeout=5).stdout

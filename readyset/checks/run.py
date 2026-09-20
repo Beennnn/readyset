@@ -17,15 +17,15 @@ from .phone import check_iphone_charge
 
 
 def _guard(label: str, fn) -> list:
-    """Exécute un check ; s'il lève, rend une ligne EN ERREUR au lieu de tout emporter.
+    """Run a check; if it raises, return a line IN ERROR instead of taking everything down.
 
-    Sans ce filet, une seule exception remontait jusqu'à `do_GET`, la connexion se
-    fermait vide, et le client ne voyait pas « un check en panne » mais « serveur
-    injoignable ». C'est ce qui a rendu la panne du 2026-08-18 si opaque : l'agent
-    tournait, le port répondait, et rien ne sortait — pendant 18 heures.
+    Without this net, a single exception climbed all the way to `do_GET`, the connection
+    closed empty, and the client did not see « a broken check » but « unreachable
+    server ». That is what made the 2026-08-18 outage so opaque: the agent was running,
+    the port was answering, and nothing came out — for 18 hours.
 
-    Un rig à 24 checks sur 25 reste utilisable ; un dashboard muet, non. Et le check qui
-    a lâché le DIT, avec son exception : c'est une information, pas un silence.
+    A rig with 24 checks out of 25 stays usable; a mute dashboard does not. And the check
+    that gave out SAYS so, with its exception: that is information, not silence.
     """
     try:
         out = fn()
@@ -61,7 +61,7 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     ]
     if with_audio:
         todo += [
-            # En tête du bloc audio : quand il est rouge, il EST la cause des suivants.
+            # At the head of the audio block: when it is red, it IS the cause of the rest.
             ("Service audio", lambda: check_coreaudio(cfg)),
             ("Sortie par défaut", lambda: check_default_output(cfg)),
             ("Interface audio", lambda: check_audio(cfg, mode)),
@@ -72,6 +72,6 @@ def run_all(cfg: dict, mode: str = "live", with_audio: bool = True,
     results: list[Result] = []
     for label, fn in todo:
         results += _guard(label, fn)
-    # Les checks réglés sur "off" rendent None : ils disparaissent ici, une bonne fois,
-    # plutôt que chaque appelant ait à s'en soucier.
+    # Checks set to "off" return None: they disappear here, once and for all, rather than
+    # every caller having to worry about them.
     return [r for r in results if r is not None]

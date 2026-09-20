@@ -37,25 +37,25 @@ def resolve_mode(cfg: dict, requested: str = "auto") -> str:
 
 def _network_severity(cfg: dict, mode: str) -> str:
     """Severity of the two stage-network checks, per mode. Both answer the same physical
-    question — « suis-je branché sur le réseau de scène ? » — so they share one knob:
+    question — « am I plugged into the stage network? » — so they share one knob:
     blocking on stage (no modem = no iPhone, no lamps, no remote), informational at the
     desk, where that network is simply somewhere else and can never answer."""
     return cfg["modes"].get(mode, {}).get("network_severity", "fail")
 
 
 def check_stage_network(cfg: dict, mode: str) -> Result | None:
-    """Le réseau de scène, en UNE ligne à deux étages plutôt qu'en deux checks.
+    """The stage network, in ONE two-stage line rather than in two checks.
 
-    Ils posaient déjà la même question physique — « suis-je sur le réseau de scène ? » —
-    au point de partager un seul réglage de sévérité. Séparés, ils s'allumaient toujours
-    ensemble et coûtaient deux lignes pour un seul fait.
+    They already asked the same physical question — « am I on the stage network? » — to
+    the point of sharing a single severity setting. Separated, they always lit up
+    together and cost two lines for a single fact.
 
-    L'ordre du diagnostic va de la cause à la conséquence : le modem D'ABORD, parce que
-    c'est lui qui distribue les adresses. Modem éteint → aucune IP possible, et annoncer
-    « le Mac n'est pas sur le réseau » ferait chercher du côté du Mac un problème qui est
-    dans la mallette. Modem debout mais pas d'IP → là seulement, c'est le Mac (câble,
-    mauvais WiFi). Le cas inverse existe aussi : une IP et un modem muet, c'est-à-dire un
-    modem qui a donné le bail puis a lâché.
+    The order of the diagnosis goes from the cause to the consequence: the modem FIRST,
+    because it is the one that hands out the addresses. Modem off → no IP possible, and
+    announcing « the Mac is not on the network » would send you hunting on the Mac's side
+    for a problem that is in the flight case. Modem up but no IP → only then is it the
+    Mac (cable, wrong WiFi). The reverse case exists too: an IP and a silent modem, that
+    is to say a modem that handed out the lease and then gave out.
     """
     sev = _network_severity(cfg, mode)
     if sev == OFF:
@@ -75,7 +75,7 @@ def check_stage_network(cfg: dict, mode: str) -> Result | None:
     if modem and ip:
         return Result("net:stage", label, OK, f"Mac en {ip} · modem {host} répond")
 
-    if sev != FAIL:      # au bureau, ce réseau est simplement ailleurs
+    if sev != FAIL:      # at the desk, that network is simply somewhere else
         return Result("net:stage", label, sev, "absent (normal hors scène)")
 
     if not modem and not ip:
@@ -110,11 +110,11 @@ def check_bome_iphone(cfg: dict) -> Result:
     if host:
         lines = [l for l in lines if host in l]
     if not lines:
-        # Le lien a DEUX bouts, et le conseil ne vaut que s'il désigne le bon. Bome
-        # Network éteint sur le Mac est visible d'ici ; s'il tourne, alors le côté
-        # muet est forcément le téléphone — c'est la seule chose qu'on ne voit pas.
-        # remedy.py suit exactement la même règle : pas de bouton « relancer » quand
-        # le Mac est déjà en ordre, sinon on relance ce qui marche.
+        # The link has TWO ends, and the advice is only worth anything if it names the
+        # right one. Bome Network being off on the Mac is visible from here; if it is
+        # running, then the silent end is necessarily the phone — that is the one thing
+        # we cannot see. remedy.py follows exactly the same rule: no « restart » button
+        # when the Mac is already in order, otherwise you restart what is working.
         mac_side = cfg["checks"]["apps"].get("Bome Network", "Bome Network")
         if not _pgrep(mac_side):
             advice = "lancer Bome Network sur le MAC (il est éteint ici)"
@@ -134,10 +134,10 @@ def check_bome_iphone(cfg: dict) -> Result:
                   f"connecté{f' ({peer})' if peer else ''}")
 
 
-# Le parsing vit dans readyset/vpn.py, avec la coupure : un seul lecteur de `scutil --nc
-# list` pour les deux, sinon le check et le fix finissent par ne plus parler du même VPN.
-# (Les entrées [PPP:Modem] y sont écartées : ce sont des gadgets série — pédale ToneX,
-# cartes Seeed — que macOS range dans la même liste, pas des VPN.)
+# The parsing lives in readyset/vpn.py, together with the cut-off: a single reader of
+# `scutil --nc list` for both, otherwise the check and the fix end up no longer talking
+# about the same VPN. ([PPP:Modem] entries are discarded there: those are serial gadgets
+# — a ToneX pedal, Seeed boards — that macOS files in the same list, not VPNs.)
 def check_vpn(cfg: dict) -> Result:
     try:
         active = vpn_control.connected(cfg)
