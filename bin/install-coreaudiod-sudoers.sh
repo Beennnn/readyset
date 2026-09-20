@@ -1,19 +1,19 @@
 #!/usr/bin/env bash
-# install-coreaudiod-sudoers.sh — pose une règle sudoers NOPASSWD limitée à UNE commande,
-# `killall coreaudiod`, pour que le bouton « Relancer le service audio » du dashboard
-# (et un bouton Stream Deck) relancent le service audio de macOS sans dialogue de mot de
-# passe. À lancer UNE fois, à la main (il demande TON mot de passe, une seule fois).
+# install-coreaudiod-sudoers.sh — installs a NOPASSWD sudoers rule limited to ONE command,
+# `killall coreaudiod`, so that the dashboard's « Relancer le service audio » button
+# (and a Stream Deck button) can restart the macOS audio service with no password
+# dialog. To be run ONCE, by hand (it asks for YOUR password, a single time).
 #
-# Pourquoi : coreaudiod tourne sous root. Quand il se fige (2026-09-12 : 9 h sans son, la
-# faute à un pilote tiers qui lui faisait écrire ses réglages en boucle), le seul remède
-# est de le tuer — launchd le relance dans la seconde. Sans cette règle, le correctif du
-# dashboard retombe sur le dialogue de mot de passe macOS : ça marche, mais pas depuis
-# une pédale ni un Stream Deck, et pas cinq secondes avant de jouer.
+# Why: coreaudiod runs as root. When it freezes (2026-09-12: 9 h with no sound, the fault
+# of a third-party driver that made it write its settings in a loop), the only remedy
+# is to kill it — launchd relaunches it within the second. Without this rule, the
+# dashboard's fix falls back on the macOS password dialog: it works, but not from a
+# pedal nor from a Stream Deck, and not five seconds before playing.
 #
-# Portée : `/usr/bin/killall coreaudiod` avec exactement cet argument — rien d'autre ne
-# gagne root. Tuer coreaudiod est sans perte (il n'a pas d'état à sauver, launchd le
-# ressuscite) ; c'est la commande la plus bénigne qu'on puisse donner sans mot de passe.
-# Même schéma que surfshark-toggle/install.sh.
+# Scope: `/usr/bin/killall coreaudiod` with exactly that argument — nothing else gains
+# root. Killing coreaudiod loses nothing (it has no state to save, launchd resurrects
+# it); it is the most benign command one could grant without a password.
+# Same pattern as surfshark-toggle/install.sh.
 set -euo pipefail
 
 USER_NAME="$(id -un)"
@@ -28,7 +28,7 @@ cat > "$TMP" <<RULE
 $USER_NAME ALL=(root) NOPASSWD: /usr/bin/killall coreaudiod
 RULE
 
-# visudo -c AVANT d'installer : un sudoers invalide bloque sudo pour tout le monde.
+# visudo -c BEFORE installing: an invalid sudoers blocks sudo for everyone.
 if ! sudo visudo -cf "$TMP" >/dev/null; then
   echo "❌ règle sudoers invalide — rien n'a été installé."
   exit 1

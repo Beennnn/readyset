@@ -23,14 +23,14 @@ piano does. The nightmares are specific:
 
 None of these are hard to *check* — you just have to remember to check all of them, every
 gig, under pressure, in a dark room. readyset is that checklist, automated: it brings the
-readyset up in order, verifies every link, and then watches them for the whole set.
+rig up in order, verifies every link, and then watches them for the whole set.
 
 ## The rig
 
 | Piece | Role | How readyset knows it's OK |
 |---|---|---|
-| **DAW** (Ableton Live) opening a **gig set** (`Funk Set.als`) | your sound engine + the actual songs | app process running; project opened by preflight |
-| **Audio interface** (RME-class USB) | sound out to the PA | CoreAudio device present; DAW's logged output device matches |
+| **DAW** (Ableton Live) opening a **gig set** (`Gig Set.als`) | your sound engine + the actual songs | app process running; project opened by preflight |
+| **Audio interface** (a class-compliant USB interface) | sound out to the PA | CoreAudio device present; DAW's logged output device matches |
 | **Main keyboard** (88-key stage piano) | what you play | its MIDI input port is present (with a fallback tier in studio) |
 | **Breath controller** | expression for winds/leads | its MIDI input port is present |
 | **MIDI router** (Bome Translator + Network) | glue between surfaces, phone and the DAW | both apps running; the loopback MIDI port exists |

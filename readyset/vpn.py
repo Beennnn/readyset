@@ -1,26 +1,26 @@
-"""VPN — le détecter, et surtout savoir le COUPER.
+"""VPN — detecting it, and above all knowing how to CUT it.
 
-Pourquoi le rig s'en préoccupe : un VPN actif réécrit le routage de la machine. Le Mac
-peut alors ne plus voir l'iPhone qui pilote Bome, ni le modem de scène, ni les lampes —
-tout ce qui vit sur le réseau local. On joue, et la télécommande ne répond plus.
+Why the rig cares: an active VPN rewrites the machine's routing. The Mac may then stop
+seeing the iPhone driving Bome, or the stage modem, or the lamps — everything that lives
+on the local network. You play, and the remote control stops answering.
 
-Pourquoi couper un VPN n'est PAS trivial (et pourquoi ce module existe plutôt qu'un
-`scutil --nc stop` en une ligne) : les clients modernes (Surfshark en tête) installent
-un profil « on-demand » avec une règle `Connect` inconditionnelle. `scutil --nc stop`
-réussit… et le tunnel se reforme au paquet suivant, dans la demi-seconde. On ne bat pas
-l'on-demand depuis l'espace utilisateur. La seule parade fiable est de DÉSACTIVER LE
-SERVICE RÉSEAU : on-demand ne peut pas connecter un service administrativement éteint.
-Analyse complète : github.com/Beennnn/surfshark-toggle.
+Why cutting a VPN is NOT trivial (and why this module exists rather than a one-line
+`scutil --nc stop`): modern clients (Surfshark first among them) install an "on-demand"
+profile with an unconditional `Connect` rule. `scutil --nc stop` succeeds… and the tunnel
+re-forms on the next packet, within half a second. You do not beat on-demand from user
+space. The only reliable counter is to DISABLE THE NETWORK SERVICE: on-demand cannot
+connect a service that is administratively switched off.
+Full analysis: github.com/Beennnn/surfshark-toggle.
 
-Conséquence à assumer, et c'est pour ça que chaque message le répète : la coupure est
-PERSISTANTE — elle survit au redémarrage. C'est voulu (sinon elle ne tiendrait pas une
-soirée), mais ça veut dire qu'un `readyset vpn on` est nécessaire pour retrouver son VPN.
+A consequence to own, and that is why every message repeats it: the cut is PERSISTENT —
+it survives a reboot. That is intentional (otherwise it would not hold for a whole
+evening), but it means a `readyset vpn on` is needed to get one's VPN back.
 
-La désactivation de service demande root. La règle sudoers posée par surfshark-toggle
-(`install.sh`) l'autorise sans mot de passe, et UNIQUEMENT pour ce sous-verbe :
+Disabling a service requires root. The sudoers rule installed by surfshark-toggle
+(`install.sh`) allows it without a password, and ONLY for that sub-verb:
     <user> ALL=(root) NOPASSWD: /usr/sbin/networksetup -setnetworkserviceenabled *
-Sans elle, on retombe sur `scutil --nc stop` — suffisant pour un VPN sans on-demand
-(Tailscale), inopérant contre Surfshark. Le message le dit au lieu de mentir.
+Without it, we fall back on `scutil --nc stop` — enough for a VPN without on-demand
+(Tailscale), powerless against Surfshark. The message says so instead of lying.
 """
 
 from __future__ import annotations
@@ -44,11 +44,11 @@ def _nc_list() -> list[str]:
 
 
 def connected(cfg: dict | None = None) -> list[tuple[str, str]]:
-    """VPN actuellement connectés → [(nom du service, UUID)].
+    """VPNs currently connected → [(service name, UUID)].
 
-    Les entrées `[PPP:Modem]` sont écartées : ici ce sont des gadgets série (pédale
-    ToneX, cartes Seeed) que macOS range dans la même liste, pas des VPN.
-    `[checks.vpn].ignore` permet d'exclure un VPN qu'on assume (sous-chaîne du nom).
+    `[PPP:Modem]` entries are discarded: here those are serial gadgets (a ToneX pedal,
+    Seeed boards) that macOS files in the same list, not VPNs.
+    `[checks.vpn].ignore` allows excluding a VPN we accept (a substring of the name).
     """
     ignore = [s.lower() for s in ((cfg or {}).get("checks", {}).get("vpn", {}) or {}).get("ignore", [])]
     out = []
@@ -64,7 +64,7 @@ def connected(cfg: dict | None = None) -> list[tuple[str, str]]:
 
 
 def _network_services() -> set[str]:
-    """Services réseau connus de networksetup (le `*` en tête = service désactivé)."""
+    """Network services known to networksetup (a leading `*` = a disabled service)."""
     try:
         lines = _run(["networksetup", "-listallnetworkservices"], timeout=10).stdout.splitlines()
     except Exception:
@@ -73,7 +73,7 @@ def _network_services() -> set[str]:
 
 
 def disabled_services() -> list[str]:
-    """Services réseau actuellement DÉSACTIVÉS — ceux qu'un `readyset vpn on` doit rallumer."""
+    """Network services currently DISABLED — the ones a `readyset vpn on` must switch back on."""
     try:
         lines = _run(["networksetup", "-listallnetworkservices"], timeout=10).stdout.splitlines()
     except Exception:
@@ -82,7 +82,7 @@ def disabled_services() -> list[str]:
 
 
 def _vpn_service_names() -> set[str]:
-    """Noms de service qui sont des VPN (d'après scutil), connectés ou non."""
+    """Service names that are VPNs (according to scutil), connected or not."""
     names = set()
     for line in _nc_list():
         if "[PPP:Modem]" in line or '"' not in line:
@@ -93,7 +93,7 @@ def _vpn_service_names() -> set[str]:
 
 
 def _override_cmd(cfg: dict, name: str) -> str | None:
-    """Commande de coupure sur mesure pour ce VPN (clé = sous-chaîne du nom)."""
+    """Custom cut-off command for this VPN (the key = a substring of the name)."""
     cmds = (cfg.get("checks", {}).get("vpn", {}) or {}).get("off_cmds", {}) or {}
     for pattern, cmd in cmds.items():
         if pattern.lower() in name.lower():
@@ -102,8 +102,8 @@ def _override_cmd(cfg: dict, name: str) -> str | None:
 
 
 def _disable_service(name: str) -> tuple[bool, str]:
-    # -n : jamais d'attente sur un prompt de mot de passe. Sans la règle sudoers, on
-    # échoue tout de suite avec un message actionnable plutôt que de figer le dashboard.
+    # -n: never wait on a password prompt. Without the sudoers rule, we fail right away
+    # with an actionable message rather than freezing the dashboard.
     r = _run(["sudo", "-n", "/usr/sbin/networksetup", "-setnetworkserviceenabled", name, "off"])
     if r.returncode == 0:
         return True, "service désactivé"
@@ -115,7 +115,7 @@ def _disable_service(name: str) -> tuple[bool, str]:
 
 
 def turn_off(cfg: dict, dry_run: bool = False) -> tuple[bool, str]:
-    """Coupe tous les VPN connectés. Retourne (ok, message multi-lignes)."""
+    """Cut every connected VPN. Returns (ok, multi-line message)."""
     conns = connected(cfg)
     if not conns:
         return True, "aucun VPN actif — rien à couper"
@@ -148,15 +148,15 @@ def turn_off(cfg: dict, dry_run: bool = False) -> tuple[bool, str]:
             ok = True
             lines.append(f"• {name} — pas de service réseau : seulement scutil stop "
                          f"(se reconnectera si l'app le redemande)")
-        # Le tunnel peut être encore debout à cet instant : on le fait tomber tout de
-        # suite. Le service désactivé juste avant est ce qui l'empêche de revenir.
+        # The tunnel may still be standing at this point: we bring it down right away.
+        # The service disabled just before is what keeps it from coming back.
         if uuid:
             _run(["scutil", "--nc", "stop", uuid], timeout=10)
 
     if dry_run:
         return True, "\n".join(lines)
 
-    time.sleep(1.5)      # l'état scutil met un instant à retomber
+    time.sleep(1.5)      # the scutil state takes a moment to settle back down
     still = connected(cfg)
     if still:
         lines.append("⚠️ toujours connecté : " + ", ".join(n for n, _ in still))
@@ -168,7 +168,7 @@ def turn_off(cfg: dict, dry_run: bool = False) -> tuple[bool, str]:
 
 
 def turn_on(cfg: dict, dry_run: bool = False) -> tuple[bool, str]:
-    """Réactive les services VPN qu'une coupure avait éteints (l'inverse de turn_off)."""
+    """Re-enable the VPN services a cut had switched off (the reverse of turn_off)."""
     targets = [s for s in disabled_services() if s in _vpn_service_names()]
     if not targets:
         return True, "aucun service VPN désactivé — rien à rétablir"

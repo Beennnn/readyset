@@ -4,7 +4,7 @@
   readyset preflight   launch the apps in order, open the gig set, then verify → checklist
   readyset check       verify only (no launch), one-shot checklist + exit code
   readyset monitor     watch continuously; alert the moment something dies (and recovers)
-  readyset tidy        hide the readyset apps' windows (they keep running) — Ableton stays visible
+  readyset tidy        hide the rig apps' windows (they keep running) — Ableton stays visible
   readyset apps        list the open apps the rig doesn't need; --close offers to quit them
   readyset vpn off|on  cut the VPN (it rewrites routing → no iPhone, no stage LAN) / restore
   readyset alert-test  fire a test alert through every active backend
@@ -41,8 +41,8 @@ def _hr() -> str:
 def _print_results(results: list[checks.Result]) -> None:
     width = max((len(r.label) for r in results), default=0)
     for r in results:
-        # Le conseil vit sur sa propre ligne (checks._hint) ; en terminal on le
-        # recolle, la largeur de la fenêtre fait l'enroulement toute seule.
+        # The hint lives on its own line (checks._hint); in a terminal we glue it back
+        # on, the width of the window does the wrapping all by itself.
         detail = f"  — {r.detail}".replace("\n", " ") if r.detail else ""
         print(f"  {r.icon} {r.label.ljust(width)}{detail}")
 
@@ -52,8 +52,8 @@ def _summary_line(results: list[checks.Result]) -> tuple[str, int]:
     fails = sum(1 for r in results if r.status == checks.FAIL)
     warns = sum(1 for r in results if r.status == checks.WARN)
     infos = sum(1 for r in results if r.status == checks.INFO)
-    # Les « info » se mentionnent entre parenthèses mais ne changent NI le verdict NI le
-    # code de sortie : de l'optionnel non branché n'empêche pas de jouer.
+    # The "info" ones are mentioned in parentheses but change NEITHER the verdict NOR the
+    # exit code: optional gear that is not plugged in does not stop anyone from playing.
     extra = f" ({infos} info)" if infos else ""
     if status == checks.OK:
         return f"✅ Rig prêt — tout est vert.{extra}", 0
@@ -82,15 +82,15 @@ def cmd_preflight(cfg: dict, args) -> int:
     mode = _mode(cfg, args)
     tag = " (DRY-RUN — rien n'est lancé)" if dry else ""
     print(f"[{_hr()}] Mise en place du rig — mode {mode}{tag}\n")
-    # La sortie d'Ableton est APPLIQUÉE, pas vérifiée — mais c'est `launch.open_set` qui
-    # s'en charge désormais, juste après que Live soit en ligne et AVANT le rangement des
-    # fenêtres. Le faire ici, une fois toute la mise en place terminée, laissait Live
-    # planté sur sa fenêtre « section audio désactivée » pendant les étapes intermédiaires,
-    # qui pilotent elles aussi son interface et échouaient donc à leur tour (2026-08-22).
+    # Ableton's output is APPLIED, not verified — but `launch.open_set` is what takes
+    # care of it now, right after Live comes online and BEFORE the window tidying. Doing
+    # it here, once the whole bring-up was over, left Live stuck on its "audio section
+    # disabled" dialog during the intermediate steps, which also drive its interface and
+    # therefore failed in turn (2026-08-22).
     launch.bring_up(cfg, log=print, dry_run=dry, mode=mode)
 
-    # APRÈS la sortie audio, jamais avant : les premières mesures sortiraient sinon sur
-    # l'interface qu'on vient justement de corriger.
+    # AFTER the audio output, never before: otherwise the first bars would come out on
+    # the very interface we have just corrected.
     launch.start_scene(cfg, log=print, dry_run=dry)
 
     print(f"\n[{_hr()}] Vérification finale…\n")
@@ -190,7 +190,7 @@ def cmd_tidy(cfg: dict, args) -> int:
 
 
 def cmd_apps(cfg: dict, args) -> int:
-    """Liste les apps ouvertes dont le rig n'a pas besoin, et propose de les fermer."""
+    """List the open apps the rig does not need, and offer to close them."""
     dry = getattr(args, "dry_run", False)
     extra = apps.unexpected(cfg)
     if not extra:
@@ -202,8 +202,8 @@ def cmd_apps(cfg: dict, args) -> int:
     if not args.close:
         print("\n(`readyset apps --close` pour proposer de les fermer)")
         return 0
-    # Confirmation explicite, y compris hors terminal interactif : sans réponse claire on
-    # ne ferme rien. Fermer une app peut faire perdre du travail non enregistré.
+    # Explicit confirmation, including outside an interactive terminal: without a clear
+    # answer we close nothing. Closing an app can lose unsaved work.
     try:
         answer = input(f"\nQuitter ces {len(extra)} appli(s) ? [o/N] ").strip().lower()
     except EOFError:
@@ -291,8 +291,9 @@ def main(argv=None) -> int:
 
     s = sub.add_parser("serve", help="dashboard web d'état + fix/relaunch")
     s.add_argument("--port", type=int, default=8765, help="port local (défaut 8765)")
-    # Défaut None et pas "127.0.0.1" : sans ça le drapeau écraserait [server].host de
-    # rig.toml à chaque lancement, et l'ouverture au réseau ne tiendrait jamais.
+    # Default None and not "127.0.0.1": without that the flag would override
+    # [server].host from rig.toml on every launch, and opening to the network would
+    # never hold.
     s.add_argument("--host", default=None,
                    help="interface d'écoute (défaut : [server].host de rig.toml, "
                         "127.0.0.1) ; 0.0.0.0 = ouvert au réseau local")

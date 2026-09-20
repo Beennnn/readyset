@@ -12,26 +12,26 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 
-# Quatre niveaux, du plus calme au plus grave. INFO est SOUS l'avertissement : il dit
-# « absent, et c'est normal » — un équipement facultatif qu'on n'a simplement pas branché
-# ce soir (lampes d'ambiance, interface audio au bureau). C'est le niveau qui manquait :
-# tout mettre en WARN faisait clignoter en orange des choses dont personne ne se soucie,
-# et à force on ne lit plus les oranges du tout — y compris les vrais.
-# Un check INFO ne rend PAS le rig « non prêt » : `worst()` l'ignore, le code de sortie
-# reste 0, et la pastille/le liseré ne s'allument pas.
+# Four levels, from the calmest to the gravest. INFO sits BELOW the warning: it says
+# « absent, and that is normal » — an optional piece of gear that simply was not plugged
+# in tonight (ambiance lamps, the audio interface at the desk). It is the level that was
+# missing: putting everything at WARN made things nobody cares about blink orange, and in
+# the end you stop reading the oranges at all — including the real ones.
+# An INFO check does NOT make the rig « not ready »: `worst()` ignores it, the exit code
+# stays 0, and neither the dot nor the edge strip lights up.
 OK, INFO, WARN, FAIL = "ok", "info", "warn", "fail"
 _ICON = {OK: "✅", INFO: "ℹ️ ", WARN: "⚠️ ", FAIL: "❌"}
 
-# Valeur spéciale acceptée partout où une sévérité se règle (breath_severity,
-# interface_severity, network_severity, lamp_severity, [[checks.audio_devices]].severity…) :
-# le check ne s'exécute PAS et n'apparaît nulle part dans ce mode.
+# Special value accepted everywhere a severity is set (breath_severity,
+# interface_severity, network_severity, lamp_severity, [[checks.audio_devices]].severity…):
+# the check does NOT run and appears nowhere at all in that mode.
 #
-# À ne pas confondre avec INFO. "info" dit « absent, et c'est normal » — la ligne reste
-# affichée, on sait que la question a été posée. "off" dit « la question n'a pas de sens
-# ici » : sur scène le son sort du P-225, la RME n'est même pas dans le sac, donc afficher
-# « RME non détectée » chaque soir n'apprend rien à personne et allonge la liste à lire
-# avant de jouer. Ne l'utiliser que pour ça — masquer un vrai problème derrière "off",
-# c'est se rendre aveugle.
+# Not to be confused with INFO. "info" says « absent, and that is normal » — the line is
+# still displayed, so you know the question was asked. "off" says « the question makes no
+# sense here »: on stage the sound comes out of the stage keyboard, the desk interface is
+# not even in the bag, so showing « desk interface not detected » every night teaches
+# nobody anything and lengthens the list to read before playing. Use it for that and
+# nothing else — hiding a real problem behind "off" is blinding yourself.
 OFF = "off"
 
 
@@ -50,13 +50,13 @@ class Result:
     def ok(self) -> bool:
         return self.status == OK
 
-    # Le contenu d'un check COMPOSITE : ses sous-éléments, chacun vu ou pas encore.
-    # Un check reste UNE ligne — c'est ce qui garde la liste lisible d'un coup d'œil —
-    # mais il énumérait alors ses manquants dans son texte, où toute surface étroite les
-    # tronque (« … : Pédale, Notes, Souff… »). Détaillés ici, ceux qui ont la place les
-    # déplient au lieu de les couper. None quand le check n'a rien à détailler.
-    # Chacun : {"name": str, "ok": bool, "icon": str} — l'icône illustre le GESTE à faire,
-    # et se lit avant le mot ; elle est facultative, un nom seul reste parfaitement lisible.
+    # The contents of a COMPOSITE check: its sub-items, each one seen or not seen yet.
+    # A check stays ONE line — that is what keeps the list readable at a glance — but it
+    # then enumerated its missing items inside its own text, where any narrow surface
+    # truncates them (« … : Pédale, Notes, Souff… »). Detailed here, the surfaces that have
+    # the room unfold them instead of cutting them. None when there is nothing to detail.
+    # Each one: {"name": str, "ok": bool, "icon": str} — the icon illustrates the GESTURE to
+    # perform, and is read before the word; it is optional, a bare name stays fully readable.
     parts: list[dict] | None = None
 
     def to_dict(self) -> dict:
@@ -69,38 +69,38 @@ class Result:
 
 
 def _ago(seconds: float | None) -> str:
-    """« il y a 12 s » / « il y a 4 min » — l'âge d'une observation, en toutes lettres.
+    """« il y a 12 s » / « il y a 4 min » — the age of an observation, spelled out in words.
 
-    Un horodatage brut oblige à faire la soustraction de tête, juste avant de jouer.
+    A raw timestamp forces you to do the subtraction in your head, right before playing.
     """
     if seconds is None:
         return "?"
     if seconds < 90:
         return f"{int(seconds)} s"
-    if seconds < 5400:                       # au-delà d'une heure et demie, « 120 min »
-        return f"{int(seconds // 60)} min"   # oblige à diviser de tête pour situer
+    if seconds < 5400:                       # past an hour and a half, « 120 min » forces
+        return f"{int(seconds // 60)} min"   # you to divide in your head to place it
     return f"{seconds / 3600:.0f} h"
 
 
 def _hint(observed: str, advice: str) -> str:
-    """Colle un conseil au constat : « ce que je vois → ce que tu peux faire ».
+    """Glue a piece of advice onto the observation: « what I see → what you can do ».
 
-    Un check rouge sans conseil oblige à se souvenir du geste — et sur scène, cinq
-    minutes avant de jouer, c'est exactement ce qui manque. Le constat reste devant
-    (c'est lui qui est vrai), le conseil suit. Réservé au matériel : quand une
-    résolution automatique existe, c'est un bouton de remedy.py qu'il faut, pas une
-    phrase (personne ne lit un conseil qu'une machine pourrait exécuter).
+    A red check with no advice forces you to remember the gesture — and on stage, five
+    minutes before playing, that is exactly what is missing. The observation stays in
+    front (it is the part that is true), the advice follows. Reserved for hardware: when
+    an automatic resolution exists, what is needed is a remedy.py button, not a
+    sentence (nobody reads advice that a machine could have carried out).
     """
-    # Le saut de ligne est SÉMANTIQUE, pas décoratif : chaque affichage le rend à sa
-    # façon. Le dashboard est en `white-space: pre-line` et met le conseil sur sa propre
-    # ligne — avant, un `nowrap` + ellipse coupait les conseils en plein milieu, ce qui
-    # est pire que pas de conseil. Le terminal, lui, les recolle et enroule tout seul.
+    # The line break is SEMANTIC, not decorative: every display renders it in its own
+    # way. The dashboard is in `white-space: pre-line` and puts the advice on its own
+    # line — before that, a `nowrap` + ellipsis cut the advice off mid-sentence, which
+    # is worse than no advice at all. The terminal glues them back and wraps on its own.
     return f"{observed}\n→ {advice}"
 
 
 def worst(results: list[Result]) -> str:
-    """Pire niveau du lot. INFO n'apparaît JAMAIS ici : c'est une annotation par ligne,
-    pas un état du rig — un rig dont tout l'optionnel est débranché reste « prêt »."""
+    """Worst level of the batch. INFO NEVER appears here: it is a per-line annotation,
+    not a state of the rig — a rig whose optional gear is all unplugged is still « ready »."""
     if any(r.status == FAIL for r in results):
         return FAIL
     if any(r.status == WARN for r in results):

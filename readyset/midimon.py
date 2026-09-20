@@ -34,14 +34,14 @@ CC_NAMES = {1: "Mod", 2: "Breath", 4: "Foot", 5: "Porta", 7: "Volume", 10: "Pan"
 
 
 def _physical_inputs(aussi_exclus: tuple[str, ...] = ()) -> list[str]:
-    """Les entrées où quelqu'un JOUE vraiment.
+    """The inputs where somebody really PLAYS.
 
-    `aussi_exclus` reçoit les ports que la config désigne comme non-instruments — le port
-    d'alerte du rig en premier lieu. Il ne porte aucun geste : il porte ce que le rig se
-    dit à lui-même, onze messages toutes les quinze secondes depuis que la jauge existe.
-    Le laisser ici noyait le soundcheck sous du trafic qu'aucun doigt n'a produit, et son
-    nom ne contient aucun des mots de _EXCLUDE — l'exclure par mot-clé aurait été un
-    pari sur son orthographe, alors que la config le nomme déjà.
+    `aussi_exclus` receives the ports the config designates as non-instruments — the
+    rig's alert port first and foremost. It carries no gesture: it carries what the rig
+    tells itself, eleven messages every fifteen seconds ever since the gauge exists.
+    Leaving it here drowned the soundcheck under traffic no finger ever produced, and its
+    name contains none of the _EXCLUDE words — excluding it by keyword would have been a
+    bet on its spelling, whereas the config already names it.
     """
     with MIDI_LOCK:
         names = sorted(set(mido.get_input_names()))
@@ -51,18 +51,19 @@ def _physical_inputs(aussi_exclus: tuple[str, ...] = ()) -> list[str]:
 
 
 def sleep_stamp() -> tuple[int, int]:
-    """(démarrage, dernier réveil) en secondes — l'empreinte d'une « session machine ».
+    """(boot, last wake) in seconds — the fingerprint of a "machine session".
 
-    Les deux ensemble, parce qu'aucun ne suffit : `kern.waketime` vaut 0 tant que le Mac
-    n'a pas dormi depuis l'allumage (c'est le cas ici, allumé le 17/08 et tenu éveillé
-    par Amphetamine), donc seul il ne verrait pas un redémarrage ; `kern.boottime` ne
-    bouge pas au réveil. Le couple change dans les deux cas, et c'est ce qu'on veut.
+    Both together, because neither one is enough: `kern.waketime` is 0 as long as the Mac
+    has not slept since it was switched on (which is the case here, switched on on 08-17
+    and kept awake by Amphetamine), so on its own it would not see a reboot;
+    `kern.boottime` does not move on wake. The pair changes in both cases, which is what
+    we want.
 
-    Pourquoi ça compte : un soundcheck prouve que le clavier, la pédale et le souffle
-    répondaient À CE MOMENT-LÀ. Après une mise en veille, l'USB a pu se réassocier
-    autrement, un port disparaître, un appareil ne pas revenir — c'est même le mode de
-    panne le plus courant du rig. Un test d'avant-veille ne prouve donc plus rien, et le
-    montrer encore vert serait un mensonge rassurant.
+    Why it matters: a soundcheck proves that the keyboard, the pedal and the breath were
+    answering AT THAT MOMENT. After a sleep, USB may have re-enumerated differently, a
+    port may have vanished, a device may not have come back — that is even the rig's most
+    common failure mode. A pre-sleep test therefore proves nothing any more, and still
+    showing it green would be a reassuring lie.
     """
     def sec(name: str) -> int:
         try:
@@ -77,8 +78,8 @@ def sleep_stamp() -> tuple[int, int]:
 
 class MidiMonitor:
     def __init__(self):
-        # La chaîne du breath, décrite dans rig.toml. Posée par le serveur via
-        # configure() : le moniteur est construit avant que la config soit lue.
+        # The breath chain, described in rig.toml. Set by the server through
+        # configure(): the monitor is built before the config is read.
         self.chain: dict = {}
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
@@ -90,38 +91,38 @@ class MidiMonitor:
             self.ports: dict[str, dict] = {}     # name -> {count, last, ts}
             self.events: list[dict] = []         # most-recent-first, capped
             self.flags = {"pedal_cc64": None, "notes": 0, "breath": None}
-            # Mouvements de tête du breath controller. Le TEControl envoie le souffle sur
-            # CC2/CC11 et ses capteurs d'inclinaison sur d'AUTRES CC, dont le numéro est
-            # réglable dans son éditeur — impossible à coder en dur sans mentir. On les
-            # apprend donc : tout CC non-souffle venant du port « breath » est un axe, sa
-            # PREMIÈRE valeur est le repos, et on retient jusqu'où il s'en écarte des deux
-            # côtés. Un axe = deux directions (sous le repos / au-dessus), ce qui donne
-            # exactement les quatre inclinaisons demandées.
+            # Head movements of the breath controller. The TEControl sends the breath on
+            # CC2/CC11 and its tilt sensors on OTHER CCs, whose numbers are configurable
+            # in its editor — impossible to hard-code without lying. So we learn them:
+            # any non-breath CC coming from the "breath" port is an axis, its FIRST value
+            # is the rest position, and we remember how far it departs from it on both
+            # sides. One axis = two directions (below rest / above), which gives exactly
+            # the four tilts asked for.
             self.motion: dict[int, dict] = {}   # cc -> {rest, min, max, count}
-            self.stamp = sleep_stamp()          # la session machine de CES résultats
-            # Par geste : vu à la SOURCE (le capteur bouge) et vu EN SORTIE (Bome a
-            # traduit). Les deux séparés, parce que l'écart entre les deux EST le
-            # diagnostic — capteur muet, ou traducteur muet.
+            self.stamp = sleep_stamp()          # the machine session of THESE results
+            # Per gesture: seen at the SOURCE (the sensor moves) and seen at the OUTPUT
+            # (Bome translated). The two kept apart, because the gap between them IS the
+            # diagnosis — mute sensor, or mute translator.
             self.chain_seen: dict[str, dict] = {}
             self.state: dict[str, dict] = {}     # "port|ch" -> live per-channel state
             self._watched: list[str] = []        # physical ports actually opened
             self.started = time.time()
 
     def configure(self, cfg: dict) -> None:
-        """Donne au moniteur la chaîne du breath à surveiller (voir rig.toml)."""
+        """Give the monitor the breath chain to watch (see rig.toml)."""
         self.chain = dict(cfg.get("checks", {}).get("breath_chain", {}) or {})
-        # Le port d'alerte n'est pas un instrument : on le retire de la liste écoutée.
+        # The alert port is not an instrument: we remove it from the listened-to list.
         self.non_instruments = (str(cfg.get("alerts", {}).get("midi", {}).get("port", "")),)
 
     def _chain_ports(self) -> list[str]:
-        """Le port de SORTIE de Bome, qu'il faut écouter en plus des contrôleurs.
+        """Bome's OUTPUT port, which has to be listened to on top of the controllers.
 
-        Il est écarté par `_EXCLUDE` (c'est un « loopback ») et c'est normal pour la
-        liste des contrôleurs physiques — personne ne joue dessus. Mais c'est là que
-        Bome écrit ce qu'Ableton recevra, donc c'est le seul endroit où l'on peut
-        constater que la TRADUCTION a bien eu lieu, et pas seulement que le capteur
-        bouge. Un préréglage Bome désactivé se voit exactement là : le geste part, rien
-        n'arrive. On l'ajoute donc nommément, sans rouvrir la vanne des 17 ports.
+        It is discarded by `_EXCLUDE` (it is a "loopback") and that is right for the list
+        of physical controllers — nobody plays on it. But that is where Bome writes what
+        Ableton will receive, so it is the only place where one can observe that the
+        TRANSLATION did happen, and not merely that the sensor moves. A disabled Bome
+        preset shows up exactly there: the gesture leaves, nothing arrives. So we add it
+        by name, without opening the floodgate of the 17 ports again.
         """
         want = str(self.chain.get("out_port", "")).lower()
         if not want:
@@ -134,19 +135,20 @@ class MidiMonitor:
         return self._thread is not None and self._thread.is_alive()
 
     def start(self) -> None:
-        """Démarre l'écoute SANS effacer ce qui a déjà été constaté.
+        """Start listening WITHOUT erasing what has already been observed.
 
-        Le `_reset()` qui était ici partait d'une époque où l'on cliquait « Démarrer » :
-        un nouveau test, une page blanche. Depuis que l'écoute s'allume et s'éteint toute
-        seule — elle tourne tant qu'il manque quelque chose, elle s'arrête quand tout est
-        arrivé — ce même reset efface le travail déjà fait dès que le moniteur repart pour
-        une raison quelconque (thread arrêté, arrêt/relance rapproché). C'est le défaut
-        signalé le 2026-08-18 : « note est passé vert et a disparu, il aurait dû rester ».
+        The `_reset()` that used to live here came from a time when one clicked "Start":
+        a new test, a blank page. Ever since the listening switches itself on and off —
+        it runs as long as something is missing, it stops when everything has arrived —
+        that same reset wipes the work already done as soon as the monitor restarts for
+        any reason whatsoever (stopped thread, a stop/restart close together). That is
+        the defect reported on 2026-08-18: "note went green and disappeared, it should
+        have stayed".
 
-        Une seule chose invalide un soundcheck, et c'est le changement de session machine
-        (réveil ou redémarrage), traité dans la boucle et dans snapshot(). Un simple
-        redémarrage de l'écoute n'est pas un événement matériel : il ne prouve rien de
-        nouveau, il ne doit donc rien détruire.
+        One single thing invalidates a soundcheck, and that is the change of machine
+        session (wake or reboot), handled in the loop and in snapshot(). A mere restart
+        of the listening is not a hardware event: it proves nothing new, so it must
+        destroy nothing.
         """
         if self.is_running():
             return
@@ -158,20 +160,20 @@ class MidiMonitor:
         self._stop.set()
 
     # -- worker -----------------------------------------------------------
-    _RESCAN_EVERY = 2.0   # secondes
+    _RESCAN_EVERY = 2.0   # seconds
 
     def _sync_ports(self, opened: list) -> list:
-        """Ouvre ce qui est apparu, ferme ce qui a disparu. Renvoie la liste à jour.
+        """Open what has appeared, close what has vanished. Returns the up-to-date list.
 
-        Sans ce rescan, le moniteur ne voyait QUE les ports présents à la seconde où on
-        appuyait sur « Démarrer l'écoute ». Or l'ordre naturel sur scène est l'inverse :
-        on ouvre le soundcheck, PUIS on branche le clavier — et là, pédale enfoncée,
-        rien ne s'allume, sans le moindre message d'erreur. Signalé le 2026-08-18 :
-        « appuie sur la pédale de sustain, et quand j'appuie j'ai pas de feedback ».
-        Le clavier était bien branché ; simplement, personne ne l'écoutait.
+        Without this rescan, the monitor saw ONLY the ports present at the second one
+        pressed "Start listening". Yet the natural order on stage is the reverse: you
+        open the soundcheck, THEN you plug the keyboard in — and there, with the pedal
+        pressed down, nothing lights up, without the slightest error message. Reported
+        on 2026-08-18: "press the sustain pedal, and when I press I get no feedback".
+        The keyboard was indeed plugged in; it was simply that nobody was listening to it.
 
-        Symétriquement, un port débranché est refermé : garder l'objet ouvert sur un
-        appareil parti fait lever `iter_pending()` en boucle.
+        Symmetrically, an unplugged port is closed again: keeping the object open on a
+        device that has left makes `iter_pending()` raise in a loop.
         """
         want = set(_physical_inputs(getattr(self, 'non_instruments', ()))) | set(self._chain_ports())
         have = {p.name for p in opened}
@@ -179,7 +181,7 @@ class MidiMonitor:
             return opened
         keep = []
         with MIDI_LOCK:
-            for p in opened:                  # ce qui a disparu de CoreMIDI
+            for p in opened:                  # what has vanished from CoreMIDI
                 if p.name in want:
                     keep.append(p)
                     continue
@@ -187,11 +189,11 @@ class MidiMonitor:
                     p.close()
                 except Exception:
                     pass
-            for name in want - have:          # ce qui vient d'arriver
+            for name in want - have:          # what has just arrived
                 try:
                     keep.append(mido.open_input(name))
                 except Exception:
-                    pass  # port tenu en exclusivité ailleurs — on réessaiera au prochain tour
+                    pass  # port held exclusively elsewhere — we will retry next round
         with self._lock:
             self._watched = sorted(p.name for p in keep)
         return keep
@@ -203,9 +205,9 @@ class MidiMonitor:
             while not self._stop.is_set():
                 now = time.time()
                 if now >= next_scan:
-                    # Réveil ou redémarrage → les résultats d'avant ne valent plus rien.
-                    # On repart d'une page blanche plutôt que de garder des cases vertes
-                    # qui parlent d'un état matériel qui n'existe peut-être plus.
+                    # Wake or reboot → the previous results are worth nothing any more.
+                    # We start again from a blank page rather than keeping green boxes
+                    # that speak of a hardware state which may no longer exist.
                     if sleep_stamp() != self.stamp:
                         self._reset()
                     opened = self._sync_ports(opened)
@@ -215,9 +217,9 @@ class MidiMonitor:
                         for msg in port.iter_pending():
                             self._record(port.name, msg)
                     except Exception:
-                        # Appareil arraché en pleine lecture : le prochain rescan, dans
-                        # 2 s au plus, le retirera proprement. On ne tue pas le thread
-                        # pour un câble débranché.
+                        # Device yanked out mid-read: the next rescan, in 2 s at most,
+                        # will remove it cleanly. We do not kill the thread over an
+                        # unplugged cable.
                         pass
                 time.sleep(0.01)
         finally:
@@ -229,14 +231,14 @@ class MidiMonitor:
                         pass
 
     def _match_chain(self, port: str, msg) -> None:
-        """Range un message dans la chaîne du breath, à la source ou en sortie."""
+        """File a message into the breath chain, at the source or at the output."""
         ch = self.chain
         if not ch:
             return
         src, out = str(ch.get("source_port", "")).lower(), str(ch.get("out_port", "")).lower()
         low = port.lower()
-        # Bome écrit `Channel num="1"` = canal 2 en numérotation humaine ; mido rend un
-        # canal indexé à 0. D'où le -1, et non un oubli.
+        # Bome writes `Channel num="1"` = channel 2 in human numbering; mido returns a
+        # 0-indexed channel. Hence the -1, and not an oversight.
         want_ch = int(ch.get("out_channel", 2)) - 1
         for g in ch.get("gestures", []):
             e = self.chain_seen.setdefault(g["name"], {"raw": False, "out": False})
@@ -306,16 +308,16 @@ class MidiMonitor:
             return f"pitch {msg.pitch}"
         return msg.type
 
-    # Écart minimal, sur 127, pour distinguer une inclinaison voulue d'un tremblement.
+    # Minimum deviation, out of 127, to tell a deliberate tilt from a tremble.
     _TILT_MIN = 15
 
     def _head(self) -> dict:
-        """Les quatre inclinaisons, déduites des axes appris. À appeler sous le verrou.
+        """The four tilts, deduced from the learned axes. To be called under the lock.
 
-        Les axes sont pris dans l'ordre où ils se sont manifestés : le premier devient
-        gauche/droite, le second haut/bas. Cet ordre est une CONVENTION, pas une mesure —
-        rien dans le MIDI ne dit lequel est lequel. S'ils sortent inversés à l'écran, ce
-        sont les deux libellés qu'il faut échanger, pas le capteur.
+        The axes are taken in the order in which they showed up: the first becomes
+        gauche/droite (left/right), the second haut/bas (up/down). That order is a
+        CONVENTION, not a measurement — nothing in MIDI says which is which. If they come
+        out swapped on screen, it is the two labels that must be exchanged, not the sensor.
         """
         axes = sorted(self.motion.items(), key=lambda kv: -kv[1]["count"])[:2]
         names = [("gauche", "droite"), ("haut", "bas")]
@@ -331,12 +333,12 @@ class MidiMonitor:
     _stamp_checked = 0.0
 
     def snapshot(self) -> dict:
-        # La vérification du réveil vit AUSSI ici, pas seulement dans la boucle : une fois
-        # le soundcheck complet, le moniteur est arrêté (inutile de tenir les ports MIDI
-        # ouverts pour rien) — et un moniteur arrêté ne surveille plus rien. C'est donc
-        # l'interrogation de l'état qui doit s'en charger, sinon un réveil passerait
-        # inaperçu et laisserait des cases vertes périmées. Empreinte relue au plus toutes
-        # les 5 s : deux sysctl à chaque sondage (toutes les 300 ms) seraient du gâchis.
+        # The wake check lives HERE as well, not only in the loop: once the soundcheck is
+        # complete, the monitor is stopped (no point holding the MIDI ports open for
+        # nothing) — and a stopped monitor watches nothing any more. So it is the state
+        # query that must take care of it, otherwise a wake would go unnoticed and leave
+        # stale green boxes behind. The fingerprint is re-read every 5 s at most: two
+        # sysctl calls on every poll (every 300 ms) would be a waste.
         now = time.time()
         if now - self._stamp_checked > self._STAMP_TTL:
             self._stamp_checked = now

@@ -1,26 +1,26 @@
 #!/usr/bin/env bash
-# sd-power — coupe / remet l'alimentation des ports du dock Dell WD19TB qui
-# portent le Stream Deck Plus et tout ce qui est branché dessus.
+# sd-power — cuts / restores power on the Dell WD19TB dock ports that carry the
+# Stream Deck Plus and everything plugged into it.
 #
-# POURQUOI CE DÉTOUR plutôt qu'un interrupteur physique sur le câble :
-# les hubs internes du WD19TB annoncent "ppps" (per-port power switching — la
-# capacité de couper le +5 V d'un port précis par une commande USB standard).
-# uhubctl envoie cette commande. Vérifié le 2026-08-19 sur ce dock : l'écriture
-# passe SANS sudo, et le bit d'état bascule réellement (0100 power -> 0000 off).
+# WHY THIS DETOUR rather than a physical switch on the cable:
+# the WD19TB's internal hubs advertise "ppps" (per-port power switching — the
+# ability to cut the +5 V of one precise port with a standard USB command).
+# uhubctl sends that command. Verified on 2026-08-19 on this dock: the write
+# goes through WITHOUT sudo, and the status bit really flips (0100 power -> 0000 off).
 #
-# PIÈGE PRINCIPAL, d'où la notion de "paire" ci-dessous : une prise physique du
-# dock est câblée sur DEUX hubs internes à la fois — un USB 2.0 et un USB 3.x.
-# Couper un seul des deux laisse le +5 V présent par l'autre chemin et l'appareil
-# reste alimenté. La config liste donc une PAIRE de cibles "hub port", pas une.
+# MAIN PITFALL, hence the notion of a "pair" below: one physical socket on the
+# dock is wired to TWO internal hubs at once — a USB 2.0 one and a USB 3.x one.
+# Cutting only one of the two leaves the +5 V present through the other path and
+# the device stays powered. The config lists a PAIR of "hub port" targets, not one.
 #
-# Config : ~/.config/sd-power.conf, une cible par ligne, au format "<hub> <port>".
-# Écrite automatiquement par `sd-power detect`.
+# Config: ~/.config/sd-power.conf, one target per line, in "<hub> <port>" format.
+# Written automatically by `sd-power detect`.
 
 set -uo pipefail
 
-# Raccourcis, launchd et cron exécutent avec un PATH minimal (/usr/bin:/bin:...)
-# où Homebrew est absent : sans cet ajout, uhubctl est déclaré introuvable alors
-# qu'il est bien installé. Vérifié le 2026-08-19 en simulant `env -i PATH=...`.
+# Shortcuts, launchd and cron run with a minimal PATH (/usr/bin:/bin:...) where
+# Homebrew is absent: without this addition, uhubctl is declared not found even
+# though it is properly installed. Verified on 2026-08-19 by simulating `env -i PATH=...`.
 PATH="/opt/homebrew/bin:/usr/local/bin:$PATH"
 
 CONF="${SD_POWER_CONF:-$HOME/.config/sd-power.conf}"
@@ -29,7 +29,7 @@ die() { printf '%s\n' "$*" >&2; exit 1; }
 
 command -v uhubctl >/dev/null 2>&1 || die "uhubctl introuvable — installe-le : brew install uhubctl"
 
-# Liste les ports actuellement occupés, un par ligne : "<hub> <port> <description>"
+# Lists the currently occupied ports, one per line: "<hub> <port> <description>"
 occupied_ports() {
   local hub=""
   uhubctl 2>/dev/null | while IFS= read -r line; do
@@ -52,9 +52,9 @@ read_targets() {
 Lance d'abord :  sd-power detect"
   local t
   t="$(grep -vE '^\s*(#|$)' "$CONF")"
-  # Une config réduite à ses commentaires n'est PAS une config vide inoffensive : la boucle
-  # de lecture d'état tournerait zéro fois, donc « toutes les cibles sont coupées », donc un
-  # faux « off » — et le toggle enverrait un « on » dans le vide.
+  # A config reduced to its comments is NOT a harmless empty config: the state-reading
+  # loop would run zero times, hence "all the targets are cut", hence a false "off" — and
+  # the toggle would send an "on" into the void.
   [ -n "$t" ] || die "Config sans cible : $CONF
 Lance d'abord :  sd-power detect"
   printf '%s\n' "$t"
@@ -83,12 +83,12 @@ le ppps, ou le débranchement/rebranchement n'a pas été détecté. Relance en
 laissant 3-4 s après le rebranchement."
   fi
 
-  # Écarter les ports INTERNES à un hub déjà retenu. Rebrancher un hub fait apparaître
-  # d'un coup son port sur le dock ET les ports occupés à l'intérieur ; couper le port du
-  # dock emporte déjà toute la descendance. Pire, l'id d'un port interne (« 32-2.2 ») est
-  # dérivé de l'énumération USB du moment : il peut ne plus désigner rien à la session
-  # suivante. Et une cible morte n'est pas neutre — uhubctl échoue dessus, l'état devient
-  # illisible, et le toggle croirait en permanence que tout est allumé.
+  # Discard the ports INTERNAL to a hub already retained. Replugging a hub makes its port
+  # on the dock AND the occupied ports inside it appear all at once; cutting the dock's
+  # port already takes the whole descent with it. Worse, an internal port's id ("32-2.2")
+  # is derived from the USB enumeration of the moment: it may designate nothing at all by
+  # the next session. And a dead target is not neutral — uhubctl fails on it, the state
+  # becomes unreadable, and the toggle would permanently believe everything is on.
   local filtered="" h p h2 p2 child
   while read -r h p; do
     [ -n "${h:-}" ] || continue
@@ -132,10 +132,10 @@ cmd_set() {
   printf 'Stream Deck : %s\n' "$([ "$action" = off ] && echo 'COUPÉ' || echo 'SOUS TENSION')"
 }
 
-# État global : "off" seulement si TOUTES les cibles sont coupées, "inconnu" dès qu'une
-# cible ne répond pas. Ce troisième cas est indispensable : sans lui, un port disparu
-# rendait un `grep` muet, donc "pas off", donc "on" — et le toggle coupait indéfiniment
-# sans jamais rallumer. Un état illisible doit se dire, pas se deviner.
+# Global state: "off" only if ALL the targets are cut, "inconnu" as soon as one target
+# does not answer. That third case is indispensable: without it, a vanished port made a
+# `grep` silent, hence "not off", hence "on" — and the toggle cut indefinitely without
+# ever restoring. An unreadable state must be stated, not guessed.
 current_state() {
   local all_off=1 line
   while read -r hub port; do
@@ -155,9 +155,9 @@ cmd_status() {
   done < <(read_targets)
 }
 
-# La validation de la config doit se faire ICI, dans le shell principal : appelée
-# depuis une substitution de process (`< <(read_targets)`), le `exit` de `die`
-# ne tue que le sous-shell et le script continuerait avec un état faux "off".
+# The config validation has to happen HERE, in the main shell: called from a
+# process substitution (`< <(read_targets)`), `die`'s `exit` only kills the subshell
+# and the script would carry on with a false "off" state.
 require_conf() { read_targets >/dev/null; }
 
 case "${1:-toggle}" in

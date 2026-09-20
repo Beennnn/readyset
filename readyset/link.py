@@ -1,39 +1,39 @@
-"""Tempo Ableton Link du rig, servi par le dashboard (`/api/link`).
+"""The rig's Ableton Link tempo, served by the dashboard (`/api/link`).
 
-Ce module ne parle PAS à Link. Il pilote `bin/linkbridge.py`, qui est un process à
-part — la raison est écrite en tête de ce fichier-là, et elle tient en un mot :
-**licence**. `aalink` embarque Ableton Link, qui est GPL ; le projet a déjà décidé
-et écrit que ce code reste confiné à un process isolé. Importer `aalink` ici
-casserait cette décision, pas seulement une convention de style.
+This module does NOT talk to Link. It drives `bin/linkbridge.py`, which is a separate
+process — the reason is written at the top of that file, and it fits in one word:
+**licence**. `aalink` embeds Ableton Link, which is GPL; the project has already decided
+and written down that this code stays confined to an isolated process. Importing
+`aalink` here would break that decision, not merely a style convention.
 
-Le patron est celui de `spectrum.py` avec ffmpeg, volontairement, pour qu'il n'y ait
-qu'une seule façon de faire dans ce dépôt : un sous-process qui produit un flux, un fil
-qui le lit, un dernier état partagé, un démarrage à la demande et une extinction
-automatique quand plus personne ne regarde.
+The pattern is the one of `spectrum.py` with ffmpeg, deliberately, so that there is only
+one way of doing things in this repository: a subprocess producing a stream, a thread
+reading it, one shared last state, a start on demand and an automatic shutdown when
+nobody is watching any more.
 
-TROIS CHOSES QUI SE LISENT MAL SI ON NE LES DIT PAS
-====================================================
+THREE THINGS THAT READ BADLY IF THEY ARE NOT SPELLED OUT
+=========================================================
 
-1. **`peers == 0` n'est PAS une panne, et ce n'est PAS non plus une réussite.** Link
-   répond alors un tempo parfaitement bien formé — 120 par défaut — et une phase qui
-   tourne, sans que rien ne soit synchronisé avec quoi que ce soit. Mesuré le
-   2026-08-23 : Live 12 tournait, et le pont voyait `peers=0` parce que Link était
-   simplement désactivé dans ses réglages. On remonte donc `peers` tel quel, et
-   `synced` qui dit franchement s'il y a quelqu'un en face. **Une touche qui afficherait
-   « 120 » dans ce cas mentirait**, et ce serait notre faute, pas celle de Link.
+1. **`peers == 0` is NOT a failure, and it is NOT a success either.** Link then answers
+   a perfectly well-formed tempo — 120 by default — and a phase that keeps turning,
+   without anything being synchronised with anything at all. Measured on 2026-08-23:
+   Live 12 was running, and the bridge saw `peers=0` because Link was simply disabled in
+   its settings. So we report `peers` as-is, together with `synced`, which frankly says
+   whether there is anybody on the other side. **A key displaying "120" in that case
+   would be lying**, and that would be our fault, not Link's.
 
-2. **`age` est aussi important que les valeurs.** Le pont peut mourir (Link retiré,
-   `aalink` désinstallé, process tué) en laissant le dernier état en mémoire. Sans
-   l'âge, ce cadavre se lit exactement comme une donnée fraîche. Au-delà de
-   `link_stale_seconds`, on le dit : `fresh` passe à faux.
+2. **`age` matters as much as the values do.** The bridge can die (Link removed, `aalink`
+   uninstalled, process killed) while leaving the last state in memory. Without the age,
+   that corpse reads exactly like fresh data. Past `link_stale_seconds`, we say so:
+   `fresh` turns false.
 
-3. **Personne n'échantillonne la phase vite.** La phase est une fonction déterministe
-   de l'horloge : le consommateur la recalcule chez lui à partir de (`tempo`, `beat`,
-   `age`). Sonder ce point d'entrée dix fois par seconde n'apporterait rien de plus
-   qu'une fois par seconde.
+3. **Nobody samples the phase fast.** The phase is a deterministic function of the clock:
+   the consumer recomputes it on its side from (`tempo`, `beat`, `age`). Polling this
+   endpoint ten times a second would bring nothing more than once a second.
 
-Et la même garantie qu'ailleurs : **rien ici ne doit pouvoir faire tomber le
-dashboard**. Toute panne se traduit par `available: false` et sa raison en clair.
+And the same guarantee as everywhere else: **nothing here must be able to bring the
+dashboard down**. Any failure is turned into `available: false` and its reason in plain
+words.
 """
 
 from __future__ import annotations
@@ -47,16 +47,16 @@ from pathlib import Path
 
 _BRIDGE = Path(__file__).resolve().parent.parent / "bin" / "linkbridge.py"
 
-# Après un pont qui n'a jamais produit un seul tick (aalink absent, binaire cassé), on
-# attend avant de réessayer. Sans ce frein, chaque appel HTTP relançait un process qui
-# meurt aussitôt — une touche Stream Deck qui sonde à 1 Hz en aurait lancé 3600 par
-# heure, et l'appelant aurait lu « en cours de démarrage » sans jamais voir la vraie
-# raison, puisqu'un pont neuf efface l'erreur du précédent. Constaté en test.
+# After a bridge that never produced a single tick (aalink missing, broken binary), we
+# wait before retrying. Without that brake, every HTTP call relaunched a process that
+# dies immediately — a Stream Deck key polling at 1 Hz would have launched 3600 of them
+# per hour, and the caller would have read "starting up" without ever seeing the real
+# reason, since a fresh bridge erases the previous one's error. Observed in testing.
 _RETRY_AFTER_FAILURE = 5.0
 
 
 class _Bridge:
-    """Le sous-process pont + le fil qui le lit. Un seul, partagé par tous les appels."""
+    """The bridge subprocess + the thread reading it. One only, shared by every call."""
 
     def __init__(self) -> None:
         self.proc: subprocess.Popen[str] | None = None
@@ -66,9 +66,9 @@ class _Bridge:
         self.last_tick = 0.0
         self.error = ""
         self.last_read = 0.0
-        # Raison du dernier démarrage qui a échoué + quand. Survit délibérément à
-        # `_open()`, qui remet `error` à zéro : c'est la seule chose qui permette de
-        # répondre « aalink absent » plutôt que « en cours de démarrage » à l'infini.
+        # Reason of the last failed start + when. Deliberately survives `_open()`, which
+        # resets `error` to zero: it is the only thing that makes it possible to answer
+        # "aalink missing" rather than "starting up" forever.
         self.fatal = ""
         self.failed_at = 0.0
         self.ticks = 0
@@ -78,9 +78,9 @@ class _Bridge:
             self.error = f"pont introuvable : {_BRIDGE}"
             return False
         try:
-            # `sys.executable` et pas un chemin figé : le pont doit tourner dans
-            # L'INTERPRÉTEUR QUI FAIT TOURNER LE RIG, puisque c'est là qu'`aalink` est
-            # installé. Un `python3` du PATH serait un autre interpréteur, sans le paquet.
+            # `sys.executable` and not a frozen path: the bridge must run in THE
+            # INTERPRETER THAT RUNS THE RIG, since that is where `aalink` is installed.
+            # A `python3` from the PATH would be another interpreter, without the package.
             self.proc = subprocess.Popen(
                 [sys.executable, str(_BRIDGE), str(quantum)],
                 stdout=subprocess.PIPE, stderr=subprocess.PIPE,
@@ -100,12 +100,12 @@ class _Bridge:
                     try:
                         data = json.loads(line)
                     except Exception:
-                        continue  # un tick illisible se jette, il ne tue pas le flux
+                        continue  # an unreadable tick is discarded, it does not kill the stream
                     with self.lock:
                         self.last, self.last_tick = data, time.time()
                     self.ticks += 1
-                # Même choix que spectrum.py : l'extinction est décidée dans le fil qui
-                # lit, pas par un minuteur séparé qu'il faudrait tenir en vie et arrêter.
+                # Same choice as spectrum.py: the shutdown is decided in the reading
+                # thread, not by a separate timer to keep alive and to stop.
                 if time.time() - self.last_read > idle_stop:
                     break
         except Exception as exc:
@@ -113,16 +113,16 @@ class _Bridge:
         finally:
             self._collect_stderr()
             if self.ticks == 0:
-                # Le pont est mort sans jamais rien produire : c'est un échec de
-                # démarrage, pas une extinction pour inactivité. On retient la raison et
-                # on s'interdit de relancer tout de suite.
+                # The bridge died without ever producing anything: that is a start-up
+                # failure, not a shutdown for inactivity. We keep the reason and forbid
+                # ourselves from relaunching right away.
                 self.fatal = self.error or "le pont Link s'est arrêté sans rien produire"
                 self.failed_at = time.time()
             self.stop()
 
     def _collect_stderr(self) -> None:
-        """Récupère la raison écrite par le pont — sans elle, un pont qui refuse de
-        démarrer se lit comme un pont muet, ce qui n'aide personne."""
+        """Collect the reason written by the bridge — without it, a bridge that refuses
+        to start reads like a mute bridge, which helps nobody."""
         p = self.proc
         if not p or not p.stderr:
             return
@@ -130,8 +130,8 @@ class _Bridge:
             tail = [l.strip() for l in p.stderr.read().splitlines() if l.strip()]
         except Exception:
             return
-        # On ne garde que la dernière ligne utile : « aalink absent — installez-le… »
-        # vaut mieux que trois lignes de démarrage nominal.
+        # We keep only the last useful line: "aalink missing — install it…" is worth
+        # more than three lines of nominal start-up.
         for l in reversed(tail):
             if not l.startswith("link bridge"):
                 self.error = l
@@ -163,8 +163,8 @@ class _Bridge:
                 except Exception:
                     pass
         with self.lock:
-            # Le dernier état MEURT avec le pont : le garder ferait passer un cadavre
-            # pour une lecture, ce qui est précisément le défaut qu'on veut éviter.
+            # The last state DIES with the bridge: keeping it would pass a corpse off as
+            # a reading, which is precisely the defect we want to avoid.
             self.last = None
 
 
@@ -172,7 +172,7 @@ _LINK = _Bridge()
 
 
 def snapshot(cfg: dict) -> dict:
-    """L'état Link courant. Ne lève jamais : au pire, `available` est faux."""
+    """The current Link state. Never raises: at worst, `available` is false."""
     srv = cfg.get("server", {})
     quantum = float(srv.get("link_quantum", 4))
     idle_stop = float(srv.get("link_idle_stop_seconds", 20))
@@ -185,23 +185,22 @@ def snapshot(cfg: dict) -> dict:
     with _LINK.lock:
         data, ts = _LINK.last, _LINK.last_tick
     if data is None:
-        # Le premier appel arrive avant le premier tick du pont (~100 ms). On le dit
-        # plutôt que de rendre des zéros, qui se liraient comme un vrai tempo à 0.
+        # The first call arrives before the bridge's first tick (~100 ms). We say so
+        # rather than return zeros, which would read as a real tempo of 0.
         return {"available": False, "reason": _LINK.error or "pont Link en cours de démarrage"}
 
     age = time.time() - ts
     return {
         "available": True,
-        "fresh": age <= stale_after,        # faux = le pont s'est tu, ne pas croire les valeurs
+        "fresh": age <= stale_after,        # false = the bridge went quiet, do not trust the values
         "age": round(age, 2),
         "tempo": data.get("tempo"),
         "beat": data.get("beat"),
         "phase": data.get("phase"),
         "quantum": data.get("quantum", quantum),
         "peers": data.get("peers", 0),
-        # `synced` est la question à laquelle une touche doit répondre : y a-t-il
-        # quelqu'un en face ? Sans elle on affiche le tempo par défaut de Link comme
-        # s'il venait de Live.
+        # `synced` is the question a key has to answer: is there anybody on the other
+        # side? Without it we display Link's default tempo as if it came from Live.
         "synced": bool(data.get("peers", 0)),
         "playing": bool(data.get("playing", False)),
     }

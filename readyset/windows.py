@@ -1,33 +1,33 @@
-"""Fenêtres des apps du rig — tout doit TOURNER, rien ne doit se VOIR.
+"""Rig app windows — everything must RUN, nothing must SHOW.
 
-Sur scène l'écran ne montre que le set Ableton. Bome MIDI Translator, Bome Network,
-Stream Deck et Stage Traxx doivent tourner (c'est eux qui portent le routing MIDI, les
-boutons et les bandes), mais leurs fenêtres sont du bruit : un clic de travers et on
-regarde un journal de traducteur MIDI au lieu de son set. D'où une politique par app.
+On stage the screen shows nothing but the Ableton set. Bome MIDI Translator, Bome Network,
+Stream Deck and Stage Traxx have to run (they are what carries the MIDI routing, the
+buttons and the backing tracks), but their windows are noise: one stray click and you are
+looking at a MIDI translator log instead of your set. Hence a per-app policy.
 
-Trois politiques :
-  hide      — équivalent ⌘H : l'app disparaît de l'écran et continue de tourner.
-              C'est le défaut, et c'est plus propre que « réduire » : une app masquée
-              ne laisse RIEN (ni fenêtre, ni vignette dans le Dock), et ⌘Tab la
-              rappelle telle quelle.
-  minimize  — chaque fenêtre part dans le Dock. Utile pour les apps qui ignorent le
-              masquage (ou dont on veut garder la vignette sous la main).
-  keep      — on n'y touche pas. C'est la politique d'Ableton : le set EST l'écran.
+Three policies:
+  hide      — the ⌘H equivalent: the app disappears from the screen and keeps running.
+              That is the default, and it is cleaner than "minimize": a hidden app
+              leaves NOTHING behind (no window, no Dock thumbnail), and ⌘Tab brings
+              it back exactly as it was.
+  minimize  — each window goes down into the Dock. Useful for apps that ignore
+              hiding (or whose Dock thumbnail we want to keep at hand).
+  keep      — we do not touch it. That is Ableton's policy: the set IS the screen.
 
-Deux moments, deux mécanismes — le premier suffit la plupart du temps :
-  au LANCEMENT  `open -g -j` fait démarrer l'app déjà masquée. Aucune autorisation
-                macOS requise, et rien ne clignote jamais à l'écran (cf. launch.py).
-  À LA DEMANDE  `readyset tidy` / le bouton du dashboard range ce qui est DÉJÀ ouvert —
-                le cas courant, puisque les apps du rig restent lancées des jours.
-                Celui-là passe par System Events, donc exige que l'app qui exécute
-                `readyset` (Terminal, or the menu-bar app) soit cochée dans Réglages → Confidentialité
-                et sécurité → Accessibilité. Sans ça macOS renvoie l'erreur -1743 et
-                on le dit explicitement plutôt que d'échouer en silence.
+Two moments, two mechanisms — the first one is enough most of the time:
+  at LAUNCH     `open -g -j` starts the app already hidden. No macOS permission
+                required, and nothing ever flashes on screen (see launch.py).
+  ON DEMAND     `readyset tidy` / the dashboard button tidies what is ALREADY open —
+                the common case, since the rig apps stay launched for days.
+                That one goes through System Events, so it requires the app running
+                `readyset` (Terminal, or the menu-bar app) to be ticked in Settings →
+                Privacy & Security → Accessibility. Without it macOS returns error
+                -1743, and we say so explicitly rather than failing silently.
 
-Les apps sont adressées par IDENTIFIANT DE BUNDLE (com.bome.network…), jamais par nom
-de process : le nom affiché ne se déduit pas du nom du .app — « Bome Network.app »
-tourne sous le process « MT Player », « Ableton Live 12 Suite 3.app » sous « Live ».
-Le bundle id, lui, se lit dans l'app et ne bouge pas.
+Apps are addressed by BUNDLE IDENTIFIER (com.bome.network…), never by process name: the
+displayed name cannot be derived from the .app name — "Bome Network.app" runs under the
+process "MT Player", "Ableton Live 12 Suite 3.app" under "Live". The bundle id, on the
+other hand, is read inside the app and never moves.
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ POLICIES = (HIDE, MINIMIZE, KEEP)
 
 
 def rig_apps(cfg: dict) -> list[str]:
-    """Toutes les apps du rig : celles du bring-up + Ableton (qui est à part dans [set])."""
+    """All the rig apps: the bring-up ones + Ableton (which lives apart, in [set])."""
     apps = list(cfg["launch"]["apps"])
     ableton = cfg["set"].get("ableton_app", "")
     if ableton and ableton not in apps:
@@ -52,7 +52,7 @@ def rig_apps(cfg: dict) -> list[str]:
 
 
 def policy_for(cfg: dict, app_path: str) -> str:
-    """Politique de fenêtre d'une app. Clé de [windows.apps] = sous-chaîne du nom du .app."""
+    """Window policy of an app. A [windows.apps] key = a substring of the .app name."""
     w = cfg.get("windows", {})
     for pattern, policy in (w.get("apps") or {}).items():
         if pattern.lower() in Path(app_path).stem.lower():
@@ -62,7 +62,7 @@ def policy_for(cfg: dict, app_path: str) -> str:
 
 
 def launch_hidden(cfg: dict, app_path: str) -> bool:
-    """Faut-il lancer cette app masquée (`open -g -j`) plutôt qu'au premier plan ?"""
+    """Should this app be launched hidden (`open -g -j`) rather than in the foreground?"""
     if not cfg.get("windows", {}).get("launch_hidden", True):
         return False
     return policy_for(cfg, app_path) != KEEP
@@ -70,11 +70,11 @@ def launch_hidden(cfg: dict, app_path: str) -> bool:
 
 @lru_cache(maxsize=64)
 def bundle_id(app_path: str) -> str | None:
-    """Identifiant de bundle lu dans l'Info.plist de l'app.
+    """Bundle identifier, read from the app's Info.plist.
 
-    plutil plutôt que `mdls` (qui dépend de l'index Spotlight) ou qu'un `osascript
-    'id of app …'` (qui met en route les services de lancement) : ici on lit un
-    fichier, ça marche même sur une app jamais ouverte ou hors /Applications.
+    plutil rather than `mdls` (which depends on the Spotlight index) or an `osascript
+    'id of app …'` (which spins up the launch services): here we read a file, and that
+    works even on an app never opened before or living outside /Applications.
     """
     plist = Path(app_path) / "Contents" / "Info.plist"
     if not plist.exists():
@@ -92,11 +92,11 @@ def _osascript(script: str) -> tuple[bool, str]:
     if r.returncode == 0:
         return True, r.stdout.strip()
     err = r.stderr.strip()
-    # -1743 = « n'est pas autorisé à envoyer des événements ». C'est TOUJOURS la
-    # permission Accessibilité qui manque, jamais un bug du script — on le dit tel quel.
+    # -1743 = "is not allowed to send events". It is ALWAYS the missing Accessibility
+    # permission, never a bug in the script — so we say it as such.
     if "1743" in err or "assistive" in err.lower() or "autoris" in err.lower():
         return False, ("macOS refuse le pilotage des fenêtres — coche l'app qui lance "
-                       "readyset (Terminal / the menu-bar app) dans Réglages → Confidentialité et "
+                       "readyset (Terminal / l'app de barre de menus) dans Réglages → Confidentialité et "
                        "sécurité → Accessibilité")
     return False, err or "osascript a échoué"
 
@@ -121,22 +121,22 @@ end tell''')
 
 
 def _minimize(bid: str) -> tuple[bool, str]:
-    """Réduire dans le Dock — ce qui suppose que l'app soit VISIBLE, et qu'elle ait des
-    fenêtres.
+    """Minimize into the Dock — which assumes the app is VISIBLE, and that it has
+    windows.
 
-    Trois choses mesurées le 2026-08-22, la première fois que ce chemin a tourné en vrai
-    (il dormait dans le code depuis le début, cf. TASKS.md) :
+    Three things measured on 2026-08-22, the first time this path actually ran for real
+    (it had been sleeping in the code since the beginning, see TASKS.md):
 
-    - une app MASQUÉE (⌘H) expose quand même ses fenêtres à System Events, donc on peut
-      les COMPTER sans rien déranger — mais poser AXMinimized dessus ne montre rien : le
-      Dock ne fait pas de vignette pour l'app masquée. D'où le démasquage préalable, et
-      seulement s'il y a une fenêtre à réduire ;
-    - Bome Network et Bome MIDI Translator Pro tournent avec ZÉRO fenêtre ouverte. Les
-      démasquer pour rien les remettrait dans le ⌘Tab sans rien réduire ;
-    - l'ancienne version répondait « réduite (0 fenêtre(s)) » — un succès vide, exactement
-      le mode d'échec que ce dépôt combat depuis le 22/08 au matin. Zéro fenêtre est
-      désormais dit comme tel, et des fenêtres dont AUCUNE n'accepte AXMinimized est
-      une VRAIE erreur, pas un demi-succès.
+    - a HIDDEN app (⌘H) still exposes its windows to System Events, so we can COUNT
+      them without disturbing anything — but setting AXMinimized on them shows nothing:
+      the Dock makes no thumbnail for a hidden app. Hence the un-hiding beforehand, and
+      only if there is a window to minimize;
+    - Bome Network and Bome MIDI Translator Pro run with ZERO window open. Un-hiding
+      them for nothing would put them back into ⌘Tab without minimizing anything;
+    - the old version answered "réduite (0 fenêtre(s))" — an empty success, exactly the
+      failure mode this repo has been fighting since the morning of 08-22. Zero windows
+      is now stated as such, and windows of which NONE accepts AXMinimized is a REAL
+      error, not a half-success.
     """
     ok, out = _osascript(f'''
 tell application "System Events"
@@ -169,10 +169,10 @@ end tell''')
         return True, "aucune fenêtre ouverte"
     n, total = (int(x) for x in out.removeprefix("n=").split("/"))
     if n == 0:
-        # Repli sur le masquage plutôt qu'un rouge : le but est qu'aucune fenêtre ne
-        # traîne à l'écran, et ⌘H l'atteint. La vignette du Dock est perdue — on le DIT,
-        # pour ne pas laisser croire qu'elle est là. Bome Network est le cas connu : sa
-        # fenêtre accepte AXMinimized et l'ignore.
+        # Fall back on hiding rather than a red: the goal is that no window lingers on
+        # screen, and ⌘H achieves it. The Dock thumbnail is lost — we SAY so, so as not
+        # to let anyone believe it is there. Bome Network is the known case: its window
+        # accepts AXMinimized and ignores it.
         hid, hmsg = _hide(bid)
         if hid:
             return True, f"refuse de se réduire ({total} fenêtre(s)) → masquée"
@@ -182,12 +182,12 @@ end tell''')
 
 def apply_one(cfg: dict, app_path: str, dry_run: bool = False,
               force: bool = False) -> tuple[bool, str]:
-    """Applique la politique d'UNE app. force=True traite aussi les `keep` (« Ableton compris »)."""
+    """Apply ONE app's policy. force=True also handles the `keep` ones ("Ableton included")."""
     name = Path(app_path).stem
     policy = policy_for(cfg, app_path)
     if policy == KEEP and not force:
         return True, f"{name} — laissée visible (keep)"
-    action = HIDE if policy == KEEP else policy   # forcer un `keep` = le masquer
+    action = HIDE if policy == KEEP else policy   # forcing a `keep` = hiding it
     bid = bundle_id(app_path)
     if not bid:
         return False, f"{name} — identifiant de bundle introuvable ({app_path})"
@@ -196,14 +196,14 @@ def apply_one(cfg: dict, app_path: str, dry_run: bool = False,
         return True, f"[dry-run] {verb} {name}"
     ok, msg = _hide(bid) if action == HIDE else _minimize(bid)
     if ok and msg == "absent":
-        # Pas une erreur : une app pas lancée n'a pas de fenêtre à ranger. C'est
-        # `check_apps` qui signale une app manquante, pas le rangement des fenêtres.
+        # Not an error: an app that is not launched has no window to tidy. Reporting a
+        # missing app is `check_apps`'s job, not the window tidying's.
         return True, f"{name} — pas lancée"
     return ok, f"{name} — {msg}"
 
 
 def tidy(cfg: dict, log=print, dry_run: bool = False, force: bool = False) -> tuple[bool, str]:
-    """Range les fenêtres de toutes les apps du rig. Retourne (tout_ok, résumé)."""
+    """Tidy the windows of every rig app. Returns (all_ok, summary)."""
     lines: list[str] = []
     all_ok = True
     for app in rig_apps(cfg):
@@ -212,12 +212,12 @@ def tidy(cfg: dict, log=print, dry_run: bool = False, force: bool = False) -> tu
         lines.append(("  ✔ " if ok else "  ✖ ") + msg)
         log(lines[-1])
         if not ok and "Accessibilité" in msg:
-            break     # même cause pour toutes les suivantes : inutile de répéter 5 fois
+            break     # same cause for all the next ones: no point repeating it 5 times
     return all_ok, "\n".join(lines)
 
 
 def snapshot(cfg: dict) -> list[dict]:
-    """État courant, pour un affichage : [{name, policy, running, visible}]."""
+    """Current state, for display purposes: [{name, policy, running, visible}]."""
     out = []
     for app in rig_apps(cfg):
         bid = bundle_id(app)

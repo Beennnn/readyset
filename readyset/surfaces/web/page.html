@@ -16,10 +16,10 @@
   .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
   .seg button{border:none;border-radius:0;background:var(--card);padding:8px 14px}
   .seg button.on{background:var(--accent);color:#03122b;font-weight:600}
-  /* Auto ne dit pas seulement « je décide tout seul », il dit CE QU'IL A DÉCIDÉ, par sa
-     couleur : bleu = studio, orange = live — les mêmes teintes que les deux boutons
-     voisins. Répéter « mode : Studio (auto) » en toutes lettres à côté d'un sélecteur
-     qui montrait déjà le même état était une ligne pour rien. */
+  /* Auto does not only say "I decide on my own", it says WHAT IT HAS DECIDED, through
+     its colour: blue = studio, orange = live — the same shades as the two neighbouring
+     buttons. Spelling out "mode : Studio (auto)" next to a selector that already showed
+     the same state was a line for nothing. */
   .seg button.on.res-studio{background:var(--accent);color:#03122b}
   .seg button.on.res-live{background:var(--warn);color:#2b1e03}
   .seg button[data-m="live"].on{background:var(--warn);color:#2b1e03}
@@ -27,25 +27,25 @@
   button:hover{border-color:var(--accent)} button:active{transform:translateY(1px)}
   button.primary{background:var(--accent);border-color:var(--accent);color:#03122b;font-weight:600}
   button.fix{background:transparent;border-color:var(--fail);color:var(--fail);padding:6px 12px;font-size:13px;
-    /* La remontée est portée par la transition : le bouton s'enfonce d'un coup au
-       clic, puis revient. Sans elle, l'enfoncement et le retour sont tous deux
-       instantanés et l'œil ne voit rien du tout. */
+    /* The rise back is carried by the transition: the button sinks all at once on the
+       click, then comes back. Without it, the sinking and the return are both
+       instantaneous and the eye sees nothing at all. */
     transition:transform .07s ease-out,background-color .12s ease,opacity .12s ease}
   button.fix:hover:not(:disabled){background:var(--fail);color:#2a0009}
-  /* Enfoncement franc : deux pixels et un léger rétrécissement. Un bouton qui bouge
-     dit « reçu » avant même que la requête parte — et c'est ce délai-là, entre le
-     doigt et la réponse du serveur, qui donnait envie de recliquer. */
+  /* A frank press: two pixels and a slight shrink. A button that moves says "got it"
+     before the request has even left — and it is that delay, between the finger and
+     the server's answer, that made one want to click again. */
   button.fix:active:not(:disabled){transform:translateY(2px) scale(.97);background:var(--fail);color:#2a0009}
-  /* Un correctif en cours : le bouton dit qu'il travaille et refuse un second clic. */
+  /* A fix in progress: the button says it is working and refuses a second click. */
   button.fix:disabled{opacity:.55;cursor:progress}
   button.fix:disabled:hover{background:transparent;color:var(--fail)}
   label.dry{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:13px;user-select:none}
-  /* Pleine largeur : les 820 px dataient de la version en UNE colonne, où une ligne de
-     texte trop longue devient illisible. Avec quatre zones côte à côte, la contrainte
-     ne protégeait plus rien — elle laissait juste deux bandes noires sur les côtés et
-     forçait à faire défiler ce qui aurait tenu à l'écran. Le plafond de 2200 px n'est
-     là que pour un écran très large, où des zones de 900 px de large redeviendraient
-     pénibles à lire. */
+  /* Full width: the 820 px dated from the ONE-column version, where a line of text that
+     is too long becomes unreadable. With four zones side by side, the constraint no
+     longer protected anything — it just left two black bands on the sides and forced
+     scrolling for what would have fitted on screen. The 2200 px ceiling is only there
+     for a very wide screen, where zones 900 px wide would become painful to read
+     again. */
   main{padding:8px 22px 40px;max-width:2200px;margin:0 auto}
   .grp{margin-top:22px} .grp h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
   .row{display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 13px;margin-bottom:6px}
@@ -65,7 +65,7 @@
   .ic .gic{width:22px;height:22px;object-fit:contain;vertical-align:middle}
   .ic .gic+.gic{margin-left:3px}
   .lab{flex:1;min-width:0} .lab .t{font-weight:500} .lab .d{color:var(--mut);font-size:13px;white-space:pre-line;overflow-wrap:anywhere}
-  /* Panneau « apps en trop » : la liste qu'on relit avant de fermer quoi que ce soit. */
+  /* "Surplus apps" panel: the list one re-reads before closing anything at all. */
   #extra .box{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
   #extra h3{margin:0 0 4px;font-size:14px} #extra .why{color:var(--mut);font-size:13px;margin-bottom:10px}
   #extra .apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-bottom:12px}
@@ -74,19 +74,19 @@
   #extra .app img{width:28px;height:28px;flex:none;border-radius:6px}
   #extra .app .noimg{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px}
   #extra .app .n{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  /* La marque bleue EST l'état sélectionné : un liseré et une pastille de la couleur
-     d'accent, visibles d'un coup d'œil sur toute la vignette. */
-  /* Idem : le marqueur latéral dit « cochée pour fermeture », sans repeindre le bouton.
-     La pastille de gauche disparaît — le liseré la remplace et fait le même travail
-     avec moins d'encre. */
+  /* The blue mark IS the selected state: a border and a dot in the accent colour,
+     visible at a glance across the whole thumbnail. */
+  /* Same thing: the side marker says "ticked for closing", without repainting the
+     button. The dot on the left disappears — the border replaces it and does the same
+     job with less ink. */
   #extra .app{border-left-width:4px}
   #extra .app .mark{display:none}
   #extra .app.on{border-left-color:var(--accent)}
   #extra .acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
-  /* Le journal vit tout en bas de la page, sous toutes les sections : en cliquant
-     « corriger » dans « Configuration du rig », on écrivait le compte-rendu à un endroit
-     qui n'est pas à l'écran. D'où ce bandeau, qui vient au regard plutôt que l'inverse —
-     il NOMME l'action lancée, puis dit ce qu'elle a donné. Le journal reste l'historique. */
+  /* The log lives right at the bottom of the page, below every section: clicking
+     "corriger" in "Configuration du rig" wrote the report somewhere that is not on
+     screen. Hence this banner, which comes to the eye rather than the other way round —
+     it NAMES the action started, then says what it produced. The log stays the history. */
   #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:60;
     max-width:min(92vw,560px);padding:10px 16px;border-radius:10px;border:1px solid var(--line);
     background:#0e1118;color:var(--fg);font-size:14px;line-height:1.4;display:none;
@@ -95,20 +95,20 @@
   #toast.ok{border-color:var(--ok);color:var(--ok)}
   #toast.ko{border-color:var(--fail);color:var(--fail)}
   #log{white-space:pre-wrap;background:#0a0c11;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:18px;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mut);max-height:200px;overflow:auto;display:none}
-  /* Soundcheck intégré : des pastilles denses, pas les grandes tuiles de la page dédiée —
-     elles doivent tenir sous les checks sans repousser le reste hors de l'écran. */
+  /* Integrated soundcheck: dense chips, not the big tiles of the dedicated page — they
+     have to fit under the checks without pushing the rest off the screen. */
   #scdone.all{color:var(--ok)}
   .sctiles{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
   .sctile{display:flex;align-items:center;gap:7px;background:#10141c;border:1px solid var(--line);
           border-radius:9px;padding:6px 10px;font-size:13px}
-  /* Pas vérifié = ROUGE, pas neutre. Une pastille grise se lit « pas encore », donc
-     « ce n'est pas grave » ; or c'est exactement ce qui manque pour savoir si le rig
-     joue. La couleur doit dire la même chose que le cadre de la zone et que la bannière,
-     sinon le tableau se contredit d'un niveau à l'autre. */
-  /* Même langage que les lignes de « Configuration du rig » : un liseré à GAUCHE porte
-     l'état, le reste de la pastille reste neutre. Tout colorer en rouge saturait le
-     panneau au point de ne plus rien hiérarchiser — huit pastilles rouges vives crient
-     autant qu'un bloquant réel, alors qu'elles disent seulement « pas encore joué ». */
+  /* Not verified = RED, not neutral. A grey chip reads as "not yet", therefore "it does
+     not matter"; yet that is exactly what is missing to know whether the rig plays.
+     The colour must say the same thing as the zone's frame and as the banner, or else
+     the dashboard contradicts itself from one level to the next. */
+  /* Same language as the rows of "Configuration du rig": a border on the LEFT carries
+     the state, the rest of the chip stays neutral. Colouring everything red saturated
+     the panel to the point of ranking nothing any more — eight bright red chips shout
+     as loud as a real blocker, when all they say is "not played yet". */
   .sctile{border-left-width:4px;border-left-color:var(--fail)}
   .sctile.hit{border-left-color:var(--ok)}
   .sctile .sn{color:var(--mut);font-size:12px}
@@ -127,9 +127,9 @@
   .ccfill{height:100%;background:var(--accent)} .ccval{width:30px;text-align:right;font-family:ui-monospace,Menlo,monospace}
   .smmeta{color:var(--mut);font-size:12px;margin-top:6px}
   .sch3{margin:16px 0 7px;font-size:13px;color:var(--mut);font-weight:600}
-  /* Le flux brut s'appelle #midilog et NON #log : la page principale a déjà son propre
-     #log, le journal des actions cliquées. Deux éléments de même id sur une page, c'est
-     le second qui devient invisible à getElementById — un bug muet. */
+  /* The raw stream is called #midilog and NOT #log: the main page already has its own
+     #log, the journal of clicked actions. Two elements with the same id on one page
+     means the second becomes invisible to getElementById — a silent bug. */
   #midilog{white-space:pre-wrap;background:#0a0c11;border:1px solid var(--line);border-radius:10px;
     padding:11px;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mut);max-height:170px;overflow:auto}
   .scaudio{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;
@@ -139,14 +139,14 @@
   .scaudio.sig span{color:var(--ok)} .scaudio.mute span{color:var(--warn)}
   .scfoot{margin-top:10px;color:var(--mut);font-size:12px}
   .scfoot a{color:var(--accent);text-decoration:none}
-  /* Deux colonnes au-dessus de 900 px, une seule en dessous : cette page se consulte
-     aussi sur un téléphone, debout, cinq minutes avant de jouer. */
-  /* Colonnes CSS et NON une grille : une grille aligne les zones d'une même rangée sur
-     la plus haute, donc chaque zone courte creuse un trou sous elle — c'est exactement
-     ce qui gâchait la place. Ici les zones s'empilent en remplissant chaque colonne de
-     haut en bas, chacune à sa hauteur réelle, sans blanc entre elles.
-     `break-inside:avoid` interdit qu'une zone soit coupée en deux d'une colonne à
-     l'autre, ce que le multi-colonnes ferait volontiers. */
+  /* Two columns above 900 px, a single one below: this page is also consulted on a
+     phone, standing up, five minutes before playing. */
+  /* CSS columns and NOT a grid: a grid aligns the zones of one row on the tallest, so
+     every short zone digs a hole under itself — which is exactly what was wasting the
+     space. Here the zones stack up filling each column from top to bottom, each at its
+     real height, with no white space between them.
+     `break-inside:avoid` forbids a zone being cut in two from one column to the next,
+     which a multi-column layout would happily do. */
   .cols{column-gap:14px}
   .cols>.zone{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 14px}
   @media(min-width:820px){.cols{column-count:2}}
@@ -158,8 +158,8 @@
   .zone.z-fail{border-left-color:var(--fail)} .zone.z-info{border-left-color:var(--info)}
   .zh{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
   .zt{font-weight:600;font-size:14px} .zs{color:var(--mut);font-size:12.5px;margin-left:auto}
-  /* Le résumé de la zone prend la couleur du cadre, info comprise : lire « 3 ouvertes en
-     trop » en gris à côté d'un liseré bleu, c'est deux signaux pour un seul état. */
+  /* The zone's summary takes the frame's colour, info included: reading "3 ouvertes en
+     trop" in grey next to a blue border is two signals for a single state. */
   .zone.z-ok .zs{color:var(--ok)} .zone.z-info .zs{color:var(--info)}
   .zone.z-warn .zs{color:var(--warn)} .zone.z-fail .zs{color:var(--fail)}
   #z-flow #diagram svg{min-width:0}
@@ -169,10 +169,10 @@
 </style></head><body>
 <header>
   <h1>🎹 Rig — état global</h1>
-  <!-- #stamp : l'heure du dernier calcul. L'élément avait disparu d'une refonte alors que
-       refresh() continuait de l'écrire, et l'exception qui en résultait tombait juste
-       AVANT window.scrollTo(0,y) : la page perdait sa position de défilement à chaque
-       rafraîchissement, toutes les deux secondes, sans que rien ne dise pourquoi. -->
+  <!-- #stamp: the time of the last computation. The element had vanished in a redesign
+       while refresh() kept on writing to it, and the exception that resulted fell just
+       BEFORE window.scrollTo(0,y): the page lost its scroll position on every refresh,
+       every two seconds, with nothing saying why. -->
   <div class="sub">Vue auto-rafraîchie (lecture seule). Les actions sont des clics explicites.
     <span id="stamp" class="stamp"></span></div>
   <div id="banner" class="banner warn">…chargement</div>
@@ -189,10 +189,10 @@
   </div>
 </header>
 <main>
-  <!-- Quatre zones, deux colonnes : tout tient sans faire défiler, et chaque zone porte
-       la couleur du PIRE de son groupe. On voit donc d'un coup d'œil OÙ ça coince avant
-       même de lire une ligne — sur scène, la question n'est pas « quel check » mais
-       « quel domaine ». -->
+  <!-- Four zones, two columns: everything fits without scrolling, and each zone carries
+       the colour of the WORST of its group. So one sees at a glance WHERE it is stuck
+       before even reading a single row — on stage, the question is not "which check"
+       but "which domain". -->
   <div class="cols">
     <section class="zone" id="z-flow">
       <div class="zh"><span class="zt">Flux du rig</span><span class="zs" id="zs-flow"></span></div>
@@ -201,12 +201,12 @@
     <section class="zone" id="z-sc">
       <div class="zh"><span class="zt">🎹 Soundcheck</span><span class="zs" id="scdone"></span></div>
       <div class="sctiles" id="checks"></div>
-      <!-- La mesure de signal n'est PAS une case du soundcheck, et la ranger parmi elles
-           n'a produit que de la confusion (« pourquoi c'est rouge, j'entends le son ? »).
-           Les autres cases CONSTATENT passivement ce qui arrive ; celle-ci PROVOQUE une
-           mesure de 1,5 s qu'il faut demander. Rouge, elle accusait à tort ; comptée,
-           elle rendait le soundcheck impossible à finir sans cliquer. Elle vit donc à
-           part, en gris, avec ce qu'elle apporte écrit noir sur blanc. -->
+      <!-- The signal measurement is NOT a soundcheck box, and filing it among them only
+           produced confusion ("why is it red, I can hear the sound?"). The other boxes
+           passively OBSERVE what arrives; this one PROVOKES a 1.5 s measurement that
+           has to be asked for. Red, it accused wrongly; counted, it made the soundcheck
+           impossible to finish without clicking. So it lives apart, in grey, with what
+           it brings written in black and white. -->
       <div class="scaudio">
         <button onclick="scMeasure()" id="scmeasbtn">🔊 Mesurer le signal</button>
         <span id="scaudioinfo">le schéma dit sur QUEL périphérique Ableton est réglé ;
@@ -237,19 +237,19 @@
 <div id="toast"></div>
 <script>
 const IC={ok:"✅",warn:"⚠️",fail:"❌"};
-// Le sens des couleurs, écrit UNE fois et réutilisé partout. C'est la question posée par
-// Benoît devant le schéma — « à quoi correspond le vert ? » — et elle vaut pour chaque
-// ligne, chaque pastille et chaque cadre : une couleur qu'il faut deviner ne renseigne
-// personne, et deux explications différentes du même vert seraient pires que rien.
+// The meaning of the colours, written ONCE and reused everywhere. It is the question
+// asked in front of the diagram — "what does the green mean?" — and it holds for every
+// row, every chip and every frame: a colour one has to guess informs nobody, and two
+// different explanations of the same green would be worse than none at all.
 const TIP={
   ok:"✅ Vert — vérifié à l'instant, rien à faire.",
   info:"ℹ️ Bleu — absent, et c'est normal ici (matériel optionnel, ou réseau de scène au bureau). Ne compte PAS comme un problème : le rig reste prêt.",
   warn:"⚠️ Orange — jouable, mais quelque chose mérite un coup d'œil avant de monter sur scène.",
   fail:"❌ Rouge — bloquant : en l'état, le rig ne fera pas ce qu'on attend de lui."};
-// La bannière est le SEUL endroit qu'on regarde en montant sur scène, donc elle doit
-// intégrer le soundcheck : afficher « tout est vert » pendant que la zone Soundcheck est
-// rouge, c'est se contredire à 20 cm d'écart. Les checks viennent de /api/state, le
-// soundcheck de /api/midi — deux sondages distincts, une seule phrase de synthèse.
+// The banner is the ONLY place one looks at when going on stage, so it has to include
+// the soundcheck: showing "all green" while the Soundcheck zone is red is contradicting
+// oneself 20 cm apart. The checks come from /api/state, the soundcheck from /api/midi —
+// two distinct pollings, a single summary sentence.
 let lastState=null;
 function paintBanner(){
   const s=lastState;if(!s)return;
@@ -261,17 +261,17 @@ function paintBanner(){
     :s.status==="warn"?`⚠️ Rig jouable — ${s.warns} avertissement(s).`
     :`❌ Rig PAS prêt — ${s.fails} bloquant(s), ${s.warns} avertissement(s).`;
 }
-// Une zone porte la couleur du PIRE de son groupe : c'est la seule synthèse qui ne ment
-// pas (une zone verte doit vouloir dire « rien à voir ici », sans exception cachée).
-// INFO compte comme VERT pour la couleur d'une zone, exactement comme `worst()` l'ignore
-// côté serveur : « absent, et c'est normal » (le réseau de scène au bureau, les lampes
-// d'ambiance) ne rend pas le rig moins prêt. Le teinter autrement qu'en vert ferait
-// croire qu'il reste quelque chose à faire dans une zone où il n'y a rien à faire.
-// INFO a sa PROPRE couleur, le bleu : « absent, et c'est normal » n'est ni « rien à
-// signaler » (vert) ni « à regarder » (orange), c'est une troisième chose. Je l'avais
-// d'abord fondu dans le vert pour corriger un cadre « Flux du rig » bleu alors que tout
-// y était vert — mais le vrai défaut était ailleurs : ce cadre se calculait sur TOUS les
-// checks au lieu des siens. La cause corrigée, la couleur peut redevenir juste.
+// A zone carries the colour of the WORST of its group: it is the only summary that does
+// not lie (a green zone has to mean "nothing to see here", with no hidden exception).
+// INFO counts as GREEN for a zone's colour, exactly as `worst()` ignores it on the
+// server side: "absent, and that is normal" (the stage network at the office, the mood
+// lamps) does not make the rig any less ready. Tinting it anything other than green
+// would suggest something is left to do in a zone where there is nothing to do.
+// INFO has its OWN colour, blue: "absent, and that is normal" is neither "nothing to
+// report" (green) nor "worth a look" (orange), it is a third thing. I had first merged
+// it into the green to fix a "Flux du rig" frame that was blue while everything in it
+// was green — but the real defect was elsewhere: that frame was computed over ALL the
+// checks instead of its own. With the cause fixed, the colour can go back to being right.
 const SEV={ok:0,info:1,warn:2,fail:3},SEVN=["ok","info","warn","fail"];
 function worstOf(items){return SEVN[items.reduce((m,i)=>Math.max(m,SEV[i.status]??0),0)];}
 const ZONETIP={
@@ -282,30 +282,30 @@ const ZONETIP={
 function zone(id,st,txt){
   const el=document.getElementById(id);if(!el)return;
   el.className="zone z-"+st;
-  // Le cadre porte la couleur du PIRE de la zone : l'infobulle le dit, sinon on peut
-  // croire qu'une zone rouge est rouge en entier.
+  // The frame carries the colour of the WORST of the zone: the tooltip says so, or else
+  // one might believe a red zone is red all the way through.
   const h=el.querySelector(".zh");
   if(h)h.title=(ZONETIP[id]||"")+`\n\nLe cadre prend la couleur du plus grave de la zone.\n${TIP[st]||""}`;
   if(txt!==undefined){const z=el.querySelector(".zs");if(z)z.textContent=txt;}
 }
-// --- soundcheck intégré ---------------------------------------------------------
+// --- integrated soundcheck --------------------------------------------------------
 let scTimer=null;
-// L'écoute suit l'ÉTAT du soundcheck, plus le dépliage d'un panneau : tant qu'il reste
-// quelque chose à recevoir, on écoute ; dès que tout est arrivé, on arrête (inutile de
-// tenir les ports MIDI du rig ouverts en permanence). Un réveil du Mac remet le
-// soundcheck à zéro côté serveur, ce que le sondage lent voit tout seul et qui relance
-// l'écoute — c'est ce qui rend « non vérifié = erreur » vivable plutôt qu'agaçant.
+// Listening follows the soundcheck's STATE, no longer the unfolding of a panel: as long
+// as something is left to receive, we listen; as soon as everything has arrived, we stop
+// (no point holding the rig's MIDI ports open permanently). A wake of the Mac resets the
+// soundcheck to zero server-side, which the slow polling sees on its own and which
+// restarts the listening — that is what makes "unverified = error" liveable, not galling.
 async function scEnsure(running,complete){
   if(!complete&&!running) await fetch("/api/midi/start",{method:"POST"});
   if(complete&&running)   await fetch("/api/midi/stop",{method:"POST"});
 }
 function scItems(s){
   const f=s.flags||{},h=s.head||{};
-  // Chaque geste du breath compte DOUBLE : vu au capteur, et vu après traduction par
-  // Bome. C'est l'écart entre les deux qui dit où ça casse — capteur muet (rien des
-  // deux côtés) ou préréglage Bome éteint (source oui, sortie non). Un seul témoin
-  // n'aurait jamais distingué les deux, et c'est justement la panne la plus vicieuse :
-  // le contrôleur va bien, et pourtant rien n'arrive dans Ableton.
+  // Each breath gesture counts TWICE: seen at the sensor, and seen after translation by
+  // Bome. It is the gap between the two that says where it breaks — mute sensor (nothing
+  // on either side) or Bome preset switched off (source yes, output no). A single witness
+  // would never have told the two apart, and that is precisely the nastiest fault: the
+  // controller is fine, and yet nothing arrives in Ableton.
   const chain=(s.chain||[]).map(g=>({
     icon:"🌬️",lbl:g.name,hit:g.raw&&g.out,
     sn:g.raw&&g.out?"capteur + Bome":g.raw?"capteur OK, RIEN ne sort de Bome":g.out?"sortie seule":"pas de signal"}));
@@ -335,10 +335,10 @@ function renderShowMidi(chs){
     grid.appendChild(d);
   }
 }
-// Le son ne se devine pas : on MESURE. Un tap CoreAudio sur la sortie d'Ableton pendant
-// 1,5 s dit s'il y a du signal ou du silence — pas ce qu'on entend, mais « ça sort ou
-// pas », ce qui est justement la question qu'un check ne savait pas trancher. Sur
-// demande uniquement, d'où le bouton : chaque mesure ouvre un tap natif.
+// Sound is not guessed: we MEASURE. A CoreAudio tap on Ableton's output for 1.5 s says
+// whether there is signal or silence — not what one hears, but "is anything coming out
+// or not", which is precisely the question a check could not settle. On demand only,
+// hence the button: each measurement opens a native tap.
 let scAudio=null;
 async function scMeasure(){
   scAudio={pending:true};scRender();
@@ -388,8 +388,8 @@ function scDraw(s){
   const got=items.filter(i=>i.hit).length,complete=got===items.length;
   document.getElementById("scdone").textContent=
     complete?`✅ vérifié — ${got}/${items.length}`:`❌ ${items.length-got} sur ${items.length} pas encore vérifié(s)`;
-  // Non vérifié = ROUGE, au même titre qu'un check en panne. Un soundcheck pas fait
-  // n'est pas « en attente » : c'est un rig dont personne ne sait s'il joue.
+  // Not verified = RED, on the same footing as a broken check. A soundcheck that has
+  // not been done is not "pending": it is a rig nobody knows whether it plays.
   zone("z-sc",complete?"ok":"fail");
   scEnsure(!!s.running,complete);
   const host2=document.getElementById("ports");
@@ -431,13 +431,13 @@ const stc=s=>({ok:"#2ecc71",info:"#5aa9e6",warn:"#f4b942",fail:"#ff5468"}[s]||"#
 function nstat(keys,map){let s="neutral";for(const k of keys){const v=map[k];
   if(v==="fail")return"fail";if(v==="warn")s="warn";else if(v==="ok"&&s==="neutral")s="ok";}return s;}
 const DNODES=[
-  // Le schéma doit couvrir TOUT le rig, sinon la zone « Configuration » devient la vraie
-  // liste et le schéma un ornement. Le réseau de scène et les lampes y entrent donc :
-  // ce sont des maillons, pas des à-côtés — le modem distribue les adresses dont vivent
-  // l'iPhone et les lampes, et une lampe éteinte se voit sur scène.
+  // The diagram has to cover the WHOLE rig, or else the "Configuration" zone becomes the
+  // real list and the diagram an ornament. So the stage network and the lamps get in:
+  // they are links, not side notes — the modem hands out the addresses the iPhone and
+  // the lamps live on, and a lamp that is off can be seen on stage.
   {e:"📡",l:"Réseau scène",k:["net:stage"],x:80,y:40},
-  // « iPhone en charge » rejoint le bloc iPhone : c'est le même objet physique, et le
-  // séparer obligeait à croiser deux lignes pour savoir si le téléphone tiendra le set.
+  // "iPhone en charge" joins the iPhone block: it is the same physical object, and
+  // separating it forced crossing two rows to know if the phone will last the set.
   {e:"📱",l:"iPhone",k:["net:iphone","sys:iphonecharge"],x:80,y:118},
   {e:"🎛️",l:"Stream Deck",k:["app:Stream Deck","usb:"],x:80,y:196},
   {e:"🎹",l:"Clavier",k:["kbd:keyboard","audio:Port audio"],x:80,y:274},
@@ -447,7 +447,7 @@ const DNODES=[
   {e:"🎵",l:"Ableton Live",k:["app:Ableton","midi:Ableton Loopback"],x:516,y:196},
   {e:"🔊",l:"Sortie audio",k:["audio:live","sys:output"],x:684,y:196},
 ];
-// Le réseau alimente l'iPhone (Bome Network passe par le WiFi) et les lampes.
+// The network feeds the iPhone (Bome Network goes over WiFi) and the lamps.
 const DEDGES=[[0,1],[0,4],[1,5],[2,5],[3,7],[5,7],[6,7],[7,8]];
 function renderDiagram(items){
   const map={};for(const it of items)map[it.key]=it.status;
@@ -458,10 +458,10 @@ function renderDiagram(items){
     const x1=A.x+ux*76,y1=A.y+uy*30,x2=B.x-ux*80,y2=B.y-uy*30;
     e+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3a4356" stroke-width="2" marker-end="url(#ar)"/>`;}
   let g="";
-  // Une boîte verte ne dit pas POURQUOI elle est verte : elle résume plusieurs checks
-  // dont on ne voit ni le nom ni la valeur. L'infobulle les déplie — un check par ligne,
-  // avec son état et son détail — pour qu'un survol réponde sans aller chercher la zone
-  // « Configuration » plus bas.
+  // A green box does not say WHY it is green: it sums up several checks whose name and
+  // value one cannot see. The tooltip unfolds them — one check per line, with its state
+  // and its detail — so that a hover answers without going to look for the
+  // "Configuration" zone further down.
   const byKey={};for(const it of items)byKey[it.key]=it;
   for(const n of N){const c=stc(n.s);
     const feeds=items.filter(it=>n.k.some(k=>it.key.startsWith(k)));
@@ -469,10 +469,10 @@ function renderDiagram(items){
       ? `${n.l} — ${feeds.length} check(s)\n`+feeds.map(it=>
           `${IC[it.status]||"ℹ️"} ${it.label}${it.detail?" — "+it.detail.replace(/\n→ /g," → "):""}`).join("\n")
       : `${n.l} — aucun check ne l'alimente`;
-    // Le <title> est répété DANS le rectangle, et pas seulement sur le groupe : en SVG,
-    // l'infobulle ne se déclenche qu'au survol d'une forme réellement peinte, et le
-    // groupe n'en est pas une. Le texte et la pastille, eux, ne couvrent que quelques
-    // pixels — d'où un survol qui semblait ne rien faire sur le bloc iPhone.
+    // The <title> is repeated INSIDE the rectangle, and not only on the group: in SVG,
+    // the tooltip only fires when hovering a shape that is actually painted, and a group
+    // is not one. The text and the dot, for their part, only cover a few pixels — hence
+    // a hover that seemed to do nothing at all on the iPhone block.
     const T=`<title>${tip.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</title>`;
     g+=`<g>${T}`
       +`<rect x="${n.x-72}" y="${n.y-25}" width="144" height="50" rx="12" fill="#12161e" stroke="${c}" stroke-width="2">${T}</rect>`
@@ -485,15 +485,15 @@ function renderDiagram(items){
     +`<path d="M0,0 L7,3 L0,6 Z" fill="#3a4356"/></marker></defs>${e}${g}</svg>`
     +`<div class="difoot">Flux du rig — chaque bloc prend la couleur de ses checks. Survole un bloc pour voir lesquels.</div>`;
 }
-// --- panneau « apps en trop » : lister avec les icônes, puis demander confirmation -----
-// La sélection est mémorisée entre deux rafraîchissements (la page se redessine toutes
-// les 4 s) : sans ça, décocher une app serait annulé une seconde plus tard.
+// --- "surplus apps" panel: list them with their icons, then ask for confirmation ------
+// The selection is remembered between two refreshes (the page redraws itself every
+// 4 s): without that, unticking an app would be undone a second later.
 let extraSel=null;
 function renderExtra(list){
   const host=document.getElementById("extra");
   if(!list||!list.length){host.innerHTML="";extraSel=null;return;}
   const paths=list.map(a=>a.path);
-  if(extraSel===null)extraSel=new Set(paths);            // tout coché au premier affichage
+  if(extraSel===null)extraSel=new Set(paths);            // all ticked on first display
   else for(const p of paths)if(!extraSel.has(p)&&!extraSel.__seen?.has(p))extraSel.add(p);
   extraSel.__seen=new Set(paths);
   const n=[...extraSel].filter(p=>paths.includes(p)).length;
@@ -507,10 +507,10 @@ function renderExtra(list){
     </div></div>`;
   const grid=host.querySelector(".apps");
   for(const a of list){
-    // Un vrai bouton, sélectionné ou non, plutôt qu'une case à cocher posée à côté d'un
-    // libellé : la cible de clic devient la vignette entière (l'icône, le nom, la marge),
-    // au lieu d'un carré de 16 px. Et l'état se lit à la MARQUE BLEUE, pas à une coche
-    // grise qu'il fallait chercher. `aria-pressed` porte l'état pour qui n'y voit pas.
+    // A real button, selected or not, rather than a checkbox placed next to a label: the
+    // click target becomes the whole thumbnail (the icon, the name, the margin), instead
+    // of a 16 px square. And the state is read from the BLUE MARK, not from a grey tick
+    // one had to hunt for. `aria-pressed` carries the state for whoever cannot see it.
     const el=document.createElement("button");
     el.className="app"+(extraSel.has(a.path)?" on":"");
     el.setAttribute("aria-pressed",extraSel.has(a.path)?"true":"false");
@@ -533,8 +533,8 @@ async function quitApps(){
   const paths=(lastUnexpected||[]).map(a=>a.path).filter(p=>extraSel&&extraSel.has(p));
   if(!paths.length){logline("aucune appli cochée");return;}
   const names=(lastUnexpected||[]).filter(a=>paths.includes(a.path)).map(a=>a.name);
-  // Deuxième garde-fou, volontairement moche : fermer une app peut faire perdre du
-  // travail non enregistré. On nomme ce qu'on va fermer, en toutes lettres.
+  // Second guardrail, deliberately ugly: closing an app can lose unsaved work. We name
+  // what we are about to close, spelled out in full.
   if(!confirm(`Quitter ${paths.length} appli(s) ?\n\n${names.join("\n")}\n\nChacune est priée de quitter proprement : une app avec un document non enregistré posera sa propre question.`))return;
   logline(`🧹 fermeture de ${paths.length} appli(s)…`);
   const r=await(await fetch("/api/quit-apps",{method:"POST",headers:{"Content-Type":"application/json"},
@@ -542,13 +542,13 @@ async function quitApps(){
   logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
   extraSel=null;setTimeout(refresh,900);
 }
-// Les corrections EN COURS, par clé. La page se reconstruit chaque seconde : sans cette
-// mémoire, le bouton grisé était recréé neuf et cliquable une seconde après le clic,
-// alors qu'un correctif dure jusqu'à quarante-cinq. On voyait donc un bouton qui n'avait
-// pas l'air de travailler, et on recliquait — exactement ce qu'il fallait empêcher.
+// The fixes IN PROGRESS, by key. The page rebuilds itself every second: without this
+// memory, the greyed-out button was recreated brand new and clickable one second after
+// the click, whereas a fix lasts up to forty-five. So one saw a button that did not look
+// like it was working, and clicked again — exactly what had to be prevented.
 const enCours = new Map();
 let toastT=null;
-// kind: "run" (en cours, reste affiché), "ok" (4 s), "ko" (9 s — un échec se lit).
+// kind: "run" (in progress, stays up), "ok" (4 s), "ko" (9 s — a failure gets read).
 function toast(kind,text){
   const el=document.getElementById("toast");
   el.className=kind;el.textContent=text;el.style.display="block";
@@ -562,18 +562,18 @@ async function refresh(){
   lastState=s;paintBanner();
   document.querySelectorAll("#modeseg button").forEach(b=>{
     b.classList.toggle("on",b.dataset.m===s.requested);
-    // Seul Auto porte la couleur du mode résolu : sur Live ou Studio choisis à la main,
-    // le bouton EST déjà la réponse.
+    // Only Auto carries the colour of the resolved mode: on Live or Studio picked by
+    // hand, the button IS already the answer.
     b.classList.toggle("res-live",b.dataset.m==="auto"&&s.mode==="live");
     b.classList.toggle("res-studio",b.dataset.m==="auto"&&s.mode==="studio");
     if(b.dataset.m==="auto")b.title=`Auto — actuellement ${s.mode==="live"?"🎤 Live":"🎧 Studio"}`;
   });
-  // Chaque zone prend la couleur du pire de SON groupe, et son résumé dit combien.
+  // Each zone takes the colour of the worst of ITS group, and its summary says how many.
   const xapps=s.items.filter(i=>i.key.startsWith("xapp:"));
   const cfg=s.items.filter(i=>!i.key.startsWith("xapp:")&&i.key!=="sc:play");
   const nbad=cfg.filter(i=>i.status==="fail"||i.status==="warn").length;
-  // Chaque zone sur SES items, celle-ci comprise : les blocs du schéma savent quelles
-  // clés ils couvrent, on reprend exactement la même liste.
+  // Each zone on ITS items, this one included: the diagram's blocks know which keys
+  // they cover, so we take exactly the same list.
   const flowKeys=DNODES.flatMap(n=>n.k);
   const flow=s.items.filter(i=>flowKeys.some(k=>i.key.startsWith(k)));
   const fbad=flow.filter(i=>i.status==="fail").length;
@@ -584,28 +584,29 @@ async function refresh(){
   renderDiagram(s.items);
   lastUnexpected=s.unexpected||[];
   renderExtra(lastUnexpected);
-  // Tout ce qui n'est pas "ok" reste en ligne pleine, TRIÉ fail > warn > info ; seuls les
-  // "ok" se replient en pastilles. Les "info" sont donc visibles par défaut, en bas de la
-  // liste : c'est de l'optionnel débranché, on veut le voir sans le confondre avec un
-  // problème — et surtout savoir que le check a tourné plutôt que de le croire oublié.
+  // Everything that is not "ok" stays on a full row, SORTED fail > warn > info; only the
+  // "ok" ones fold up into chips. The "info" ones are therefore visible by default, at
+  // the bottom of the list: it is optional gear unplugged, we want to see it without
+  // confusing it with a problem — and above all to know the check ran rather than
+  // believing it forgotten.
   const RANK={fail:0,warn:1,info:2};
-  // Les apps en trop ont déjà leur panneau juste au-dessus, avec leurs icônes, leurs
-  // cases et le bouton qui les ferme. Les répéter ici en lignes d'info ajoutait autant
-  // de lignes que d'apps ouvertes, pour dire deux fois la même chose et sans rien
-  // d'actionnable. Elles restent dans les checks — le terminal, lui, n'a pas de panneau
-  // et en a besoin ; c'est seulement le doublon À L'ÉCRAN qu'on retire.
-  // « Soundcheck joué » sort de la liste comme les apps en trop : il a sa propre zone,
-  // qui dit la même chose en détaillant chaque geste. Il RESTE dans /api/state — c'est
-  // lui qui fait rougir la barre de menus, la pastille et le liseré ; c'est seulement le
-  // doublon à l'écran qu'on retire, pas le check.
+  // The surplus apps already have their own panel just above, with their icons, their
+  // boxes and the button that closes them. Repeating them here as info rows added as
+  // many lines as there were open apps, to say the same thing twice and with nothing
+  // actionable. They stay in the checks — the terminal has no panel and needs them;
+  // it is only the ON-SCREEN duplicate that we remove.
+  // "Soundcheck joué" leaves the list like the surplus apps: it has its own zone, which
+  // says the same thing while detailing each gesture. It STAYS in /api/state — it is
+  // what makes the menu bar, the badge and the border go red; it is only the on-screen
+  // duplicate that we remove, not the check.
   const shown=s.items.filter(it=>!it.key.startsWith("xapp:")&&it.key!=="sc:play");
   const bad=shown.filter(it=>it.status!=="ok").sort((a,b)=>(RANK[a.status]??3)-(RANK[b.status]??3));
   const good=shown.filter(it=>it.status==="ok");
   const prob=document.getElementById("problems");
   if(!bad.length){prob.innerHTML='<div class="allok">✅ Tout est vert — rien à corriger.</div>';}
   else{
-    // Bandeau rassurant quand il ne reste QUE de l'info : la liste n'est pas vide, mais
-    // il n'y a rien à corriger — sans ce mot, une liste non vide se lit comme un problème.
+    // A reassuring banner when ONLY info is left: the list is not empty, but there is
+    // nothing to fix — without that word, a non-empty list reads as a problem.
     prob.innerHTML = bad.some(it=>it.status!=="info") ? ""
       : '<div class="allok">✅ Rien à corriger — seulement de l\'optionnel non branché.</div>';
     for(const it of bad){
@@ -613,8 +614,8 @@ async function refresh(){
     row.title=`${it.label}\n${TIP[it.status]||""}`
       +(it.detail?`\n\n${it.detail.replace(/\n→ /g,"\n→ ")}`:"")
       +(it.remedy?`\n\nCorrectif proposé : ${it.remedy}`:"");
-    // Les vraies vignettes quand on en a une, l'emoji de famille sinon : un check sans
-    // objet matériel ni app (l'alimentation, le réseau) n'a rien de mieux à montrer.
+    // The real thumbnails when we have one, the family emoji otherwise: a check with no
+    // hardware object nor app (the power supply, the network) has nothing better to show.
     const vign=(it.icons&&it.icons.length)
       ? it.icons.map(u=>`<img src="${u}" alt="" class="gic" loading="lazy">`).join("")
       : iconFor(it.key);
@@ -623,7 +624,7 @@ async function refresh(){
       <div class="dot ${it.status}"></div>`;
     if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
       btn.onclick=()=>fix(it.key,it.remedy,btn);
-      // Repose l'état d'attente sur le bouton fraîchement recréé.
+      // Re-applies the waiting state on the freshly recreated button.
       if(enCours.has(it.key)){btn.disabled=true;btn.textContent="⏳ "+enCours.get(it.key);}
       row.appendChild(btn);}
     if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
@@ -641,11 +642,11 @@ async function refresh(){
   document.getElementById("stamp").textContent="maj "+new Date().toLocaleTimeString();
   window.scrollTo(0,y);
 }
-// Le bouton se met lui-même en attente. Un correctif n'est pas instantané — ouvrir le
-// set attend jusqu'à 45 s que le port MIDI d'Ableton apparaisse — et pendant ce temps
-// la seule trace était une ligne dans le journal, qui n'est pas sous les yeux quand on
-// regarde la ligne en panne. Un bouton qui ne réagit pas se reclique, et un correctif
-// relancé deux fois est exactement ce qu'on ne veut pas ici.
+// The button puts itself into the waiting state. A fix is not instantaneous — opening
+// the set waits up to 45 s for Ableton's MIDI port to appear — and meanwhile the only
+// trace was a line in the log, which is not under one's eyes when one is looking at the
+// broken row. A button that does not react gets clicked again, and a fix restarted
+// twice is exactly what we do not want here.
 async function fix(key,label,btn){
   logline(`→ ${label}…`);
   toast("run","⏳ "+label+"…");
@@ -656,25 +657,25 @@ async function fix(key,label,btn){
       body:JSON.stringify({key,dry:false})})).json();
     const brut=(r.message||"").replace(/\n/g,"  |  ");
     logline((r.ok?"✔ ":"✖ ")+brut);
-    // Le compte-rendu peut faire dix lignes ; le bandeau garde le NOM de l'action, qui
-    // est ce qu'on cherche à confirmer, et renvoie au journal pour le détail.
+    // The report can run to ten lines; the banner keeps the NAME of the action, which
+    // is what one is looking to confirm, and points to the log for the detail.
     toast(r.ok?"ok":"ko",(r.ok?"✔ ":"✖ ")+label+(brut?" — "+brut.slice(0,120):""));
   }catch(e){
-    // Sans ce filet, une requête qui échoue laissait le bouton grisé pour toujours et
-    // ne disait rien : l'échec ressemblait à une attente qui dure.
+    // Without this net, a request that fails left the button greyed out forever and
+    // said nothing: the failure looked like a wait that drags on.
     logline("✖ "+label+" — "+e);
     toast("ko","✖ "+label+" — "+e);
   }finally{
-    // La suite est reposée par le prochain refresh, à partir de enCours.
+    // The rest is re-applied by the next refresh, from enCours.
     enCours.delete(key);
     if(btn){btn.disabled=false;btn.textContent=label;}
   }
   setTimeout(refresh,800);
 }
-// Ranger les fenêtres : les apps continuent de tourner, elles disparaissent juste de
-// l'écran. QUI est rangé est une décision de CONFIG (`[windows.apps]` dans rig.toml, où
-// Ableton est en "keep" parce que le set EST l'écran de scène) — pas une case à cocher
-// qui pouvait contredire le réglage. Pour tout ranger, Ableton compris : `readyset tidy --all`.
+// Tidying the windows away: the apps keep running, they just disappear from the screen.
+// WHICH ones get tidied is a CONFIG decision (`[windows.apps]` in rig.toml, where
+// Ableton is on "keep" because the set IS the stage screen) — not a checkbox that could
+// contradict the setting. To tidy everything, Ableton included: `readyset tidy --all`.
 async function tidy(){
   logline(`🪟 rangement des fenêtres…`);
   toast("run","⏳ Rangement des fenêtres…");
@@ -691,9 +692,9 @@ async function preflight(){
   logline((r.message||"").replace(/\n/g,"  |  "));
   setTimeout(refresh,1200);
 }
-// 1 s : le serveur sert un instantané déjà calculé, la lecture ne coûte rien.
+// 1 s: the server serves an already-computed snapshot, the read costs nothing.
 refresh();setInterval(refresh,1000);
-// Le soundcheck se sonde en continu — même « vérifié », il faut voir le moment où un
-// réveil du Mac le remet à zéro côté serveur (voir midimon.sleep_stamp).
+// The soundcheck is polled continuously — even "verified", one has to see the moment a
+// wake of the Mac resets it to zero server-side (see midimon.sleep_stamp).
 scPoll();setInterval(scPoll,700);
 </script></body></html>

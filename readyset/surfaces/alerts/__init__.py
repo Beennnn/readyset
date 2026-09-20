@@ -46,17 +46,17 @@ FAMILIES = [
     ("xapp",  "X", "une application de trop tourne"),
     ("sc",    "B", "balance : une étape du soundcheck n'est pas passée"),
 ]
-CC_FAMILY_BASE = 112     # CC 111 porte le total, 112..121 les dix familles
+CC_FAMILY_BASE = 112     # CC 111 carries the total, 112..121 the ten families
 
-# La PREMIÈRE famille tombée dans l'ordre ci-dessus, en un seul nombre : 0 si tout va
-# bien, sinon son rang + 1. Elle existe parce que la surface ne sait pas composer une
-# chaîne : dix conditions concaténées figent le plugin trevligaspel dans une boucle
-# infinie — mesuré le 2026-08-29, 95 % de CPU, un fil CoreMIDI bloqué dans
-# midiInputCallback, et le même script retiré fait retomber le plugin à 0,4 %. Un
-# indice, lui, se lit d'un seul appel de fonction sur la touche.
+# The FIRST family down in the order above, as a single number: 0 if all is well,
+# otherwise its rank + 1. It exists because the surface cannot compose a string: ten
+# concatenated conditions freeze the trevligaspel plugin in an infinite loop — measured
+# on 2026-08-29, 95 % CPU, a CoreMIDI thread stuck in midiInputCallback, and removing
+# that same script drops the plugin back to 0.4 %. An index, on the other hand, is read
+# with a single function call on the key.
 #
-# Les comptes par famille (112..121) restent émis : ils ne coûtent rien et une surface
-# capable de les lire aura tout. Celle-ci ne l'est pas.
+# The per-family counts (112..121) are still emitted: they cost nothing and a surface
+# able to read them would have everything. This one is not able to.
 CC_FIRST = 110
 
 
@@ -178,24 +178,24 @@ class Alerter:
             self.log(f"  (jauge a échoué: {exc})")
 
 
-# La touche du rig sait dire « montre-moi » : appuyer dessus envoie ce CC sur le même
-# port d'alerte, et le tableau de bord s'ouvre. Le retour, dans l'autre sens, sur le
-# même câble — une surface de contrôle qui affiche un verdict sans pouvoir en montrer le
-# détail oblige à retourner au clavier, ce qui est précisément le geste qu'elle évite.
+# The rig key knows how to say "show me": pressing it sends this CC on the same alert
+# port, and the dashboard opens. The talk-back, in the other direction, on the same
+# cable — a control surface that displays a verdict without being able to show the
+# detail forces a trip back to the keyboard, which is precisely the gesture it avoids.
 #
-# CC 100 et non un des 111..121 : ceux-là PORTENT l'état, et une valeur d'affichage qui
-# déclencherait aussi une action serait un piège. 100 est en dehors du bloc, et en dehors
-# des 120..127 que le MIDI réserve aux messages de mode.
+# CC 100 and not one of 111..121: those ones CARRY the state, and a display value that
+# would also trigger an action would be a trap. 100 is outside the block, and outside
+# the 120..127 that MIDI reserves for mode messages.
 CC_OPEN = 100
 
 
 def listen_for_open(cfg: dict, on_trigger, log=print) -> None:
-    """Ouvre le port d'alerte en écoute et appelle `on_trigger` sur CC_OPEN.
+    """Open the alert port for listening and call `on_trigger` on CC_OPEN.
 
-    Le port peut ne pas exister au démarrage (le pilote IAC arrive parfois après nous) et
-    peut disparaître en cours de route : la boucle réessaie plutôt que d'abandonner une
-    fois pour toutes, sinon un ordre de branchement malheureux suffirait à retirer la
-    fonction jusqu'au prochain redémarrage.
+    The port may not exist at startup (the IAC driver sometimes arrives after us) and it
+    may disappear along the way: the loop retries rather than giving up once and for
+    all, otherwise an unlucky plug-in order would be enough to take the feature away
+    until the next restart.
     """
     mc = cfg["alerts"]["midi"]
     cible, canal = mc["port"], int(mc.get("channel", 15)) - 1
@@ -213,7 +213,7 @@ def listen_for_open(cfg: dict, on_trigger, log=print) -> None:
                         if (msg.type == "control_change" and msg.channel == canal
                                 and msg.control == CC_OPEN and msg.value > 0):
                             on_trigger()
-            except Exception as exc:      # le port a disparu, ou le backend a hoqueté
+            except Exception as exc:      # the port vanished, or the backend hiccuped
                 log(f"  (retour : écoute interrompue — {exc})")
                 time.sleep(5)
 

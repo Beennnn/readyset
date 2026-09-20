@@ -1,50 +1,48 @@
-"""Erreurs LIÉES — la panne qui en explique d'autres.
+"""LINKED failures — the fault that explains the others.
 
-Le tableau dit ce qui ne va pas, appareil par appareil. Il ne dit pas ce qui tombe
-ENSEMBLE — et sur scène, c'est presque toujours la vraie question. Le Stream Deck Plus
-alimente le XL, le clavier et le breath : quand son câble saute, quatre lignes passent
-au rouge dans la même seconde et une seule est la panne. Les trois autres ne sont pas
-des problèmes à régler, ce sont des SYMPTÔMES. Les lire comme quatre pannes distinctes,
-c'est chercher quatre gestes là où il n'y en a qu'un — au moment précis où l'on n'a le
-temps que d'un seul.
+The table says what is wrong, device by device. It does not say what falls TOGETHER —
+and on stage, that is almost always the real question. The Stream Deck Plus powers the
+XL, the keyboard and the breath controller: when its cable gives out, four lines go red
+within the same second and only one of them is the fault. The other three are not
+problems to fix, they are SYMPTOMS. Reading them as four distinct failures means looking
+for four gestures where there is only one — at the precise moment when there is only
+time for a single one.
 
-D'où ce module. Il ne teste RIEN : il relie. À partir d'une topologie déclarée dans
-rig.toml (`[[depends]]`), il marque chaque panne comme cause ou comme conséquence, pour
-que les surfaces puissent mettre la cause devant et ranger le reste derrière elle.
+Hence this module. It tests NOTHING: it links. From a topology declared in rig.toml
+(`[[depends]]`), it marks each failure as a cause or as a consequence, so that the
+surfaces can put the cause in front and tuck the rest away behind it.
 
-Trois garde-fous, chacun payé par une erreur qu'ils évitent :
+Three guard-rails, each one paid for by a mistake it prevents:
 
-  · une conséquence n'en est une QUE si sa cause est elle-même en panne. Un XL débranché
-    pendant que le Plus va très bien est une panne à part entière — l'effacer derrière un
-    lien théorique reviendrait à cacher un vrai problème.
-  · la chaîne se remonte jusqu'au bout (le Plus alimente un hub qui alimente le reste),
-    donc la cause affichée est la cause RACINE, pas le maillon intermédiaire. Une boucle
-    de déclaration ne doit pas figer le moteur : d'où la limite de profondeur.
-  · la topologie peut dépendre du MODE. Le breath n'est branché sur le Plus que sur
-    scène ; au bureau il n'est pas là du tout, et un lien qui ne vaut pas ce soir est un
-    lien qui ment.
+  · a consequence is only one IF its cause is itself down. An XL unplugged while the
+    Plus is perfectly fine is a failure in its own right — erasing it behind a
+    theoretical link would amount to hiding a real problem.
+  · the chain is walked all the way up (the Plus powers a hub which powers the rest),
+    so the cause displayed is the ROOT cause, not the intermediate link. A loop in the
+    declaration must not freeze the engine: hence the depth limit.
+  · the topology can depend on the MODE. The breath controller is only plugged into the
+    Plus on stage; at the desk it is not there at all, and a link that does not hold
+    tonight is a link that lies.
 """
 
 from __future__ import annotations
 
-# Une déclaration mal fermée (A dépend de B, B dépend de A) ne doit pas boucler
-# indéfiniment dans un serveur sondé toutes les 5 s. Huit maillons dépassent de loin
-# toute chaîne d'alimentation réelle : au-delà, c'est une erreur de config, pas une
-# topologie.
+# A badly closed declaration (A depends on B, B depends on A) must not loop forever in a
+# server that is polled every 5 s. Eight links go far beyond any real power chain:
+# past that, it is a config error, not a topology.
 _MAX_DEPTH = 8
 
-# Ce qui compte comme « en panne » pour la propagation. INFO en est exclu : il dit
-# « absent, et c'est normal » — un optionnel non branché n'explique la chute de personne.
+# What counts as « down » for the propagation. INFO is excluded from it: it says
+# « absent, and that is normal » — unplugged optional gear explains nobody's fall.
 _BROKEN = ("fail", "warn")
 
 
 def edges(cfg: dict, mode: str) -> dict[str, tuple[str, str]]:
-    """clé de l'appareil alimenté → (clé de sa source, pourquoi il en dépend).
+    """key of the powered device → (key of its source, why it depends on it).
 
-    Un enfant n'a qu'UNE source : deux blocs qui revendiquent la même clé, c'est une
-    contradiction de config, et le dernier lu gagne — silencieusement, parce qu'un
-    serveur qui refuse de démarrer sur une topologie douteuse serait pire que le
-    problème qu'il signale.
+    A child has only ONE source: two blocks claiming the same key is a config
+    contradiction, and the last one read wins — silently, because a server that refuses
+    to start over a dubious topology would be worse than the problem it is reporting.
     """
     out: dict[str, tuple[str, str]] = {}
     for dep in cfg.get("depends", []) or []:
@@ -55,17 +53,17 @@ def edges(cfg: dict, mode: str) -> dict[str, tuple[str, str]]:
         if not source:
             continue
         for key in dep.get("keys", []) or []:
-            if key != source:           # se dépendre de soi-même n'a pas de sens
+            if key != source:           # depending on yourself makes no sense
                 out[key] = (source, why)
     return out
 
 
 def _root(key: str, links: dict[str, tuple[str, str]], broken: set[str]) -> str | None:
-    """Remonte tant que la source est ELLE AUSSI en panne. None = pas de cause amont.
+    """Walk up as long as the source is ALSO down. None = no upstream cause.
 
-    C'est ici que se joue la nuance qui fait tout le module : on ne remonte pas la
-    topologie, on remonte la PANNE. Un maillon sain arrête la remontée, parce qu'un
-    appareil qui répond n'explique la chute de rien.
+    This is where the nuance that makes the whole module is played out: we do not walk
+    up the topology, we walk up the FAILURE. A healthy link stops the climb, because a
+    device that answers explains nothing's fall.
     """
     seen, cur = {key}, key
     for _ in range(_MAX_DEPTH):
@@ -78,11 +76,11 @@ def _root(key: str, links: dict[str, tuple[str, str]], broken: set[str]) -> str 
 
 
 def annotate(cfg: dict, mode: str, items: list[dict]) -> list[dict]:
-    """Pose `caused_by` / `caused_why` sur les conséquences, `causes` sur les causes.
+    """Set `caused_by` / `caused_why` on the consequences, `causes` on the causes.
 
-    Modifie les items sur place (et les rend, pour l'écriture en une ligne). Aucun item
-    n'est retiré : une surface étroite peut choisir de replier les conséquences, une
-    large peut les montrer toutes — c'est son affaire, pas celle du moteur.
+    Modifies the items in place (and returns them, so it can be written on one line). No
+    item is removed: a narrow surface may choose to fold the consequences away, a wide
+    one may show them all — that is its business, not the engine's.
     """
     links = edges(cfg, mode)
     if not links:
@@ -97,8 +95,8 @@ def annotate(cfg: dict, mode: str, items: list[dict]) -> list[dict]:
         if root is None or root not in by_key:
             continue
         it["caused_by"] = root
-        # Le « pourquoi » du lien DIRECT, pas celui de la racine : c'est celui-là qui
-        # décrit le câble qu'on va aller regarder.
+        # The « why » of the DIRECT link, not the root's: that is the one that describes
+        # the cable you are going to go and look at.
         it["caused_why"] = links[it["key"]][1]
         cause = by_key[root]
         cause.setdefault("causes", []).append({"key": it["key"], "label": it.get("label", it["key"])})
@@ -106,8 +104,8 @@ def annotate(cfg: dict, mode: str, items: list[dict]) -> list[dict]:
 
 
 def summary(items: list[dict]) -> str:
-    """Une phrase pour la cause qui en explique d'autres, ou "" — pour les surfaces
-    qui n'ont la place que d'une ligne (une notification, un titre de menu).
+    """One sentence for the cause that explains others, or "" — for the surfaces that
+    only have room for a single line (a notification, a menu title).
     """
     for it in items:
         n = len(it.get("causes") or [])

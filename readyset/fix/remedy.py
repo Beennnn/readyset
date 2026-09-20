@@ -23,12 +23,12 @@ from . import launch
 class Remedy:
     label: str                                  # button text, e.g. "Relancer Bome"
     run: Callable[[bool], tuple[bool, str]]     # run(dry_run) -> (ok, message)
-    # Ce remède RÈGLE-t-il le problème, ou ouvre-t-il seulement la porte à un geste
-    # humain ? « Ouvrir le réglage Accessibilité » réussit toujours — il ouvre un
-    # panneau — et le check reste rouge derrière : seul Benoît peut cocher la case.
-    # Sans cette distinction, une surface qui compte les remèdes annonce « 1 réglable
-    # ici » pour quelque chose qu'elle ne sait pas régler. C'est la même famille
-    # d'erreur que le 2026-08-22 : compter la tentative comme la réussite.
+    # Does this remedy FIX the problem, or does it merely open the door to a human
+    # gesture? "Ouvrir le réglage Accessibilité" always succeeds — it opens a pane — and
+    # the check stays red behind it: only the rig's owner can tick the box. Without that
+    # distinction, a surface counting the remedies announces "1 fixable here" for
+    # something it does not know how to fix. It is the same family of error as on
+    # 2026-08-22: counting the attempt as the success.
     hands_on: bool = False
 
 
@@ -38,9 +38,9 @@ def _launch_app(path: str, dry: bool) -> tuple[bool, str]:
         return False, f"{name} introuvable : {path}"
     if dry:
         return True, f"[dry-run] lancerait {name}"
-    # Un correctif qui ne corrige rien ne doit pas être compté comme appliqué : si l'app
-    # tourne déjà, c'est le CHECK qui a un problème (mauvaise installation, doublon), pas
-    # le lancement qui en manque un. Le dire plutôt que de relancer à l'aveugle.
+    # A fix that fixes nothing must not be counted as applied: if the app is already
+    # running, it is the CHECK that has a problem (bad installation, duplicate), not the
+    # launching that is missing one. Say so rather than relaunch blindly.
     if launch.running_from(path):
         return False, f"{name} tourne déjà — la relancer ne réglerait rien"
     r = subprocess.run(["open", "-a", path], capture_output=True, text=True)
@@ -70,7 +70,7 @@ def _bome_path(cfg: dict) -> str | None:
 
 
 def checks_mode(cfg: dict) -> str:
-    """Le mode résolu — le remède doit viser la même sortie que le check qui l'a déclenché."""
+    """The resolved mode — the remedy must aim at the same output as the check that fired it."""
     from .. import checks
     return checks.resolve_mode(cfg, cfg.get("mode", {}).get("default", "auto"))
 
@@ -92,9 +92,9 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
             return Remedy(f"Relancer {label}", lambda dry: _launch_app(path, dry))
         return None
 
-    # La sortie audio d'Ableton : le seul check dont le correctif touche l'INTÉRIEUR d'une
-    # app, sans la relancer. Relancer Live serait la réparation la plus brutale du lot —
-    # on perdrait le set chargé — alors que le réglage se change dans l'app ouverte.
+    # Ableton's audio output: the only check whose fix touches the INSIDE of an app,
+    # without relaunching it. Relaunching Live would be the most brutal repair of the lot
+    # — the loaded set would be lost — whereas the setting can be changed in the open app.
     if key == "audio:live":
         mode = checks_mode(cfg)
         want = liveaudio.wanted(cfg, mode)
@@ -114,15 +114,15 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                           lambda dry: _launch_app(bome, dry))
         return None
 
-    # Bome Network ↔ iPhone. Le lien a deux bouts et un seul est actionnable d'ici.
+    # Bome Network ↔ iPhone. The link has two ends and only one is actionable from here.
     #
-    # Si Bome Network TOURNE déjà sur le Mac, le relancer ne peut rien réparer : le
-    # côté muet est le téléphone, qu'aucun bouton du Mac n'atteint. Pire, le bouton
-    # coupe une app qui marche — et sur scène, il serait cliqué en premier justement
-    # parce qu'il est là. Donc pas de correctif : le check dit d'ouvrir Bome Network
-    # sur l'iPhone (règle posée par Benoît le 2026-08-18).
+    # If Bome Network is ALREADY RUNNING on the Mac, relaunching it can repair nothing:
+    # the mute side is the phone, which no button on the Mac reaches. Worse, the button
+    # takes down an app that works — and on stage, it would be clicked first precisely
+    # because it is there. So no fix: the check says to open Bome Network on the iPhone
+    # (a rule set on 2026-08-18).
     #
-    # S'il est éteint sur le Mac, en revanche, c'est bien ici que ça se répare.
+    # If it is off on the Mac, on the other hand, this is indeed where it gets repaired.
     if key == "net:iphone":
         from ..checks import _pgrep
         if _pgrep(cfg["checks"]["apps"].get("Bome Network", "Bome Network")):
@@ -133,31 +133,31 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                           lambda dry: _launch_app(net, dry))
         return None
 
-    # Fenêtre modale de Live : le seul correctif qui débloque TOUS les autres. Il ne
-    # s'applique qu'aux fenêtres à bouton unique — `liveaudio.dismiss_dialog` refuse
-    # elle-même celles qui proposent un choix, plutôt que de s'en remettre à l'appelant.
+    # Live's modal dialog: the only fix that unblocks ALL the others. It applies only to
+    # single-button dialogs — `liveaudio.dismiss_dialog` itself refuses the ones offering
+    # a choice, rather than relying on the caller for that.
     if key == "audio:live-dialog":
         return Remedy("Congédier la fenêtre (OK)", _dismiss_live_dialog)
 
-    # Autorisation d'accessibilité : personne ne peut la donner à la place de l'humain —
-    # macOS exige le clic dans les Réglages Système, c'est le point même de la protection.
-    # Le correctif ouvre donc la BONNE page (deux niveaux de sous-menu, cherchés de tête
-    # sinon) et dit le geste qui reste. C'est le seul remède du lot qui ne répare rien
-    # lui-même, et il gagne quand même sa place : ce qu'il fait gagner, c'est de ne pas
-    # chercher où cliquer cinq minutes avant de jouer.
+    # Accessibility permission: nobody can grant it in the human's place — macOS demands
+    # the click inside System Settings, that is the very point of the protection. So the
+    # fix opens the RIGHT page (two levels of submenu, otherwise hunted for from memory)
+    # and states the gesture that remains. It is the only remedy of the lot that repairs
+    # nothing by itself, and it still earns its place: what it saves is not having to
+    # hunt for where to click five minutes before playing.
     if key == "sys:accessibility":
-        # hands_on : l'autorisation se donne dans les Réglages Système, à la main, et
-        # ne prend effet qu'au RELANCEMENT du service — deux gestes qu'aucun correctif
-        # ne peut faire à la place de l'utilisateur.
+        # hands_on: the permission is granted in System Settings, by hand, and only
+        # takes effect on the RESTART of the service — two gestures no fix can perform
+        # in the user's place.
         return Remedy("Ouvrir le réglage Accessibilité", _open_accessibility_pane, hands_on=True)
 
     # Amphetamine: launch it if needed, then start an anti-sleep session.
     if key == "sys:amphetamine":
         return Remedy("Démarrer session Amphetamine", _amphetamine_session)
 
-    # App en trop → la fermer. Le clic sur le bouton EST la confirmation pour une app
-    # isolée ; la fermeture en lot passe par le panneau dédié du dashboard, qui liste les
-    # icônes et demande une confirmation explicite avant de tout fermer d'un coup.
+    # Extra app → close it. Clicking the button IS the confirmation for a single app;
+    # closing in batch goes through the dashboard's dedicated panel, which lists the
+    # icons and asks for an explicit confirmation before closing everything at once.
     if key.startswith("xapp:"):
         name = key.split(":", 1)[1]
         for a in apps.unexpected(cfg):
@@ -166,14 +166,14 @@ def resolve_key(cfg: dict, key: str) -> Remedy | None:
                 return Remedy(f"Quitter {name}", lambda dry: apps.quit_app(path, dry_run=dry))
         return None
 
-    # VPN actif → le couper. Pas un simple `scutil stop` : voir readyset/vpn.py (l'on-demand
-    # reforme le tunnel dans la demi-seconde ; il faut éteindre le service réseau).
-    # Coupure PERSISTANTE, d'où le libellé explicite et le `readyset vpn on` pour l'inverse.
+    # Active VPN → cut it. Not a plain `scutil stop`: see readyset/vpn.py (on-demand
+    # re-forms the tunnel within half a second; the network service has to be switched
+    # off). A PERSISTENT cut, hence the explicit label and the `readyset vpn on` to undo.
     if key == "sys:vpn":
         return Remedy("Couper le VPN", lambda dry: vpn.turn_off(cfg, dry_run=dry))
 
-    # coreaudiod figé → le relancer. Il tourne sous root : le tuer demande sudo. Deux
-    # chemins, du plus discret au plus bruyant — voir _restart_coreaudiod.
+    # coreaudiod frozen → restart it. It runs as root: killing it requires sudo. Two
+    # paths, from the most discreet to the noisiest — see _restart_coreaudiod.
     if key == "sys:coreaudio":
         return Remedy("Relancer le service audio (coreaudiod)", _restart_coreaudiod)
 
@@ -220,17 +220,17 @@ _COREAUDIOD_SUDOERS = "bin/install-coreaudiod-sudoers.sh"
 
 
 def _restart_coreaudiod(dry: bool) -> tuple[bool, str]:
-    """Tue coreaudiod ; launchd le relance en ~1 s et le son revient sans redémarrer.
+    """Kill coreaudiod; launchd restarts it in ~1 s and the sound comes back, no reboot.
 
-    Le processus appartient à root, donc `killall` seul est refusé. Ordre d'essai :
-    1. `sudo -n` — sans mot de passe SI la règle sudoers posée par
-       bin/install-coreaudiod-sudoers.sh est là (scope : cette seule commande). C'est
-       le chemin de scène : un clic, zéro dialogue.
-    2. sinon `osascript … with administrator privileges` — macOS ouvre son dialogue de
-       mot de passe. Ça marche du premier coup sans rien installer, mais ça suppose
-       quelqu'un devant l'écran ; le message dit comment ne plus l'avoir.
-    Ce que ça casse : les apps qui tenaient un périphérique (Ableton, Stage Traxx)
-    perdent leur sortie et doivent la resélectionner — d'où l'avertissement rendu.
+    The process belongs to root, so `killall` alone is refused. Order of attempts:
+    1. `sudo -n` — without a password IF the sudoers rule installed by
+       bin/install-coreaudiod-sudoers.sh is there (scope: that single command). That is
+       the stage path: one click, zero dialogs.
+    2. otherwise `osascript … with administrator privileges` — macOS opens its password
+       dialog. It works on the first try without installing anything, but it assumes
+       somebody in front of the screen; the message says how to stop having it.
+    What it breaks: the apps that were holding a device (Ableton, Stage Traxx) lose their
+    output and have to re-select it — hence the warning that is returned.
     """
     if dry:
         return True, "[dry-run] relancerait coreaudiod (killall ; launchd le ressuscite en ~1 s)"

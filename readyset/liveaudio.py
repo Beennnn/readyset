@@ -1,25 +1,25 @@
-"""Régler la SORTIE audio d'Ableton dans l'application déjà ouverte.
+"""Set Ableton's audio OUTPUT inside the already-open application.
 
-Le travail réel est fait par `live-output`, qui vit dans son PROPRE dépôt
-(github.com/Beennnn/ableton-live-output) et s'installe en lien symbolique dans
-`~/.local/bin`. Il n'a rien à voir avec un rig : il règle la sortie audio de Live en
-ligne de commande, point — donc il se teste, se publie et se corrige tout seul, et les
-deux jumeaux le CONSOMMENT au lieu d'en porter chacun une copie qui dériverait.
+The real work is done by `live-output`, which lives in its OWN repository
+(github.com/Beennnn/ableton-audio-output) and installs itself as a symlink into
+`~/.local/bin`. It has nothing to do with a rig: it sets Live's audio output from the
+command line, full stop — so it is tested, published and fixed on its own, and the two
+twins CONSUME it instead of each carrying a copy that would drift.
 
-Pourquoi ce détour par l'interface plutôt qu'un réglage propre : Live n'a pas de
-dictionnaire AppleScript, son fichier de préférences est binaire et réécrit à la
-fermeture, et son API Python ne touche pas au matériel audio. Le README du dépôt le
-détaille.
+Why this detour through the user interface rather than a clean setting: Live has no
+AppleScript dictionary, its preferences file is binary and rewritten on quit, and its
+Python API does not touch the audio hardware. The repository's README spells it out in
+detail.
 
-Ce module ne fait que le CHOIX et l'APPEL : quelle sortie veut-on dans ce mode, et
-qu'est-ce que le script en a fait. Il est utilisé aux deux endroits qui en ont besoin —
-la mise en place (`readyset preflight`) et le bouton de correction du dashboard — pour que les
-deux fassent exactement la même chose.
+This module only does the CHOICE and the CALL: which output do we want in this mode, and
+what did the script make of it. It is used at the two places that need it — the bring-up
+(`readyset preflight`) and the dashboard's fix button — so that the two do exactly the
+same thing.
 
-⚠️ Rien ici ne LIT la sortie courante. Ce serait tentant, et ce serait un piège : lire
-par l'accessibilité oblige à mettre Live au premier plan et à ouvrir sa fenêtre de
-réglages. Toutes les 4 secondes dans la boucle d'état, ce serait ingérable — et sur scène,
-catastrophique. La lecture passive reste le Log.txt (voir checks.check_live_output).
+⚠️ Nothing here READS the current output. It would be tempting, and it would be a trap:
+reading through accessibility forces Live to the foreground and opens its settings
+window. Every 4 seconds in the state loop, that would be unmanageable — and on stage,
+catastrophic. Passive reading stays the Log.txt (see checks.check_live_output).
 """
 
 from __future__ import annotations
@@ -27,22 +27,22 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-# macOS refuse de piloter une interface de trois façons différentes, et les trois sortent
-# ici sous forme d'un message AppleScript brut que personne ne peut interpréter à cinq
-# minutes du concert. Elles disent pourtant toutes la même chose : « ce processus-ci n'a
-# pas le droit ». Le 2026-08-22, la mise en place a rendu « 3960:4307: execution error:
-# Erreur dans System Events : osascript n'est pas autorisé à un accès d'aide. (-25211) »
-# — vrai, illisible, et surtout affiché à côté d'un « ✔ » puisque le préflight comptait
-# alors les échecs comme des correctifs appliqués.
+# macOS refuses to drive a user interface in three different ways, and all three come out
+# here as a raw AppleScript message that nobody can interpret five minutes before the
+# gig. They all say the same thing, though: "this particular process is not allowed".
+# On 2026-08-22, the bring-up returned "3960:4307: execution error: Erreur dans System
+# Events : osascript n'est pas autorisé à un accès d'aide. (-25211)" — true, unreadable,
+# and above all displayed next to a "✔" since the preflight counted failures as applied
+# fixes back then.
 #
-# ⚠️ L'autorisation se donne PAR PROCESSUS APPELANT : un terminal autorisé ne donne rien
-# au service lancé par launchd, qui est un autre processus responsable. C'est exactement
-# le piège tombé le 2026-08-22 — la sortie se réglait à la main depuis un terminal, et le
-# même script échouait depuis le dashboard.
+# ⚠️ The permission is granted PER CALLING PROCESS: an authorised terminal grants nothing
+# to the service launched by launchd, which is another responsible process. That is
+# exactly the trap fallen into on 2026-08-22 — the output was being set by hand from a
+# terminal, and the very same script failed from the dashboard.
 _DENIED_MARKERS = (
-    "-25211", "accès d’aide", "accès d'aide", "assistive access",   # lecture d'interface
-    "(1002)", "envoyer de saisies", "envoyer des saisies", "send keystrokes",  # envoi de frappes
-    "-1743", "not allowed to send apple events", "envoyer des apple", "envoyer des Apple",  # automatisation
+    "-25211", "accès d’aide", "accès d'aide", "assistive access",   # reading the interface
+    "(1002)", "envoyer de saisies", "envoyer des saisies", "send keystrokes",  # sending keystrokes
+    "-1743", "not allowed to send apple events", "envoyer des apple", "envoyer des Apple",  # automation
 )
 
 DENIED_HINT = ("le service n'a pas le droit de piloter Ableton — cocher le processus qui "
@@ -52,13 +52,13 @@ DENIED_HINT = ("le service n'a pas le droit de piloter Ableton — cocher le pro
 
 
 def denied(text: str) -> bool:
-    """Ce message est-il un refus d'autorisation macOS (et pas un vrai échec du réglage) ?"""
+    """Is this message a macOS permission denial (and not a real failure of the setting)?"""
     low = (text or "").lower()
     return any(m.lower() in low for m in _DENIED_MARKERS)
 
-# Cherché par chemin, comme sd-power : le script est installé, pas embarqué. Absent, tout
-# ici rend un message clair — le rig ne dépend pas de lui pour démarrer, il perd seulement
-# la capacité de corriger la sortie tout seul.
+# Looked up by path, like sd-power: the script is installed, not bundled. If it is
+# missing, everything here returns a clear message — the rig does not depend on it to
+# start, it only loses the ability to fix the output on its own.
 _CANDIDATES = (Path.home() / ".local/bin/live-output",
                Path("/opt/homebrew/bin/live-output"),
                Path("/usr/local/bin/live-output"))
@@ -69,10 +69,10 @@ def script() -> Path | None:
 
 
 def wanted(cfg: dict, mode: str) -> str | None:
-    """La sortie visée dans ce mode : la PREMIÈRE de `live_output`.
+    """The output aimed for in this mode: the FIRST one in `live_output`.
 
-    La liste est un ensemble d'acceptables (le check en valide n'importe lequel) ; pour
-    agir il faut en désigner une, et l'ordre de la liste porte déjà cette préférence.
+    The list is a set of acceptable values (the check validates any of them); to act we
+    have to designate one, and the order of the list already carries that preference.
     """
     wants = cfg.get("modes", {}).get(mode, {}).get("live_output") or []
     return wants[0] if wants else None
@@ -85,30 +85,30 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
     exe = script()
     if exe is None:
         return False, ("live-output n'est pas installé — "
-                       "github.com/Beennnn/ableton-live-output, puis ./install.sh")
+                       "github.com/Beennnn/ableton-audio-output, puis ./install.sh")
     if dry:
         return True, f"[dry-run] réglerait la sortie d'Ableton sur « {want} »"
-    # D'ABORD la fenêtre modale, ENSUITE le réglage : `live-output` ouvre les réglages de
-    # Live par ⌘, — une frappe que Live ignore tant qu'une fenêtre modale est ouverte. Sans
-    # ce passage, le correctif expirait au bout de 60 s en accusant l'accessibilité, alors
-    # que le seul obstacle était un bouton OK à cliquer. Et c'est le cas le plus FRÉQUENT,
-    # puisque la fenêtre en question est précisément celle que Live affiche quand sa sortie
-    # est absente — c'est-à-dire exactement quand ce correctif est appelé.
+    # FIRST the modal dialog, THEN the setting: `live-output` opens Live's settings with
+    # ⌘, — a keystroke Live ignores as long as a modal dialog is open. Without this step,
+    # the fix timed out after 60 s while blaming accessibility, when the only obstacle was
+    # an OK button to click. And that is the MOST FREQUENT case, since the dialog in
+    # question is precisely the one Live displays when its output is missing — that is,
+    # exactly when this fix gets called.
     cleared, note = dismiss_dialog()
     if not cleared:
         return False, note
     try:
         p = subprocess.run([str(exe), want], capture_output=True, text=True, timeout=60)
     except subprocess.TimeoutExpired:
-        # 60 s est très large pour quelques clics : si on y arrive, c'est que Live ne
-        # répond plus à l'accessibilité, pas que l'opération est longue.
+        # 60 s is very generous for a few clicks: if we get there, it means Live no
+        # longer answers accessibility, not that the operation is a long one.
         return False, "Live n'a pas répondu (accessibilité bloquée ?)"
-    # Les DEUX flux, pas l'un OU l'autre : `live-output` réémet l'erreur brute d'AppleScript
-    # sur stdout ET écrit sa traduction actionnable sur stderr. Prendre `stdout or stderr`
-    # gardait donc systématiquement le message illisible et jetait celui qui sert.
+    # BOTH streams, not one OR the other: `live-output` re-emits the raw AppleScript error
+    # on stdout AND writes its actionable translation on stderr. Taking `stdout or stderr`
+    # therefore systematically kept the unreadable message and threw away the useful one.
     out = [l for l in ((p.stdout or "") + "\n" + (p.stderr or "")).splitlines() if l.strip()]
     joined = "\n".join(out)
-    # code 4 = le script a lui-même reconnu le refus d'accessibilité (voir son README).
+    # code 4 = the script itself recognised the accessibility denial (see its README).
     if p.returncode == 4 or denied(joined):
         return False, DENIED_HINT
     msg = out[-1] if out else f"code {p.returncode}"
@@ -117,23 +117,23 @@ def apply(cfg: dict, mode: str, dry: bool = False) -> tuple[bool, str]:
     return p.returncode == 0, msg
 
 
-# ─── La fenêtre modale de Live ────────────────────────────────────────────────────────
+# ─── Live's modal dialog ──────────────────────────────────────────────────────────────
 #
-# « La section audio est désactivée. Veuillez sélectionner un périphérique de sortie audio
-# dans les Réglages Audio. » — c'est ce que Live affiche quand il s'ouvre sur un
-# périphérique absent (typiquement « No Device », restauré de la session précédente).
+# "La section audio est désactivée. Veuillez sélectionner un périphérique de sortie audio
+# dans les Réglages Audio." — that is what Live displays when it opens on a missing
+# device (typically "No Device", restored from the previous session).
 #
-# Elle mérite son propre traitement pour une raison qui n'a rien d'esthétique : elle est
-# MODALE. Tant qu'elle est là, Live n'écoute plus rien — ni ⌘, pour ouvrir ses réglages,
-# ni le rangement des fenêtres, ni le correctif de sortie. Le rig se retrouve donc à
-# essayer de réparer une app qui ne peut pas lui répondre, et à rendre des erreurs qui
-# décrivent le symptôme (« Live n'a pas répondu ») au lieu de la cause. Vécu le 2026-08-22,
-# juste après le lancement : Ableton ouvert, muet, bloqué là-dessus, et le rig aveugle.
+# It deserves its own handling for a reason that has nothing to do with aesthetics: it is
+# MODAL. As long as it is there, Live listens to nothing any more — neither ⌘, to open its
+# settings, nor the window tidying, nor the output fix. So the rig finds itself trying to
+# repair an app that cannot answer it, and returning errors that describe the symptom
+# ("Live did not answer") instead of the cause. Experienced on 2026-08-22, just after the
+# launch: Ableton open, silent, stuck on that, and the rig blind.
 #
-# ⚠️ RÈGLE DE SÛRETÉ : on ne congédie QUE les fenêtres à bouton unique « OK ». Une fenêtre
-# qui propose un CHOIX (« Enregistrer / Ne pas enregistrer / Annuler ») ne se clique pas
-# toute seule — cliquer au hasard dedans peut perdre un set non enregistré. Une fenêtre à
-# plusieurs boutons est signalée, jamais résolue.
+# ⚠️ SAFETY RULE: we only dismiss dialogs whose single button is "OK". A dialog offering a
+# CHOICE ("Save / Don't Save / Cancel") does not get clicked on its own — clicking at
+# random in it can lose an unsaved set. A dialog with several buttons is reported, never
+# resolved.
 _DIALOG_SCAN = """
 tell application "System Events"
   if not (exists process "Live") then return "NOPROC"
@@ -159,9 +159,9 @@ tell application "System Events"
 end tell
 """
 
-# Le bouton n'a PAS de `name` — seulement une `description` (relevé à l'accessibilité le
-# 2026-08-22). Un `click button "OK"` classique ne le trouve donc jamais ; il faut parcourir
-# et comparer la description. C'est le genre de détail qui fait chercher une heure.
+# The button has NO `name` — only a `description` (read from accessibility on
+# 2026-08-22). So a classic `click button "OK"` never finds it; one has to walk the tree
+# and compare the description. The kind of detail that costs an hour of searching.
 _DIALOG_CLICK = """
 tell application "System Events" to tell process "Live"
   set dlgs to (windows whose subrole is "AXDialog")
@@ -194,11 +194,11 @@ def _osascript(src: str, timeout: float = 15) -> tuple[bool, str]:
 
 
 def dialog() -> tuple[str, list[str]] | None:
-    """La fenêtre modale ouverte dans Live : (texte, boutons). None s'il n'y en a pas.
+    """The modal dialog open in Live: (text, buttons). None if there is none.
 
-    Rend aussi None quand la lecture est impossible (Live absent, autorisation refusée) :
-    ce module ne SAIT alors pas s'il y a une fenêtre, et dire l'incapacité est le travail
-    du check d'accessibilité — pas d'une fausse alerte ici.
+    Also returns None when reading is impossible (Live absent, permission denied): this
+    module then does not KNOW whether there is a dialog, and stating that inability is
+    the accessibility check's job — not a false alarm here.
     """
     ok, out = _osascript(_DIALOG_SCAN)
     if not ok or out in ("", "NOPROC") or "@@" not in out:
@@ -208,10 +208,10 @@ def dialog() -> tuple[str, list[str]] | None:
 
 
 def dismiss_dialog() -> tuple[bool, str]:
-    """Clique OK sur la fenêtre modale de Live, si et seulement si c'est son seul bouton.
+    """Click OK on Live's modal dialog, if and only if that is its only button.
 
-    Rend (True, "") quand il n'y a rien à congédier : l'appelant n'a pas à distinguer
-    « pas de fenêtre » de « fenêtre congédiée », les deux le laissent libre d'agir.
+    Returns (True, "") when there is nothing to dismiss: the caller does not have to tell
+    "no dialog" from "dialog dismissed", both leave it free to act.
     """
     d = dialog()
     if d is None:

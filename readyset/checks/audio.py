@@ -34,15 +34,15 @@ def _tail(path: str, nbytes: int = 200_000) -> str:
 
 
 def _last_line_containing(path: str, needle: str, chunk: int = 256_000) -> str | None:
-    """La DERNIÈRE ligne du fichier qui contient `needle`, cherchée EN REMONTANT.
+    """The LAST line of the file containing `needle`, searched for BY WALKING BACKWARDS.
 
-    Pourquoi pas `_tail` : Live n'écrit « Output Device » qu'au CHANGEMENT, puis des
-    dizaines de milliers de lignes par-dessus pendant qu'il joue. Une fenêtre de fin de
-    taille fixe rate donc la ligne dès qu'une session bavarde est passée derrière — et le
-    check répondait « aucune sortie déclarée dans le journal » (jaune, vague, avec un
-    conseil inutile puisque la sortie AVAIT déjà été réglée un jour) alors que la dernière
-    valeur écrite était « No Device », c'est-à-dire un silence complet à annoncer en rouge.
-    Mesuré le 2026-08-22 : 6,8 Mo de journal, la ligne cherchée à 1,4 Mo de la fin.
+    Why not `_tail`: Live only writes « Output Device » on a CHANGE, then tens of
+    thousands of lines on top of it while it plays. A fixed-size window at the end
+    therefore misses the line as soon as a chatty session has gone by — and the check
+    answered « aucune sortie déclarée dans le journal » (yellow, vague, with useless
+    advice since the output HAD been set at some point) while the last value written was
+    « No Device », that is to say a complete silence to be announced in red.
+    Measured on 2026-08-22: 6.8 MB of log, the line sought 1.4 MB from the end.
     """
     needle_b = needle.encode()
     size = os.path.getsize(path)
@@ -53,8 +53,8 @@ def _last_line_containing(path: str, needle: str, chunk: int = 256_000) -> str |
             pos -= step
             fh.seek(pos)
             lines = (fh.read(step) + carry).split(b"\n")
-            # La première tranche peut avoir coupé une ligne en deux : elle repart au tour
-            # suivant, recollée à ce qui la précède.
+            # The first slice may have cut a line in two: it goes back in on the next
+            # round, glued to whatever precedes it.
             carry = lines.pop(0)
             for line in reversed(lines):
                 if needle_b in line:
@@ -65,21 +65,22 @@ def _last_line_containing(path: str, needle: str, chunk: int = 256_000) -> str |
 
 
 def check_live_output(cfg: dict, mode: str) -> Result:
-    """Où sort le son d'Ableton — lu dans son Log.txt, pas demandé à Ableton.
+    """Where Ableton's sound goes out — read from its Log.txt, not asked of Ableton.
 
-    Deux choses à savoir pour lire cette ligne sans se tromper.
+    Two things to know in order to read this line without getting it wrong.
 
-    D'abord le libellé : il ne dit PAS « Live sort sur ces trois-là ». Le nom du
-    check est fixe, et la liste des sorties ACCEPTÉES (`live_output`, par mode :
-    le P-225 sur scène, la sortie macOS ou la RME au bureau) n'apparaît que si la
-    sortie réelle n'en fait pas partie — sinon on lisait une énumération là où on
-    attendait un état. C'était le reproche fait le 2026-08-18, et il était fondé.
+    First the label: it does NOT say « Live goes out on those three ». The check's
+    name is fixed, and the list of ACCEPTED outputs (`live_output`, per mode: the
+    stage keyboard on stage, the macOS output or the desk interface at the desk)
+    only appears if the real output is not one of them — otherwise you were reading
+    an enumeration where you expected a state. That was the complaint made on
+    2026-08-18, and it was well founded.
 
-    Ensuite la fraîcheur : le Log.txt n'est écrit QUE quand Ableton tourne. Ableton
-    fermé, la dernière valeur reste lisible indéfiniment — et l'ancienne version
-    rendait un VERT franc sur une lecture vieille de 18 h, à côté d'un « Ableton
-    lancé ❌ ». Un état qu'on ne peut pas constater ne se déclare ni bon ni mauvais :
-    Ableton fermé, la ligne passe en INFO et dit à quand remonte la lecture.
+    Then freshness: the Log.txt is ONLY written while Ableton is running. With Ableton
+    closed, the last value stays readable indefinitely — and the old version returned
+    a plain GREEN on a reading 18 h old, right next to an « Ableton lancé ❌ ». A state
+    that cannot be observed is declared neither good nor bad: with Ableton closed, the
+    line goes to INFO and says how far back the reading goes.
     """
     wants = cfg["modes"][mode]["live_output"]
     label = "Sortie audio d'Ableton"
@@ -94,10 +95,10 @@ def check_live_output(cfg: dict, mode: str) -> Result:
         line = _last_line_containing(logs[0], "Audio In Out: Output Device:")
         if line:
             dev = line.split("Output Device:", 1)[1].strip()
-            # Découpe sur « : » SUIVI D'UN ESPACE : l'horodatage en contient trois
-            # sans espace (23:38:16), donc un split sur le premier deux-points rendait
-            # « 2026-08-19T23 » — que fromisoformat accepte sans broncher, en lisant
-            # 23 h pile. L'écart mesuré devenait faux jusqu'à 59 minutes.
+            # Split on « : » FOLLOWED BY A SPACE: the timestamp contains three of them
+            # without a space (23:38:16), so a split on the first colon returned
+            # « 2026-08-19T23 » — which fromisoformat accepts without flinching, reading
+            # 23:00 exactly. The measured gap then became wrong by up to 59 minutes.
             when_iso = line.split(": ", 1)[0]         # 2026-08-19T23:38:16.911624
     except Exception as exc:
         return Result("audio:live", label, WARN, f"lecture log: {exc}")
@@ -111,30 +112,29 @@ def check_live_output(cfg: dict, mode: str) -> Result:
     short = dev.split(" (")[0]
     ok = any(w.lower() in dev.lower() for w in wants)
 
-    # « No Device » n'est pas une sortie parmi d'autres : c'est l'absence de sortie, donc
-    # un silence garanti dès la première note. Live le RESTAURE au lancement sans rien
-    # réécrire dans le journal (vérifié le 2026-08-22 : lancé à 16:47, dernière ligne du
-    # 21/08 à 15:40 — et pas un son). Le raisonnement de fraîcheur ci-dessous vaut pour
-    # une sortie plausible qu'on n'a pas pu reconfirmer ; ici il n'y a rien à nuancer,
-    # la dernière volonté connue de Live est « aucun périphérique ». Rouge, et le
-    # correctif règle la sortie.
+    # « No Device » is not one output among others: it is the ABSENCE of an output, hence
+    # a guaranteed silence from the very first note. Live RESTORES it at launch without
+    # rewriting anything in the log (verified on 2026-08-22: launched at 16:47, last line
+    # from 21/08 at 15:40 — and not a single sound). The freshness reasoning below holds
+    # for a plausible output that could not be reconfirmed; here there is nothing to
+    # qualify, Live's last known intent is « no device at all ». Red, and the fix sets
+    # the output.
     if short.lower().startswith("no device"):
         stamp = (when_iso or "").replace("T", " ")[:16]
         return Result("audio:live", label, FAIL,
                       _hint(f"aucun périphérique de sortie (No Device{', du ' + stamp if stamp else ''})",
                             "Live ne sortira aucun son tant que ce n'est pas réglé"))
 
-    # LA LIGNE EST-ELLE DE CETTE SESSION ? Le Log.txt n'écrit « Output Device » qu'au
-    # CHANGEMENT, et le même fichier couvre des mois : une ligne peut donc décrire la
-    # session d'avant-hier pendant que Live tourne aujourd'hui sur autre chose. Mesuré le
-    # 2026-08-19 : Live lancé la veille à 19:38, dernière ligne datant du 17 juin, et la
-    # sortie réellement sélectionnée était « No Device » — soit aucun son du tout.
+    # IS THE LINE FROM THIS SESSION? The Log.txt only writes « Output Device » on a
+    # CHANGE, and the same file spans months: a line can therefore describe the session
+    # from the day before yesterday while Live runs today on something else. Measured on
+    # 2026-08-19: Live launched the previous day at 19:38, last line dating from 17 June,
+    # and the output actually selected was « No Device » — that is, no sound at all.
     #
-    # Une valeur antérieure au lancement ne prouve donc rien sur maintenant. On ne la
-    # déclare ni bonne ni mauvaise : on dit qu'elle n'est pas confirmée, et le correctif
-    # (qui RÈGLE la sortie) fait apparaître une ligne fraîche, ce qui rend le check
-    # concluant. C'est aussi pour ça que la mise en place applique la sortie au lieu de
-    # se fier à ce qu'elle lit.
+    # A value older than the launch therefore proves nothing about now. We declare it
+    # neither good nor bad: we say it is not confirmed, and the fix (which SETS the
+    # output) makes a fresh line appear, which makes the check conclusive. That is also
+    # why the bring-up applies the output instead of trusting what it reads.
     age = _process_age(cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live"))
     if age is not None and when_iso:
         try:
@@ -149,9 +149,9 @@ def check_live_output(cfg: dict, mode: str) -> Result:
                                 "régler la sortie pour en avoir le cœur net"))
 
 
-    # Ableton fermé → rien à constater : on rend la dernière valeur connue, datée,
-    # sans verdict. Même motif de détection que le check « Ableton lancé », pour que
-    # les deux lignes ne puissent pas se contredire.
+    # Ableton closed → nothing to observe: we return the last known value, dated, with
+    # no verdict. Same detection pattern as the « Ableton lancé » check, so that the two
+    # lines cannot contradict each other.
     pattern = cfg["checks"]["apps"].get("Ableton", "Ableton Live.*/MacOS/Live")
     if not _pgrep(pattern):
         when = datetime.fromtimestamp(os.path.getmtime(logs[0])).strftime("%d/%m à %H:%M")
@@ -168,13 +168,13 @@ def check_live_output(cfg: dict, mode: str) -> Result:
 
 # system_profiler is slow (~1s); cache its JSON so audio + default-output checks
 # (and a polling dashboard) share one call instead of shelling out repeatedly.
-# ready : une lecture a abouti au moins une fois (sinon on ne conclut RIEN sur
-# l'audio). running : une sonde est en vol, inutile d'en lancer une seconde.
-# `stalled` : la dernière lecture a EXPIRÉ (pas échoué — expiré). C'est la signature d'un
-# coreaudiod figé : le processus est là, mais plus personne n'obtient de réponse de lui,
-# et plus aucune app ne sort de son. Vécu le 2026-09-12 (9 h de silence après une boucle
-# d'écriture de réglages déclenchée par un pilote tiers). Le check `sys:coreaudio` lit ce
-# drapeau ; il ne coûte donc aucun processus de plus — la sonde audio existante suffit.
+# ready: a read has succeeded at least once (otherwise we conclude NOTHING about the
+# audio). running: a probe is in flight, no point launching a second one.
+# `stalled`: the last read TIMED OUT (not failed — timed out). That is the signature of a
+# frozen coreaudiod: the process is there, but nobody gets an answer out of it any more,
+# and no app gets any sound out either. Lived through on 2026-09-12 (9 h of silence after
+# a settings-writing loop triggered by a third-party driver). The `sys:coreaudio` check
+# reads this flag; it therefore costs no extra process — the existing audio probe is enough.
 _profile_cache: dict = {"ts": 0.0, "data": None, "ready": False, "running": False,
                         "stalled": False}
 
@@ -183,15 +183,15 @@ _PROFILE_TTL = 10.0
 
 
 def audio_cache_reset() -> None:
-    """Oublie l'état « figé » et force une relecture au prochain check — appelé par le
-    correctif qui relance coreaudiod, pour que la ligne repasse au vert dès que le
-    service répond, sans attendre la fin du TTL."""
+    """Forget the « frozen » state and force a re-read at the next check — called by the
+    fix that restarts coreaudiod, so that the line goes back to green as soon as the
+    service answers, without waiting for the TTL to expire."""
     _profile_cache["stalled"] = False
     _profile_cache["ts"] = 0.0
 
 
 def _audio_probe() -> None:
-    """Interroge CoreAudio en tâche de fond et range le résultat dans le cache."""
+    """Query CoreAudio in the background and file the result away in the cache."""
     try:
         out = subprocess.run(
             ["system_profiler", "SPAudioDataType", "-json"],
@@ -201,33 +201,33 @@ def _audio_probe() -> None:
         _profile_cache["ready"] = True
         _profile_cache["stalled"] = False
     except subprocess.TimeoutExpired:
-        # Vingt secondes sans réponse, ce n'est pas « lent », c'est figé : en temps
-        # normal l'inventaire prend 1 à 3 s. On garde la dernière lecture (voir ci-dessous)
-        # ET on lève le drapeau, pour que `check_coreaudio` le dise en rouge.
+        # Twenty seconds with no answer is not « slow », it is frozen: normally the
+        # inventory takes 1 to 3 s. We keep the last read (see below) AND we raise the
+        # flag, so that `check_coreaudio` says it in red.
         _profile_cache["stalled"] = True
     except Exception:
-        # Échec ou blocage : on GARDE la dernière lecture valable plutôt que de la
-        # remplacer par du vide, qui ferait clignoter en rouge des appareils bien
-        # présents. `ready` reste à sa valeur, donc l'ancienne réponse continue de servir.
+        # Failure or blockage: we KEEP the last valid read rather than replacing it with
+        # emptiness, which would make devices that are very much present blink red.
+        # `ready` stays at its value, so the old answer goes on serving.
         pass
     finally:
         _profile_cache["running"] = False
 
 
 def _audio_items() -> list[dict]:
-    """L'inventaire CoreAudio, JAMAIS bloquant — il rend ce qu'il a sous la main.
+    """The CoreAudio inventory, NEVER blocking — it returns whatever it has at hand.
 
-    Pourquoi ce détour par un thread plutôt qu'un simple appel avec délai : le
-    2026-08-18, une mesure `audiolevel` a laissé CoreAudio coincé, et `system_profiler
-    SPAudioDataType` a cessé de rendre la main. Le `timeout=` de subprocess n'a pas
-    suffi — expiré, il TUE le processus, mais un processus bloqué dans un appel noyau
-    ne meurt pas tout de suite, et l'attente débordait largement. Résultat : /api/state
-    ne répondait plus du tout et le dashboard restait sur « …chargement ».
+    Why this detour through a thread rather than a plain call with a timeout: on
+    2026-08-18, an `audiolevel` measurement left CoreAudio stuck, and `system_profiler
+    SPAudioDataType` stopped giving control back. subprocess's `timeout=` was not
+    enough — on expiry it KILLS the process, but a process blocked inside a kernel call
+    does not die right away, and the wait overran by a lot. Result: /api/state no longer
+    answered at all and the dashboard stayed on « …chargement ».
 
-    Un service de scène ne doit jamais dépendre d'un appel système qui peut se figer.
-    La lecture part donc en tâche de fond et le check répond immédiatement avec la
-    dernière valeur connue ; tant qu'aucune lecture n'a abouti, `ready` est faux et les
-    checks audio le DISENT (« lecture en cours ») au lieu d'annoncer une absence fausse.
+    A stage service must never depend on a system call that can freeze. The read
+    therefore goes off in the background and the check answers immediately with the last
+    known value; as long as no read has succeeded, `ready` is false and the audio checks
+    SAY so (« lecture en cours ») instead of announcing a false absence.
     """
     now = time.time()
     if (not _profile_cache["running"]
@@ -240,20 +240,20 @@ def _audio_items() -> list[dict]:
 
 
 def _audio_ready() -> bool:
-    """Vrai dès qu'une lecture CoreAudio a abouti au moins une fois."""
+    """True as soon as a CoreAudio read has succeeded at least once."""
     return bool(_profile_cache["ready"])
 
 
 def check_audio(cfg: dict, mode: str = "live") -> Result | None:
-    # L'interface attendue est un réglage PAR MODE — le P-225 sur scène, rien au bureau —
-    # et le réglage global n'est qu'un repli pour un rig qui n'a qu'un mode. Lire le
-    # global d'abord était un bug silencieux de la même famille que [set].app : la config
-    # disait « P-225 », le moteur vérifiait « USB Audio », son propre défaut générique,
-    # et le studio affichait une ligne qu'il avait justement demandé à ne pas avoir.
+    # The expected interface is a PER-MODE setting — the stage keyboard on stage, nothing
+    # at the desk — and the global setting is only a fallback for a rig that has a single
+    # mode. Reading the global one first was a silent bug of the same family as [set].app:
+    # the config said « stage keyboard », the engine checked « USB Audio », its own generic
+    # default, and the studio displayed a line it had specifically asked not to have.
     m = cfg["modes"].get(mode, {})
-    # Dès qu'UN mode déclare son interface, ne rien déclarer devient un choix, pas un
-    # oubli : le studio veut justement qu'aucune interface ne soit exigée. Le repli
-    # global ne sert donc qu'aux rigs qui n'ont pas de modes du tout.
+    # As soon as ONE mode declares its interface, declaring nothing becomes a choice, not
+    # an oversight: the studio specifically wants no interface to be required. The global
+    # fallback therefore only serves rigs that have no modes at all.
     par_mode = any("audio_interface" in v for v in cfg["modes"].values() if isinstance(v, dict))
     want = m.get("audio_interface") if par_mode else cfg["checks"].get("audio_interface")
     sev = m.get("interface_severity", "fail")
@@ -263,8 +263,8 @@ def check_audio(cfg: dict, mode: str = "live") -> Result | None:
     if not _audio_ready():
         return Result("audio", f"Interface audio « {want} »", INFO, "lecture CoreAudio en cours…")
     hit = any(want.lower() in n.lower() for n in names)
-    # Même principe que pour les applications : lu en rouge, « Interface audio « RME » »
-    # affirme une présence que la couleur dément. Le libellé dit ce qui EST.
+    # Same principle as for the applications: read in red, « Interface audio « … » »
+    # asserts a presence that the colour contradicts. The label states what IS.
     return Result(
         key="audio",
         label=f"Interface audio « {want} »" if hit else f"Interface « {want} » introuvable",
@@ -274,17 +274,17 @@ def check_audio(cfg: dict, mode: str = "live") -> Result | None:
 
 
 def check_audio_devices(cfg: dict, mode: str) -> list[Result]:
-    """Périphériques audio SUPPLÉMENTAIRES à surveiller, un bloc [[checks.audio_devices]]
-    par entrée.
+    """ADDITIONAL audio devices to watch, one [[checks.audio_devices]] block per
+    entry.
 
-    Distinct de `check_audio` (l'interface principale) et de `check_live_output` (ce que
-    Live utilise VRAIMENT) : ici on constate seulement qu'un périphérique est présent
-    côté CoreAudio. Cas d'usage : le P-225 expose une carte son USB « P-Series » en plus
-    de son port MIDI. Son MIDI peut très bien répondre alors que sa sortie audio, elle,
-    n'est pas montée — un câble USB à moitié mort, un hub qui décroche — et on ne s'en
-    aperçoit qu'en lançant le son. Le clavier a l'air branché, le piano reste muet.
+    Distinct from `check_audio` (the main interface) and from `check_live_output` (what
+    Live REALLY uses): here we only observe that a device is present on the CoreAudio
+    side. Use case: the stage keyboard exposes a USB sound card of its own on top of
+    its MIDI port. Its MIDI can answer perfectly well while its audio output is not
+    mounted — a half-dead USB cable, a hub that drops out — and you only notice it when
+    you start the sound. The keyboard looks plugged in, the piano stays mute.
 
-    `severity` par entrée (défaut warn), et peut être un dict par mode :
+    `severity` per entry (warn by default), and can be a dict per mode:
         severity = { live = "fail", studio = "warn" }
     """
     names = [it.get("_name", "") for it in _audio_items()]
@@ -306,11 +306,11 @@ def check_audio_devices(cfg: dict, mode: str) -> list[Result]:
             key=f"audio:{dev.get('name', want)}",
             label=dev.get("name", f"Périphérique audio « {want} »"),
             status=OK if hit else sev,
-            # Ce check ne prouve QUE la présence côté CoreAudio — jamais qu'un son
-            # sort réellement par là. C'est la limite du constat : une carte peut
-            # être montée et rester muette (mauvaise sortie choisie dans Live, volume
-            # à zéro, câble mort côté jack). Le seul verdict qui vaut est l'oreille,
-            # d'où le renvoi vers la page Soundcheck, qui joue et fait écouter.
+            # This check ONLY proves presence on the CoreAudio side — never that sound
+            # actually comes out that way. That is the limit of the observation: a card
+            # can be mounted and stay mute (wrong output picked in Live, volume at
+            # zero, dead cable on the jack side). The only verdict that counts is the
+            # ear, hence the pointer to the Soundcheck page, which plays and lets you listen.
             detail=hit or _hint(
                 "non détecté côté CoreAudio",
                 "le rebrancher / le rallumer, puis JOUER du son pour vérifier qu'il "
@@ -327,20 +327,20 @@ def _coreaudiod_pid() -> int | None:
 
 
 def check_coreaudio(cfg: dict) -> Result:
-    """Le service audio de macOS (coreaudiod) tourne-t-il ET répond-il ?
+    """Is the macOS audio service (coreaudiod) running AND answering?
 
-    C'est le check qui explique tous les autres quand « il n'y a plus de son » : la
-    sortie par défaut est bonne, l'interface est détectée, Ableton pointe dessus — et
-    rien ne sort, parce que le processus qui mixe tout ça est figé. Sans cette ligne,
-    on cherche le défaut dans les apps ; avec, on lit la cause en une ligne et le bouton
-    est à côté. Un coreaudiod figé n'est jamais acceptable, dans aucun mode : pas de
-    sévérité configurable, c'est rouge.
+    This is the check that explains all the others when « there is no sound any more »:
+    the default output is right, the interface is detected, Ableton points at it — and
+    nothing comes out, because the process that mixes all that is frozen. Without this
+    line, you look for the fault in the apps; with it, you read the cause in one line
+    and the button is right next to it. A frozen coreaudiod is never acceptable, in any
+    mode: no configurable severity, it is red.
     """
     label = "Service audio macOS (coreaudiod)"
     pid = _coreaudiod_pid()
     if pid is None:
-        # launchd le ressuscite normalement en ~1 s ; le voir absent deux fois de suite
-        # veut dire qu'il boucle en crash — le relancer à la main ne suffira pas.
+        # launchd normally resurrects it in ~1 s; seeing it absent twice in a row means
+        # it is crash-looping — restarting it by hand will not be enough.
         return Result("sys:coreaudio", label, FAIL,
                       _hint("coreaudiod ne tourne pas",
                             "launchd devrait le relancer seul ; s'il reste absent, "
@@ -362,9 +362,9 @@ def check_default_output(cfg: dict) -> Result:
             name = it.get("_name", "")
             break
     if name is None:
-        # « Pas encore lu » et « lu, rien trouvé » ne sont pas la même chose : le premier
-        # est de l'attente, le second un vrai défaut. Les confondre ferait clignoter un
-        # avertissement à chaque démarrage du service.
+        # « Not read yet » and « read, nothing found » are not the same thing: the first
+        # is waiting, the second a genuine fault. Confusing them would make a warning
+        # blink at every start-up of the service.
         return Result("sys:output", "Sortie son par défaut (Mac)",
                       INFO if not _audio_ready() else WARN,
                       "lecture CoreAudio en cours…" if not _audio_ready() else "indéterminée")

@@ -12,16 +12,16 @@
         <string>-lc</string>
         <string>exec '/Applications/RigMenuBar.app/Contents/MacOS/RigMenuBar'</string>
     </array>
-    <!-- Relancée SEULEMENT si elle est tombée. `KeepAlive` à `true` relançait aussi
-         après un « ⏻ Quitter readyset » du menu, ce qui rendait la sortie volontaire
-         impossible : l'app revenait dans la seconde. On la contournait en déchargeant
-         l'agent (`launchctl bootout`) — et le remède était pire, puisque le service
-         restait déchargé jusqu'à la session suivante, donc readyset ne redémarrait plus au
-         login tant qu'on ne le rechargeait pas à la main.
-         Avec `SuccessfulExit: false`, launchd ne relance que sur un code de sortie NON
-         NUL. Quitter proprement (code 0) est respecté ; un crash est rattrapé. Le
-         `exec` de la ligne de commande ci-dessus est ce qui fait marcher la nuance :
-         sans lui, launchd lirait le code de bash et non celui de l'app. -->
+    <!-- Relaunched ONLY if it went down. `KeepAlive` set to `true` also relaunched
+         after a « ⏻ Quitter readyset » from the menu, which made a deliberate exit
+         impossible: the app came back within the second. We worked around it by
+         unloading the agent (`launchctl bootout`) — and the remedy was worse, since the
+         service stayed unloaded until the next session, so readyset no longer restarted at
+         login as long as it was not reloaded by hand.
+         With `SuccessfulExit: false`, launchd only relaunches on a NON-ZERO exit code.
+         Quitting cleanly (code 0) is respected; a crash is caught. The `exec` in the
+         command line above is what makes the nuance work: without it, launchd would
+         read bash's exit code and not the app's. -->
     <key>KeepAlive</key>
     <dict>
         <key>SuccessfulExit</key>
