@@ -9,7 +9,7 @@
     <array>
         <string>/bin/bash</string>
         <string>-lc</string>
-        <string>exec '__RIG_DIR__/rig' serve --no-open</string>
+        <string>exec '__RIG_DIR__/bin/readyset' serve --no-open</string>
     </array>
     <key>KeepAlive</key>
     <true/>

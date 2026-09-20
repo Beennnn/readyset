@@ -1,0 +1,317 @@
+#!/usr/bin/env python3
+"""readyset — bring-up + live monitoring for the stage keyboard rig.
+
+  readyset preflight   launch the apps in order, open the gig set, then verify → checklist
+  readyset check       verify only (no launch), one-shot checklist + exit code
+  readyset monitor     watch continuously; alert the moment something dies (and recovers)
+  readyset tidy        hide the rig apps' windows (they keep running) — Ableton stays visible
+  readyset apps        list the open apps the rig doesn't need; --close offers to quit them
+  readyset vpn off|on  cut the VPN (it rewrites routing → no iPhone, no stage LAN) / restore
+  readyset alert-test  fire a test alert through every active backend
+
+Exit codes for check/preflight: 0 all-ok, 1 warnings only, 2 a required check failed.
+Config: rig.toml at the repo root (copy from rig.example.toml). Python 3.11+, needs `mido`.
+
+The executable lives in bin/ and the package at the repo root: a file and a directory
+cannot share the name `readyset` in the same folder. Hence the sys.path line below —
+without it Python would only look inside bin/ and never find the package next door.
+"""
+
+from __future__ import annotations
+
+import argparse
+import sys
+import time
+from datetime import datetime
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+from readyset import apps, checks, liveaudio, vpn, windows  # noqa: E402
+from readyset.core import config  # noqa: E402
+from readyset.fix import launch  # noqa: E402
+from readyset.surfaces import alerts  # noqa: E402
+from readyset.surfaces import web  # noqa: E402
+
+
+def _hr() -> str:
+    return datetime.now().strftime("%H:%M:%S")
+
+
+def _print_results(results: list[checks.Result]) -> None:
+    width = max((len(r.label) for r in results), default=0)
+    for r in results:
+        # The hint lives on its own line (checks._hint); in a terminal we glue it back
+        # on, the width of the window does the wrapping all by itself.
+        detail = f"  — {r.detail}".replace("\n", " ") if r.detail else ""
+        print(f"  {r.icon} {r.label.ljust(width)}{detail}")
+
+
+def _summary_line(results: list[checks.Result]) -> tuple[str, int]:
+    status = checks.worst(results)
+    fails = sum(1 for r in results if r.status == checks.FAIL)
+    warns = sum(1 for r in results if r.status == checks.WARN)
+    infos = sum(1 for r in results if r.status == checks.INFO)
+    # The "info" ones are mentioned in parentheses but change NEITHER the verdict NOR the
+    # exit code: optional gear that is not plugged in does not stop anyone from playing.
+    extra = f" ({infos} info)" if infos else ""
+    if status == checks.OK:
+        return f"✅ Rig prêt — tout est vert.{extra}", 0
+    if status == checks.WARN:
+        return f"⚠️  Rig jouable — {warns} avertissement(s).{extra}", 1
+    return f"❌ Rig PAS prêt — {fails} bloquant(s), {warns} avertissement(s).{extra}", 2
+
+
+def _mode(cfg: dict, args) -> str:
+    req = getattr(args, "mode", None) or cfg.get("mode", {}).get("default", "auto")
+    return checks.resolve_mode(cfg, req)
+
+
+def cmd_check(cfg: dict, args) -> int:
+    mode = _mode(cfg, args)
+    print(f"[{_hr()}] Vérification du rig — mode {mode}\n")
+    results = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(results)
+    line, code = _summary_line(results)
+    print(f"\n{line}")
+    return code
+
+
+def cmd_preflight(cfg: dict, args) -> int:
+    dry = getattr(args, "dry_run", False)
+    mode = _mode(cfg, args)
+    tag = " (DRY-RUN — rien n'est lancé)" if dry else ""
+    print(f"[{_hr()}] Mise en place du rig — mode {mode}{tag}\n")
+    # Ableton's output is APPLIED, not verified — but `launch.open_set` is what takes
+    # care of it now, right after Live comes online and BEFORE the window tidying. Doing
+    # it here, once the whole bring-up was over, left Live stuck on its "audio section
+    # disabled" dialog during the intermediate steps, which also drive its interface and
+    # therefore failed in turn (2026-08-22).
+    launch.bring_up(cfg, log=print, dry_run=dry, mode=mode)
+
+    # AFTER the audio output, never before: otherwise the first bars would come out on
+    # the very interface we have just corrected.
+    launch.start_scene(cfg, log=print, dry_run=dry)
+
+    print(f"\n[{_hr()}] Vérification finale…\n")
+    results = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(results)
+    line, code = _summary_line(results)
+    print(f"\n{line}")
+    if code == 2:
+        active = cfg["monitor"]["alerts"]
+        alerts.Alerter(cfg, active, dry_run=dry).notify(
+            "Rig — préflight", "Un check bloquant a échoué au démarrage.", "fail")
+    return code
+
+
+def cmd_monitor(cfg: dict, args) -> int:
+    active = args.alerts.split(",") if args.alerts else cfg["monitor"]["alerts"]
+    interval = args.interval or cfg["monitor"]["interval"]
+    audio_every = cfg["monitor"]["audio_every"]
+    recovery = cfg["monitor"].get("recovery_alerts", True)
+    dry = getattr(args, "dry_run", False)
+    mode = _mode(cfg, args)
+    alerter = alerts.Alerter(cfg, active, dry_run=dry)
+
+    print(f"[{_hr()}] Monitoring live — mode {mode} — alertes: {', '.join(active)} — "
+          f"toutes les {interval}s (Ctrl-C pour arrêter)\n")
+
+    # Baseline: show the full checklist once and seed state. If the rig is
+    # already broken at startup, alert now — don't wait for a transition.
+    baseline = checks.run_all(cfg, mode, with_audio=True)
+    _print_results(baseline)
+    prev: dict[str, str] = {r.key: r.status for r in baseline}
+    if checks.worst(baseline) == checks.FAIL:
+        broken = [r.label for r in baseline if r.status == checks.FAIL]
+        alerter.notify("🎹 Rig — démarrage KO", "En panne au lancement : " + ", ".join(broken), "fail")
+    # Publish the count straight away: it also clears whatever stale number a
+    # previous run left on the surface.
+    prev_keys = [r.key for r in baseline if r.status == checks.FAIL]
+    alerter.gauge(prev_keys)
+    print()
+    cycle = 1
+    try:
+        while True:
+            with_audio = (cycle % audio_every == 0)
+            results = checks.run_all(cfg, mode, with_audio=with_audio)
+            transitions = []
+            for r in results:
+                was = prev.get(r.key)
+                if was is not None and was != r.status:
+                    transitions.append((r, was))
+                prev[r.key] = r.status
+
+            for r, was in transitions:
+                if r.status == checks.FAIL:
+                    alerter.notify("🎹 Rig — panne", f"{r.label} : {r.detail or 'HS'}", "fail")
+                    print(f"[{_hr()}] ❌ {r.label} → FAIL ({r.detail})")
+                elif was == checks.FAIL and r.status == checks.OK and recovery:
+                    alerter.notify("🎹 Rig — rétabli", f"{r.label} de nouveau OK", "ok")
+                    print(f"[{_hr()}] ✅ {r.label} → rétabli")
+                elif r.status == checks.WARN:
+                    print(f"[{_hr()}] ⚠️  {r.label} ({r.detail})")
+
+            status = checks.worst(results)
+            failing = [r.key for r in results if r.status == checks.FAIL]
+            fails = len(failing)
+            if failing != prev_keys:
+                alerter.gauge(failing)
+                prev_keys = failing
+            if cycle % 12 == 0:   # heartbeat so silence never looks like a hang
+                icon = {"ok": "✅", "info": "ℹ️", "warn": "⚠️", "fail": "❌"}[status]
+                alerter.gauge(failing)   # re-assert, so a surface booted late catches up
+                print(f"[{_hr()}] {icon} heartbeat — {len(results)} checks, {fails} en panne")
+
+            cycle += 1
+            time.sleep(interval)
+    except KeyboardInterrupt:
+        print(f"\n[{_hr()}] Monitoring arrêté.")
+        return 0
+
+
+def cmd_serve(cfg: dict, args) -> int:
+    if getattr(args, "mode", None):
+        web.set_requested_mode(args.mode)
+    web.serve(cfg, port=args.port, open_browser=not args.no_open, host=args.host)
+    return 0
+
+
+def cmd_tidy(cfg: dict, args) -> int:
+    dry = getattr(args, "dry_run", False)
+    scope = " (Ableton compris)" if args.all else ""
+    print(f"[{_hr()}] Rangement des fenêtres du rig{scope}{' — DRY-RUN' if dry else ''}\n")
+    for e in windows.snapshot(cfg):
+        state = "pas lancée" if not e["running"] else ("visible" if e["visible"] else "masquée")
+        print(f"  · {e['name']} — politique {e['policy']}, {state}")
+    print()
+    ok, _ = windows.tidy(cfg, log=print, dry_run=dry, force=args.all)
+    return 0 if ok else 1
+
+
+def cmd_apps(cfg: dict, args) -> int:
+    """List the open apps the rig does not need, and offer to close them."""
+    dry = getattr(args, "dry_run", False)
+    extra = apps.unexpected(cfg)
+    if not extra:
+        print("✅ Aucune appli en trop — seules les apps du rig sont ouvertes.")
+        return 0
+    print(f"[{_hr()}] {len(extra)} appli(s) ouverte(s) dont le rig n'a pas besoin :\n")
+    for a in extra:
+        print(f"  📦 {a['name'].ljust(24)} {a['path']}")
+    if not args.close:
+        print("\n(`readyset apps --close` pour proposer de les fermer)")
+        return 0
+    # Explicit confirmation, including outside an interactive terminal: without a clear
+    # answer we close nothing. Closing an app can lose unsaved work.
+    try:
+        answer = input(f"\nQuitter ces {len(extra)} appli(s) ? [o/N] ").strip().lower()
+    except EOFError:
+        answer = ""
+    if answer not in ("o", "oui", "y", "yes"):
+        print("Annulé — rien n'a été fermé.")
+        return 0
+    print()
+    ok, msg = apps.quit_many(cfg, [a["path"] for a in extra], dry_run=dry)
+    print(msg)
+    return 0 if ok else 1
+
+
+def cmd_vpn(cfg: dict, args) -> int:
+    dry = getattr(args, "dry_run", False)
+    if args.action == "status":
+        print(vpn.status(cfg))
+        return 0
+    ok, msg = (vpn.turn_off(cfg, dry_run=dry) if args.action == "off"
+               else vpn.turn_on(cfg, dry_run=dry))
+    print(msg)
+    return 0 if ok else 1
+
+
+def cmd_alert_test(cfg: dict, args) -> int:
+    active = args.alerts.split(",") if args.alerts else cfg["monitor"]["alerts"]
+    dry = getattr(args, "dry_run", False)
+    print(f"[{_hr()}] Test des alertes: {', '.join(active)}{' (dry-run)' if dry else ''}")
+    alerter = alerts.Alerter(cfg, active, dry_run=dry)
+    alerter.notify("🎹 Rig — test", "Ceci est une alerte de test.", "warn")
+    # Three failures in three different families: the key must read 3 and spell AMN,
+    # not merely light up.
+    alerter.gauge(["app:Ableton Live", "midi:P-Series", "net:stage"])
+    print("Envoyé. Vérifie la notif / le téléphone / le bouton Stream Deck.")
+    print("Le bouton doit afficher 3 et les lettres AMN. « readyset monitor » y remettra la vraie valeur.")
+    return 0
+
+
+def main(argv=None) -> int:
+    # Line-buffer stdout so `readyset monitor >log` streams live instead of blocking.
+    try:
+        sys.stdout.reconfigure(line_buffering=True)
+    except Exception:
+        pass
+    cfg = config.load()
+    p = argparse.ArgumentParser(prog="readyset", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    def _add_mode(pr):
+        pr.add_argument("--mode", choices=["auto", "live", "studio"],
+                        help="rig ciblé (défaut: auto — studio si le routeur 192.168.1.1 répond)")
+
+    pf = sub.add_parser("preflight", help="lance les apps + ouvre le set + vérifie")
+    pf.add_argument("--dry-run", action="store_true",
+                    help="montre ce qui serait lancé/ouvert sans rien exécuter")
+    _add_mode(pf)
+    _add_mode(sub.add_parser("check", help="vérifie seulement (pas de lancement)"))
+
+    m = sub.add_parser("monitor", help="surveille en continu + alerte")
+    m.add_argument("--alerts", help="backends (csv): macos,push,streamdeck")
+    m.add_argument("--interval", type=int, help="secondes entre deux checks")
+    m.add_argument("--dry-run", action="store_true",
+                   help="surveille mais n'envoie aucune alerte (les affiche)")
+    _add_mode(m)
+
+    td = sub.add_parser("tidy", help="masque les fenêtres des apps du rig (elles tournent toujours)")
+    td.add_argument("--all", action="store_true",
+                    help="range aussi les apps en politique « keep » (Ableton)")
+    td.add_argument("--dry-run", action="store_true", help="montre ce qui serait rangé")
+
+    ap = sub.add_parser("apps", help="liste les applis ouvertes dont le rig n'a pas besoin")
+    ap.add_argument("--close", action="store_true",
+                    help="propose de les fermer (confirmation demandée)")
+    ap.add_argument("--dry-run", action="store_true", help="montre ce qui serait fermé")
+
+    v = sub.add_parser("vpn", help="état / coupure / rétablissement du VPN")
+    v.add_argument("action", choices=["status", "off", "on"], nargs="?", default="status",
+                   help="status (défaut) · off = coupe (PERSISTANT) · on = rétablit")
+    v.add_argument("--dry-run", action="store_true", help="montre ce qui serait fait")
+
+    t = sub.add_parser("alert-test", help="envoie une alerte de test")
+    t.add_argument("--alerts", help="backends (csv) à tester")
+    t.add_argument("--dry-run", action="store_true", help="n'envoie rien, affiche")
+
+    s = sub.add_parser("serve", help="dashboard web d'état + fix/relaunch")
+    s.add_argument("--port", type=int, default=8765, help="port local (défaut 8765)")
+    # Default None and not "127.0.0.1": without that the flag would override
+    # [server].host from rig.toml on every launch, and opening to the network would
+    # never hold.
+    s.add_argument("--host", default=None,
+                   help="interface d'écoute (défaut : [server].host de rig.toml, "
+                        "127.0.0.1) ; 0.0.0.0 = ouvert au réseau local")
+    s.add_argument("--no-open", action="store_true", help="ne pas ouvrir le navigateur")
+    _add_mode(s)
+
+    args = p.parse_args(argv)
+    return {
+        "preflight": cmd_preflight,
+        "check": cmd_check,
+        "monitor": cmd_monitor,
+        "tidy": cmd_tidy,
+        "apps": cmd_apps,
+        "vpn": cmd_vpn,
+        "alert-test": cmd_alert_test,
+        "serve": cmd_serve,
+    }[args.cmd](cfg, args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

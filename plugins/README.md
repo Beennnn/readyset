@@ -19,12 +19,16 @@ Contract:
 - Prints a short human line on stdout; errors to stderr.
 - No hidden state; anything machine-specific comes from args or env.
 
-Call it from `rig.toml`:
-```toml
-[checks.fixes."sys:output"]
-label = "Sortie → Mac"
-cmd = "$HOME/dev/music/readyset/plugins/audio-out/run.sh mac"
+Run one by hand:
+```bash
+plugins/audio-out/run.sh mac
 ```
+
+> **Not wired in yet.** Nothing in `readyset/` executes these. An earlier draft of this
+> README showed a `[checks.fixes]` block in `rig.toml` pointing at a plugin path; no
+> loader reads that section, so the block did nothing. The plugins are standalone and
+> useful on their own — wiring an executor into `readyset/fix/` is open work, tracked in
+> TASKS.md.
 
 ## Plugins
 

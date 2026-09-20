@@ -1,8 +1,13 @@
 # TASKS — readyset
 
-Reprise complète : `~/gdrive/claude/projects/music/artifacts/handoff-rig-2026-08-30.md`
+☐ Wire the RIG key on the deck → port `rig-alert`, channel 15, CC 110 (family index) + CC 111 (total), press sends CC 100 to open the dashboard — so the verdict is readable without going back to the keyboard
 
-☐ Câbler la touche RIG du Stream Deck : port `rig-alert`, canal 15, CC 110 (indice de famille) + CC 111 (total), appui → CC 100 ouvre le tableau de bord
-☐ Vérifier au premier `rig up` réel que `[set.start_scene].quiet_seconds = 7` suffit — le seuil doit dépasser la cadence du plus bavard des écrivains du journal d'Ableton (HJF_Plugins écrit toutes les 5 s)
-☐ Le panneau d'alarme (boutons réordonnés, colorés, confirmation de charge) est compilé et déployé mais **jamais vu à l'œuvre** : il n'apparaît qu'à une vraie panne après un écran propre
-☐ Worktree `prunable` de `claude/sysload-checks` : `git worktree prune` le nettoierait
+☐ Confirm on the first real `readyset preflight` that `[set.start_scene].quiet_seconds = 7` is enough → the threshold has to exceed the cadence of the chattiest periodic writer in the DAW's log (a plugin writes one line every 5 s during start-up), otherwise the silence between two of its lines reads as "loading finished"
+
+☐ See the alarm panel actually fire → it is built and deployed (buttons reordered, coloured, charge confirmation) but has never been seen at work: it only appears on a real failure following a clean screen
+
+☐ Re-run `launchd/install.sh` after this restructure lands → the agent still points at the old `rig` path; the dashboard will not restart until the plist is re-substituted (see the report for why this is not optional)
+
+☐ Bring the README's "What it can check" table back in line with `rig.example.toml` → the table lists primitives (`usb_devices`, `links`, `commands`, `output_probe`, `keepawake`, `manual_confirms`) and a `[[apps]]` schema that the loader does not read; a newcomer copying it gets silence
+
+☐ Decide what `plugins/` is for → its README says checks and fixes call the plugins by path, but no code reads `[checks.fixes]`; either wire an executor into `readyset/fix/` or say in the README that they are standalone tools

@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="fr"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>🎹 Rig — état</title>
+<style>
+  :root{color-scheme:dark;--bg:#0d0f14;--card:#161a22;--line:#242a36;--tx:#e7ebf2;--mut:#8a93a3;
+        --ok:#2ecc71;--info:#5aa9e6;--warn:#f4b942;--fail:#ff5468;--accent:#4a9eff}
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--tx);font:15px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+  header{position:sticky;top:0;background:linear-gradient(#0d0f14,#0d0f14ee);padding:16px 20px;border-bottom:1px solid var(--line);z-index:5}
+  h1{margin:0 0 4px;font-size:19px}
+  .sub{color:var(--mut);font-size:13px}
+  .banner{margin:12px 0 0;padding:12px 16px;border-radius:10px;font-weight:600;display:flex;gap:10px;align-items:center}
+  .banner.ok{background:#123322;color:var(--ok)} .banner.warn{background:#332a12;color:var(--warn)} .banner.fail{background:#3a1620;color:var(--fail)}
+  .bar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:12px}
+  .seg{display:inline-flex;border:1px solid var(--line);border-radius:9px;overflow:hidden}
+  .seg button{border:none;border-radius:0;background:var(--card);padding:8px 14px}
+  .seg button.on{background:var(--accent);color:#03122b;font-weight:600}
+  /* Auto does not only say "I decide on my own", it says WHAT IT HAS DECIDED, through
+     its colour: blue = studio, orange = live — the same shades as the two neighbouring
+     buttons. Spelling out "mode : Studio (auto)" next to a selector that already showed
+     the same state was a line for nothing. */
+  .seg button.on.res-studio{background:var(--accent);color:#03122b}
+  .seg button.on.res-live{background:var(--warn);color:#2b1e03}
+  .seg button[data-m="live"].on{background:var(--warn);color:#2b1e03}
+  button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--tx);padding:8px 14px;border-radius:9px;cursor:pointer}
+  button:hover{border-color:var(--accent)} button:active{transform:translateY(1px)}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#03122b;font-weight:600}
+  button.fix{background:transparent;border-color:var(--fail);color:var(--fail);padding:6px 12px;font-size:13px;
+    /* The rise back is carried by the transition: the button sinks all at once on the
+       click, then comes back. Without it, the sinking and the return are both
+       instantaneous and the eye sees nothing at all. */
+    transition:transform .07s ease-out,background-color .12s ease,opacity .12s ease}
+  button.fix:hover:not(:disabled){background:var(--fail);color:#2a0009}
+  /* A frank press: two pixels and a slight shrink. A button that moves says "got it"
+     before the request has even left — and it is that delay, between the finger and
+     the server's answer, that made one want to click again. */
+  button.fix:active:not(:disabled){transform:translateY(2px) scale(.97);background:var(--fail);color:#2a0009}
+  /* A fix in progress: the button says it is working and refuses a second click. */
+  button.fix:disabled{opacity:.55;cursor:progress}
+  button.fix:disabled:hover{background:transparent;color:var(--fail)}
+  label.dry{display:flex;gap:6px;align-items:center;color:var(--mut);font-size:13px;user-select:none}
+  /* Full width: the 820 px dated from the ONE-column version, where a line of text that
+     is too long becomes unreadable. With four zones side by side, the constraint no
+     longer protected anything — it just left two black bands on the sides and forced
+     scrolling for what would have fitted on screen. The 2200 px ceiling is only there
+     for a very wide screen, where zones 900 px wide would become painful to read
+     again. */
+  main{padding:8px 22px 40px;max-width:2200px;margin:0 auto}
+  .grp{margin-top:22px} .grp h2{font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--mut);margin:0 0 8px}
+  .row{display:flex;align-items:center;gap:11px;background:var(--card);border:1px solid var(--line);border-left-width:4px;border-radius:9px;padding:8px 13px;margin-bottom:6px}
+  .row.ok{border-left-color:var(--ok)} .row.info{border-left-color:var(--info)} .row.warn{border-left-color:var(--warn)} .row.fail{border-left-color:var(--fail)}
+  .allok{padding:14px;background:#123322;color:var(--ok);border-radius:10px;font-weight:600;text-align:center}
+  #okwrap{margin-top:14px} #okwrap summary{cursor:pointer;color:var(--mut);font-size:12px;letter-spacing:.06em;text-transform:uppercase;margin-bottom:8px;list-style:none}
+  #okwrap summary::-webkit-details-marker{display:none}
+  .chip{display:inline-flex;align-items:center;gap:5px;background:#11211a;border:1px solid #1f3a2b;color:#9fe0b8;border-radius:20px;padding:3px 11px;font-size:12px;margin:0 5px 5px 0}
+  .chip.warn{background:#231d10;border-color:#3a3016;color:var(--warn)}
+  .ic{font-size:20px;width:26px;text-align:center;flex:none}
+  .dot{width:12px;height:12px;border-radius:50%;flex:none}
+  .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.fail{background:var(--fail)} .dot.neutral{background:var(--mut)}
+  #diagram{overflow-x:auto;margin:14px 0 6px;padding:14px 10px;background:var(--card);border:1px solid var(--line);border-radius:14px}
+  #diagram svg{width:100%;min-width:620px;height:auto;display:block}
+  #diagram rect,#diagram text,#diagram circle{cursor:help}
+  .difoot{color:var(--mut);font-size:12px;text-align:center;margin-top:6px}
+  .ic .gic{width:22px;height:22px;object-fit:contain;vertical-align:middle}
+  .ic .gic+.gic{margin-left:3px}
+  .lab{flex:1;min-width:0} .lab .t{font-weight:500} .lab .d{color:var(--mut);font-size:13px;white-space:pre-line;overflow-wrap:anywhere}
+  /* "Surplus apps" panel: the list one re-reads before closing anything at all. */
+  #extra .box{margin-top:14px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px}
+  #extra h3{margin:0 0 4px;font-size:14px} #extra .why{color:var(--mut);font-size:13px;margin-bottom:10px}
+  #extra .apps{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px;margin-bottom:12px}
+  #extra .app{display:flex;align-items:center;gap:9px;background:#10141c;border:1px solid var(--line);border-radius:10px;padding:7px 10px;cursor:pointer;color:var(--tx);font:inherit;text-align:left;width:100%}
+  #extra .app:hover{border-color:var(--accent)}
+  #extra .app img{width:28px;height:28px;flex:none;border-radius:6px}
+  #extra .app .noimg{width:28px;height:28px;flex:none;display:flex;align-items:center;justify-content:center;font-size:18px}
+  #extra .app .n{flex:1;min-width:0;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  /* The blue mark IS the selected state: a border and a dot in the accent colour,
+     visible at a glance across the whole thumbnail. */
+  /* Same thing: the side marker says "ticked for closing", without repainting the
+     button. The dot on the left disappears — the border replaces it and does the same
+     job with less ink. */
+  #extra .app{border-left-width:4px}
+  #extra .app .mark{display:none}
+  #extra .app.on{border-left-color:var(--accent)}
+  #extra .acts{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  /* The log lives right at the bottom of the page, below every section: clicking
+     "corriger" in "Configuration du rig" wrote the report somewhere that is not on
+     screen. Hence this banner, which comes to the eye rather than the other way round —
+     it NAMES the action started, then says what it produced. The log stays the history. */
+  #toast{position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:60;
+    max-width:min(92vw,560px);padding:10px 16px;border-radius:10px;border:1px solid var(--line);
+    background:#0e1118;color:var(--fg);font-size:14px;line-height:1.4;display:none;
+    box-shadow:0 6px 24px #0009;text-align:center}
+  #toast.run{border-color:var(--mut)}
+  #toast.ok{border-color:var(--ok);color:var(--ok)}
+  #toast.ko{border-color:var(--fail);color:var(--fail)}
+  #log{white-space:pre-wrap;background:#0a0c11;border:1px solid var(--line);border-radius:10px;padding:12px;margin-top:18px;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mut);max-height:200px;overflow:auto;display:none}
+  /* Integrated soundcheck: dense chips, not the big tiles of the dedicated page — they
+     have to fit under the checks without pushing the rest off the screen. */
+  #scdone.all{color:var(--ok)}
+  .sctiles{display:flex;flex-wrap:wrap;gap:7px;margin-top:11px}
+  .sctile{display:flex;align-items:center;gap:7px;background:#10141c;border:1px solid var(--line);
+          border-radius:9px;padding:6px 10px;font-size:13px}
+  /* Not verified = RED, not neutral. A grey chip reads as "not yet", therefore "it does
+     not matter"; yet that is exactly what is missing to know whether the rig plays.
+     The colour must say the same thing as the zone's frame and as the banner, or else
+     the dashboard contradicts itself from one level to the next. */
+  /* Same language as the rows of "Configuration du rig": a border on the LEFT carries
+     the state, the rest of the chip stays neutral. Colouring everything red saturated
+     the panel to the point of ranking nothing any more — eight bright red chips shout
+     as loud as a real blocker, when all they say is "not played yet". */
+  .sctile{border-left-width:4px;border-left-color:var(--fail)}
+  .sctile.hit{border-left-color:var(--ok)}
+  .sctile .sn{color:var(--mut);font-size:12px}
+  .scbtn{padding:2px 8px;font-size:12px;border-radius:6px}
+  .prow{display:flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--line);border-left:4px solid var(--ok);border-radius:10px;padding:9px 13px;margin-bottom:7px}
+  .prow .n{flex:1;font-weight:500} .prow .c{color:var(--mut);font-size:12px} .prow .l{color:var(--accent);font-size:12px;font-family:ui-monospace,Menlo,monospace}
+  .empty{color:var(--mut);font-size:13px;padding:8px 2px}
+  .smgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:10px}
+  .smpanel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+  .smhead{font-weight:600;font-size:13px;margin-bottom:8px} .smhead .ch{color:var(--accent)}
+  .notes{display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px;min-height:4px}
+  .note{background:#123322;border:1px solid var(--ok);color:var(--ok);border-radius:6px;padding:2px 7px;font-size:12px;font-family:ui-monospace,Menlo,monospace}
+  .ccrow{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:12px}
+  .ccname{width:62px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .ccbar{flex:1;height:8px;background:#0a0c11;border-radius:4px;overflow:hidden}
+  .ccfill{height:100%;background:var(--accent)} .ccval{width:30px;text-align:right;font-family:ui-monospace,Menlo,monospace}
+  .smmeta{color:var(--mut);font-size:12px;margin-top:6px}
+  .sch3{margin:16px 0 7px;font-size:13px;color:var(--mut);font-weight:600}
+  /* The raw stream is called #midilog and NOT #log: the main page already has its own
+     #log, the journal of clicked actions. Two elements with the same id on one page
+     means the second becomes invisible to getElementById — a silent bug. */
+  #midilog{white-space:pre-wrap;background:#0a0c11;border:1px solid var(--line);border-radius:10px;
+    padding:11px;font:12px/1.5 ui-monospace,Menlo,monospace;color:var(--mut);max-height:170px;overflow:auto}
+  .scaudio{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;
+           padding-top:10px;border-top:1px solid var(--line)}
+  .scaudio button{padding:5px 11px;font-size:12.5px}
+  .scaudio span{color:var(--mut);font-size:12px;flex:1;min-width:180px}
+  .scaudio.sig span{color:var(--ok)} .scaudio.mute span{color:var(--warn)}
+  .scfoot{margin-top:10px;color:var(--mut);font-size:12px}
+  .scfoot a{color:var(--accent);text-decoration:none}
+  /* Two columns above 900 px, a single one below: this page is also consulted on a
+     phone, standing up, five minutes before playing. */
+  /* CSS columns and NOT a grid: a grid aligns the zones of one row on the tallest, so
+     every short zone digs a hole under itself — which is exactly what was wasting the
+     space. Here the zones stack up filling each column from top to bottom, each at its
+     real height, with no white space between them.
+     `break-inside:avoid` forbids a zone being cut in two from one column to the next,
+     which a multi-column layout would happily do. */
+  .cols{column-gap:14px}
+  .cols>.zone{break-inside:avoid;-webkit-column-break-inside:avoid;margin:0 0 14px}
+  @media(min-width:820px){.cols{column-count:2}}
+  @media(min-width:1450px){.cols{column-count:3}}
+  @media(min-width:2000px){.cols{column-count:4}}
+  .zone{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:13px 15px;
+        border-left-width:5px;border-left-color:var(--line)}
+  .zone.z-ok{border-left-color:var(--ok)} .zone.z-warn{border-left-color:var(--warn)}
+  .zone.z-fail{border-left-color:var(--fail)} .zone.z-info{border-left-color:var(--info)}
+  .zh{display:flex;align-items:baseline;gap:10px;margin-bottom:9px}
+  .zt{font-weight:600;font-size:14px} .zs{color:var(--mut);font-size:12.5px;margin-left:auto}
+  /* The zone's summary takes the frame's colour, info included: reading "3 ouvertes en
+     trop" in grey next to a blue border is two signals for a single state. */
+  .zone.z-ok .zs{color:var(--ok)} .zone.z-info .zs{color:var(--info)}
+  .zone.z-warn .zs{color:var(--warn)} .zone.z-fail .zs{color:var(--fail)}
+  #z-flow #diagram svg{min-width:0}
+  #scdet summary{cursor:pointer;color:var(--mut);font-size:12.5px;margin-top:10px}
+  .stamp{color:var(--mut);font-size:12px}
+  @media(max-width:520px){.row{flex-wrap:wrap}}
+</style></head><body>
+<header>
+  <h1>🎹 Rig — état global</h1>
+  <!-- #stamp: the time of the last computation. The element had vanished in a redesign
+       while refresh() kept on writing to it, and the exception that resulted fell just
+       BEFORE window.scrollTo(0,y): the page lost its scroll position on every refresh,
+       every two seconds, with nothing saying why. -->
+  <div class="sub">Vue auto-rafraîchie (lecture seule). Les actions sont des clics explicites.
+    <span id="stamp" class="stamp"></span></div>
+  <div id="banner" class="banner warn">…chargement</div>
+  <div class="bar">
+    <span class="seg" id="modeseg">
+      <button data-m="auto" onclick="setMode('auto')">Auto</button>
+      <button data-m="live" onclick="setMode('live')">🎤 Live</button>
+      <button data-m="studio" onclick="setMode('studio')">🎧 Studio</button>
+    </span>
+    <button class="primary" onclick="preflight()"
+      title="LA seule action à connaître. Dans l'ordre : lance les 5 apps du rig → démarre la session anti-veille → ouvre le set du concert dans Ableton → range les fenêtres (seul Ableton reste visible) → applique tous les correctifs disponibles → re-vérifie tout.&#10;&#10;Ne ferme PAS les applis en trop : ça peut perdre un document non enregistré, donc ça garde sa confirmation dans le panneau dédié.">✨ Tout préparer</button>
+    <button onclick="const l=document.getElementById('log');l.style.display=l.style.display==='block'?'none':'block'"
+      title="Le détail de ce que les actions ont fait, ligne par ligne">📜 Journal</button>
+  </div>
+</header>
+<main>
+  <!-- Four zones, two columns: everything fits without scrolling, and each zone carries
+       the colour of the WORST of its group. So one sees at a glance WHERE it is stuck
+       before even reading a single row — on stage, the question is not "which check"
+       but "which domain". -->
+  <div class="cols">
+    <section class="zone" id="z-flow">
+      <div class="zh"><span class="zt">Flux du rig</span><span class="zs" id="zs-flow"></span></div>
+      <div id="diagram"></div>
+    </section>
+    <section class="zone" id="z-sc">
+      <div class="zh"><span class="zt">🎹 Soundcheck</span><span class="zs" id="scdone"></span></div>
+      <div class="sctiles" id="checks"></div>
+      <!-- The signal measurement is NOT a soundcheck box, and filing it among them only
+           produced confusion ("why is it red, I can hear the sound?"). The other boxes
+           passively OBSERVE what arrives; this one PROVOKES a 1.5 s measurement that
+           has to be asked for. Red, it accused wrongly; counted, it made the soundcheck
+           impossible to finish without clicking. So it lives apart, in grey, with what
+           it brings written in black and white. -->
+      <div class="scaudio">
+        <button onclick="scMeasure()" id="scmeasbtn">🔊 Mesurer le signal</button>
+        <span id="scaudioinfo">le schéma dit sur QUEL périphérique Ableton est réglé ;
+          ceci mesure s'il en sort vraiment du son</span>
+      </div>
+      <details id="scdet">
+        <summary>Détail MIDI — contrôleurs, canaux, flux brut</summary>
+        <div class="sch3">Contrôleurs actifs</div>
+        <div id="ports"><div class="empty">Aucune activité — joue quelque chose.</div></div>
+        <div class="sch3">Vue MIDI en direct, par canal</div>
+        <div id="showmidi"><div class="empty">Rien reçu pour l'instant.</div></div>
+        <div class="sch3">Flux brut</div>
+        <div id="midilog">—</div>
+      </details>
+      <div class="scfoot" id="scstatus"></div>
+    </section>
+    <section class="zone" id="z-cfg">
+      <div class="zh"><span class="zt">Configuration du rig</span><span class="zs" id="zs-cfg"></span></div>
+      <div id="problems"></div>
+      <details id="okwrap"><summary id="oksum"></summary><div id="okchips"></div></details>
+    </section>
+    <section class="zone" id="z-apps">
+      <div class="zh"><span class="zt">Applis ouvertes</span><span class="zs" id="zs-apps"></span></div>
+      <div id="extra"></div>
+    </section>
+  </div>
+  <div id="log"></div></main>
+<div id="toast"></div>
+<script>
+const IC={ok:"✅",warn:"⚠️",fail:"❌"};
+// The meaning of the colours, written ONCE and reused everywhere. It is the question
+// asked in front of the diagram — "what does the green mean?" — and it holds for every
+// row, every chip and every frame: a colour one has to guess informs nobody, and two
+// different explanations of the same green would be worse than none at all.
+const TIP={
+  ok:"✅ Vert — vérifié à l'instant, rien à faire.",
+  info:"ℹ️ Bleu — absent, et c'est normal ici (matériel optionnel, ou réseau de scène au bureau). Ne compte PAS comme un problème : le rig reste prêt.",
+  warn:"⚠️ Orange — jouable, mais quelque chose mérite un coup d'œil avant de monter sur scène.",
+  fail:"❌ Rouge — bloquant : en l'état, le rig ne fera pas ce qu'on attend de lui."};
+// The banner is the ONLY place one looks at when going on stage, so it has to include
+// the soundcheck: showing "all green" while the Soundcheck zone is red is contradicting
+// oneself 20 cm apart. The checks come from /api/state, the soundcheck from /api/midi —
+// two distinct pollings, a single summary sentence.
+let lastState=null;
+function paintBanner(){
+  const s=lastState;if(!s)return;
+  const b=document.getElementById("banner");
+  b.title="Synthèse de TOUT : les checks (zone Configuration) et le soundcheck (les gestes joués).\n"
+    +"Elle ne passe au vert que si les deux le sont — un rig vérifié sur le papier mais jamais joué n'est pas un rig prêt.";
+  b.className="banner "+s.status;
+  b.textContent=s.status==="ok"?"✅ Rig prêt — tout est vert, soundcheck compris."
+    :s.status==="warn"?`⚠️ Rig jouable — ${s.warns} avertissement(s).`
+    :`❌ Rig PAS prêt — ${s.fails} bloquant(s), ${s.warns} avertissement(s).`;
+}
+// A zone carries the colour of the WORST of its group: it is the only summary that does
+// not lie (a green zone has to mean "nothing to see here", with no hidden exception).
+// INFO counts as GREEN for a zone's colour, exactly as `worst()` ignores it on the
+// server side: "absent, and that is normal" (the stage network at the office, the mood
+// lamps) does not make the rig any less ready. Tinting it anything other than green
+// would suggest something is left to do in a zone where there is nothing to do.
+// INFO has its OWN colour, blue: "absent, and that is normal" is neither "nothing to
+// report" (green) nor "worth a look" (orange), it is a third thing. I had first merged
+// it into the green to fix a "Flux du rig" frame that was blue while everything in it
+// was green — but the real defect was elsewhere: that frame was computed over ALL the
+// checks instead of its own. With the cause fixed, the colour can go back to being right.
+const SEV={ok:0,info:1,warn:2,fail:3},SEVN=["ok","info","warn","fail"];
+function worstOf(items){return SEVN[items.reduce((m,i)=>Math.max(m,SEV[i.status]??0),0)];}
+const ZONETIP={
+  "z-flow":"Le chemin du signal, de l'iPhone et du clavier jusqu'à la sortie audio.\nChaque bloc prend la couleur du pire de SES checks — survole un bloc pour voir lesquels.",
+  "z-sc":"Ce qu'il faut avoir JOUÉ pour prouver que le rig répond : pédale, notes, souffle, morsure, inclinaisons de tête.\nRien ici n'est déclaratif — chaque case attend un vrai geste.\nUn réveil du Mac remet le tout à zéro : après une veille, l'USB peut avoir changé.",
+  "z-cfg":"L'état du matériel et des réglages, vérifié en continu et sans rien toucher.\nLes lignes vertes sont repliées en bas ; ne restent en haut que celles qui demandent quelque chose.",
+  "z-apps":"Les applis ouvertes dont le rig n'a pas besoin. Une notification qui passe devant le set, du CPU pris à Ableton, un updater qui se réveille — sur scène, chacune est un risque.\nJamais bloquant : une app en trop fragilise le rig, elle ne l'empêche pas de jouer."};
+function zone(id,st,txt){
+  const el=document.getElementById(id);if(!el)return;
+  el.className="zone z-"+st;
+  // The frame carries the colour of the WORST of the zone: the tooltip says so, or else
+  // one might believe a red zone is red all the way through.
+  const h=el.querySelector(".zh");
+  if(h)h.title=(ZONETIP[id]||"")+`\n\nLe cadre prend la couleur du plus grave de la zone.\n${TIP[st]||""}`;
+  if(txt!==undefined){const z=el.querySelector(".zs");if(z)z.textContent=txt;}
+}
+// --- integrated soundcheck --------------------------------------------------------
+let scTimer=null;
+// Listening follows the soundcheck's STATE, no longer the unfolding of a panel: as long
+// as something is left to receive, we listen; as soon as everything has arrived, we stop
+// (no point holding the rig's MIDI ports open permanently). A wake of the Mac resets the
+// soundcheck to zero server-side, which the slow polling sees on its own and which
+// restarts the listening — that is what makes "unverified = error" liveable, not galling.
+async function scEnsure(running,complete){
+  if(!complete&&!running) await fetch("/api/midi/start",{method:"POST"});
+  if(complete&&running)   await fetch("/api/midi/stop",{method:"POST"});
+}
+function scItems(s){
+  const f=s.flags||{},h=s.head||{};
+  // Each breath gesture counts TWICE: seen at the sensor, and seen after translation by
+  // Bome. It is the gap between the two that says where it breaks — mute sensor (nothing
+  // on either side) or Bome preset switched off (source yes, output no). A single witness
+  // would never have told the two apart, and that is precisely the nastiest fault: the
+  // controller is fine, and yet nothing arrives in Ableton.
+  const chain=(s.chain||[]).map(g=>({
+    icon:"🌬️",lbl:g.name,hit:g.raw&&g.out,
+    sn:g.raw&&g.out?"capteur + Bome":g.raw?"capteur OK, RIEN ne sort de Bome":g.out?"sortie seule":"pas de signal"}));
+  return [
+    {icon:"🦶",lbl:"Pédale",hit:!!f.pedal_cc64,sn:f.pedal_cc64?`CC64=${f.pedal_cc64.value}`:""},
+    {icon:"🎵",lbl:"Notes",hit:f.notes>0,sn:f.notes>0?`${f.notes}`:""},
+    ...chain,
+  ];
+}
+const NN=["C","C#","D","D#","E","F","F#","G","G#","A","A#","B"];
+function noteName(n){return NN[n%12]+(Math.floor(n/12)-1);}
+function renderShowMidi(chs){
+  const sm=document.getElementById("showmidi");
+  if(!chs||!chs.length){sm.innerHTML='<div class="empty">Rien reçu pour l\'instant.</div>';return;}
+  sm.innerHTML='<div class="smgrid"></div>';const grid=sm.firstChild;
+  for(const c of chs){
+    const notes=c.notes.map(x=>`<span class="note">${noteName(x.n)} <small>${x.v}</small></span>`).join("");
+    const ccs=c.cc.map(x=>`<div class="ccrow"><span class="ccname">${x.name||("CC"+x.n)}</span>
+      <span class="ccbar"><span class="ccfill" style="width:${Math.round(x.v/127*100)}%"></span></span>
+      <span class="ccval">${x.v}</span></div>`).join("");
+    let meta=[];if(c.pitch!=null&&c.pitch!==0)meta.push("pitch "+c.pitch);
+    if(c.prog!=null)meta.push("prog "+c.prog);if(c.at!=null&&c.at!==0)meta.push("aftertouch "+c.at);
+    const d=document.createElement("div");d.className="smpanel";
+    d.innerHTML=`<div class="smhead">${c.port} · <span class="ch">Ch ${c.ch}</span></div>
+      <div class="notes">${notes||'<span class="smmeta">aucune note tenue</span>'}</div>
+      ${ccs}${meta.length?`<div class="smmeta">${meta.join(" · ")}</div>`:""}`;
+    grid.appendChild(d);
+  }
+}
+// Sound is not guessed: we MEASURE. A CoreAudio tap on Ableton's output for 1.5 s says
+// whether there is signal or silence — not what one hears, but "is anything coming out
+// or not", which is precisely the question a check could not settle. On demand only,
+// hence the button: each measurement opens a native tap.
+let scAudio=null;
+async function scMeasure(){
+  scAudio={pending:true};scRender();
+  try{
+    const r=await(await fetch("/api/audiolevel",{method:"POST",
+      headers:{"Content-Type":"application/json"},body:JSON.stringify({seconds:1.5})})).json();
+    scAudio=r;
+  }catch(e){scAudio={error:String(e)};}
+  scRender();
+}
+let scLast=null;
+function scRender(){
+  const box=document.querySelector(".scaudio"),info=document.getElementById("scaudioinfo");
+  if(!box||!info)return;
+  box.className="scaudio";
+  if(!scAudio){info.textContent="le schéma dit sur QUEL périphérique Ableton est réglé ; ceci mesure s'il en sort vraiment du son";}
+  else if(scAudio.pending){info.textContent="mesure en cours (1,5 s)…";}
+  else if(scAudio.error){info.textContent=scAudio.error;}
+  else if(scAudio.signal){box.className="scaudio sig";
+    info.textContent=`✅ du son sort bien d'Ableton (RMS ${scAudio.rms.toFixed(3)})`;}
+  else{box.className="scaudio mute";
+    info.textContent="⚠️ silence mesuré — Ableton est réglé sur le bon périphérique mais rien n'en sort (volume, piste en solo, câble ?)";}
+  if(scLast)scDraw(scLast);
+}
+async function scPoll(){
+  let s;try{s=await(await fetch("/api/midi")).json();}catch(e){return;}
+  scLast=s;scDraw(s);
+}
+function scDraw(s){
+  const items=scItems(s),host=document.getElementById("checks");
+  host.innerHTML="";
+  for(const it of items){
+    const d=document.createElement("div");
+    d.className="sctile"+(it.hit?" hit":"");
+    d.title=`${it.lbl}\n`+(it.hit
+      ? "✅ Reçu — le geste est arrivé jusqu'ici."
+      : "❌ Pas encore reçu. Ce n'est pas une panne constatée : c'est une preuve qui manque. Fais le geste, la case verdit seule.")
+      +(it.sn?`\n\n${it.sn}`:"")
+      +(it.lbl.match(/Tête|Souffle|Morsure/)
+        ? "\n\nTesté aux DEUX bouts : au capteur (le BBC bouge) et en sortie de Bome MIDI Translator (la traduction a bien eu lieu). « capteur OK, RIEN ne sort de Bome » = préréglage Bome éteint ou projet non chargé."
+        : "");
+    d.innerHTML=`<span>${it.hit?"✅":it.icon}</span><span>${it.lbl}</span>`+
+                (it.sn?`<span class="sn">${it.sn}</span>`:"");
+    if(it.btn)d.innerHTML+=`<button class="scbtn" onclick="scMeasure()">${it.btn}</button>`;
+    host.appendChild(d);
+  }
+  const got=items.filter(i=>i.hit).length,complete=got===items.length;
+  document.getElementById("scdone").textContent=
+    complete?`✅ vérifié — ${got}/${items.length}`:`❌ ${items.length-got} sur ${items.length} pas encore vérifié(s)`;
+  // Not verified = RED, on the same footing as a broken check. A soundcheck that has
+  // not been done is not "pending": it is a rig nobody knows whether it plays.
+  zone("z-sc",complete?"ok":"fail");
+  scEnsure(!!s.running,complete);
+  const host2=document.getElementById("ports");
+  if(!s.ports||!s.ports.length){host2.innerHTML='<div class="empty">Aucune activité — joue quelque chose.</div>';}
+  else{host2.innerHTML="";for(const p of s.ports){const d=document.createElement("div");d.className="prow";
+    d.innerHTML=`<div class="n">${p.name}</div><div class="l">${p.last||""}</div><div class="c">${p.count} msg</div>`;host2.appendChild(d);}}
+  renderShowMidi(s.channels);
+  document.getElementById("midilog").textContent=(s.events||[]).map(e=>`${e.port.padEnd(22).slice(0,22)}  ${e.msg}`).join("\n")||"—";
+  document.getElementById("scstatus").textContent=
+    s.running?`● écoute — ${(s.watched||[]).length} ports (${(s.watched||[]).join(", ")||"—"})`:"écoute arrêtée";
+}
+async function setMode(m){await fetch("/api/mode",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({mode:m})});refresh();}
+async function manualSet(key,val){await fetch("/api/manual",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({key,value:val})});refresh();}
+function iconFor(k){
+  if(k.startsWith("xapp:"))return"🧹";
+  if(k.startsWith("app:Ableton"))return"🎵";
+  if(k.startsWith("app:Stream"))return"🎛️";
+  if(k.startsWith("app:Bome"))return"🔀";
+  if(k.startsWith("app:Stage"))return"▶️";
+  if(k.startsWith("usb:"))return"🎛️";
+  if(k.startsWith("lamp:"))return"💡";
+  if(k.startsWith("kbd:breath"))return"🌬️";
+  if(k.startsWith("kbd:"))return"🎹";
+  if(k.startsWith("net:stage"))return"🌐";
+  if(k.startsWith("net:"))return"📱";
+  if(k.startsWith("sys:vpn"))return"🔒";
+  if(k.startsWith("sys:output"))return"💻";
+  if(k.startsWith("sys:amphetamine"))return"☕";
+  if(k.startsWith("sys:macpower"))return"🔌";
+  if(k.startsWith("sys:iphonecharge"))return"🔋";
+  if(k.startsWith("audio:live"))return"🎚️";
+  if(k==="audio")return"🔊";
+  if(k.startsWith("midi?:"))return"🎹";
+  if(k.startsWith("midi:"))return"🔌";
+  return"•";
+}
+// --- signal-flow diagram: nodes coloured by the checks that feed them ----------
+const stc=s=>({ok:"#2ecc71",info:"#5aa9e6",warn:"#f4b942",fail:"#ff5468"}[s]||"#55607a");
+function nstat(keys,map){let s="neutral";for(const k of keys){const v=map[k];
+  if(v==="fail")return"fail";if(v==="warn")s="warn";else if(v==="ok"&&s==="neutral")s="ok";}return s;}
+const DNODES=[
+  // The diagram has to cover the WHOLE rig, or else the "Configuration" zone becomes the
+  // real list and the diagram an ornament. So the stage network and the lamps get in:
+  // they are links, not side notes — the modem hands out the addresses the iPhone and
+  // the lamps live on, and a lamp that is off can be seen on stage.
+  {e:"📡",l:"Réseau scène",k:["net:stage"],x:80,y:40},
+  // "iPhone en charge" joins the iPhone block: it is the same physical object, and
+  // separating it forced crossing two rows to know if the phone will last the set.
+  {e:"📱",l:"iPhone",k:["net:iphone","sys:iphonecharge"],x:80,y:118},
+  {e:"🎛️",l:"Stream Deck",k:["app:Stream Deck","usb:"],x:80,y:196},
+  {e:"🎹",l:"Clavier",k:["kbd:keyboard","audio:Port audio"],x:80,y:274},
+  {e:"💡",l:"Lampes",k:["lamp:"],x:300,y:40},
+  {e:"🔀",l:"Bome",k:["app:Bome MIDI Translator","app:Bome Network","kbd:breath"],x:300,y:157},
+  {e:"▶️",l:"Stage Traxx",k:["app:Stage Traxx"],x:300,y:274},
+  {e:"🎵",l:"Ableton Live",k:["app:Ableton","midi:Ableton Loopback"],x:516,y:196},
+  {e:"🔊",l:"Sortie audio",k:["audio:live","sys:output"],x:684,y:196},
+];
+// The network feeds the iPhone (Bome Network goes over WiFi) and the lamps.
+const DEDGES=[[0,1],[0,4],[1,5],[2,5],[3,7],[5,7],[6,7],[7,8]];
+function renderDiagram(items){
+  const map={};for(const it of items)map[it.key]=it.status;
+  const N=DNODES.map(n=>({...n,s:nstat(n.k,map)}));
+  let e="";
+  for(const [a,b] of DEDGES){const A=N[a],B=N[b];
+    const dx=B.x-A.x,dy=B.y-A.y,d=Math.hypot(dx,dy),ux=dx/d,uy=dy/d;
+    const x1=A.x+ux*76,y1=A.y+uy*30,x2=B.x-ux*80,y2=B.y-uy*30;
+    e+=`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#3a4356" stroke-width="2" marker-end="url(#ar)"/>`;}
+  let g="";
+  // A green box does not say WHY it is green: it sums up several checks whose name and
+  // value one cannot see. The tooltip unfolds them — one check per line, with its state
+  // and its detail — so that a hover answers without going to look for the
+  // "Configuration" zone further down.
+  const byKey={};for(const it of items)byKey[it.key]=it;
+  for(const n of N){const c=stc(n.s);
+    const feeds=items.filter(it=>n.k.some(k=>it.key.startsWith(k)));
+    const tip=feeds.length
+      ? `${n.l} — ${feeds.length} check(s)\n`+feeds.map(it=>
+          `${IC[it.status]||"ℹ️"} ${it.label}${it.detail?" — "+it.detail.replace(/\n→ /g," → "):""}`).join("\n")
+      : `${n.l} — aucun check ne l'alimente`;
+    // The <title> is repeated INSIDE the rectangle, and not only on the group: in SVG,
+    // the tooltip only fires when hovering a shape that is actually painted, and a group
+    // is not one. The text and the dot, for their part, only cover a few pixels — hence
+    // a hover that seemed to do nothing at all on the iPhone block.
+    const T=`<title>${tip.replace(/&/g,"&amp;").replace(/</g,"&lt;")}</title>`;
+    g+=`<g>${T}`
+      +`<rect x="${n.x-72}" y="${n.y-25}" width="144" height="50" rx="12" fill="#12161e" stroke="${c}" stroke-width="2">${T}</rect>`
+      +`<text x="${n.x-56}" y="${n.y+7}" font-size="21">${n.e}${T}</text>`
+      +`<text x="${n.x-28}" y="${n.y+5}" fill="#e7ebf2" font-size="12.5" font-weight="600">${n.l}${T}</text>`
+      +`<circle cx="${n.x+58}" cy="${n.y-14}" r="4.5" fill="${c}">${T}</circle></g>`;}
+  document.getElementById("diagram").innerHTML=
+    `<svg viewBox="0 0 764 320" xmlns="http://www.w3.org/2000/svg">`
+    +`<defs><marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto">`
+    +`<path d="M0,0 L7,3 L0,6 Z" fill="#3a4356"/></marker></defs>${e}${g}</svg>`
+    +`<div class="difoot">Flux du rig — chaque bloc prend la couleur de ses checks. Survole un bloc pour voir lesquels.</div>`;
+}
+// --- "surplus apps" panel: list them with their icons, then ask for confirmation ------
+// The selection is remembered between two refreshes (the page redraws itself every
+// 4 s): without that, unticking an app would be undone a second later.
+let extraSel=null;
+function renderExtra(list){
+  const host=document.getElementById("extra");
+  if(!list||!list.length){host.innerHTML="";extraSel=null;return;}
+  const paths=list.map(a=>a.path);
+  if(extraSel===null)extraSel=new Set(paths);            // all ticked on first display
+  else for(const p of paths)if(!extraSel.has(p)&&!extraSel.__seen?.has(p))extraSel.add(p);
+  extraSel.__seen=new Set(paths);
+  const n=[...extraSel].filter(p=>paths.includes(p)).length;
+  host.innerHTML=`<div class="box"><h3>🧹 ${list.length} appli(s) ouverte(s) dont le rig n'a pas besoin</h3>
+    <div class="why" title="Une app en trop, c'est une notification qui passe devant le set, du CPU pris à Ableton, un updater qui se réveille au mauvais moment.">Décoche celles à garder, puis confirme.</div>
+    <div class="apps"></div>
+    <div class="acts">
+      <button class="fix" id="quitbtn" onclick="quitApps()">Quitter les ${n} appli(s) cochées</button>
+      <button onclick="extraAll(true)">Tout cocher</button>
+      <button onclick="extraAll(false)">Tout décocher</button>
+    </div></div>`;
+  const grid=host.querySelector(".apps");
+  for(const a of list){
+    // A real button, selected or not, rather than a checkbox placed next to a label: the
+    // click target becomes the whole thumbnail (the icon, the name, the margin), instead
+    // of a 16 px square. And the state is read from the BLUE MARK, not from a grey tick
+    // one had to hunt for. `aria-pressed` carries the state for whoever cannot see it.
+    const el=document.createElement("button");
+    el.className="app"+(extraSel.has(a.path)?" on":"");
+    el.setAttribute("aria-pressed",extraSel.has(a.path)?"true":"false");
+    el.innerHTML=`<span class="mark"></span>
+      <img src="/api/appicon?path=${encodeURIComponent(a.path)}" alt=""
+           onerror="this.outerHTML='<span class=&quot;noimg&quot;>📦</span>'">
+      <span class="n" title="${a.path}">${a.name}</span>`;
+    el.onclick=()=>{
+      const on=!extraSel.has(a.path);
+      on?extraSel.add(a.path):extraSel.delete(a.path);
+      el.classList.toggle("on",on);el.setAttribute("aria-pressed",on?"true":"false");
+      const c=[...extraSel].filter(p=>paths.includes(p)).length;
+      document.getElementById("quitbtn").textContent=`Quitter les ${c} appli(s) cochées`;};
+    grid.appendChild(el);
+  }
+}
+function extraAll(on){const l=lastUnexpected||[];extraSel=new Set(on?l.map(a=>a.path):[]);renderExtra(l);}
+let lastUnexpected=[];
+async function quitApps(){
+  const paths=(lastUnexpected||[]).map(a=>a.path).filter(p=>extraSel&&extraSel.has(p));
+  if(!paths.length){logline("aucune appli cochée");return;}
+  const names=(lastUnexpected||[]).filter(a=>paths.includes(a.path)).map(a=>a.name);
+  // Second guardrail, deliberately ugly: closing an app can lose unsaved work. We name
+  // what we are about to close, spelled out in full.
+  if(!confirm(`Quitter ${paths.length} appli(s) ?\n\n${names.join("\n")}\n\nChacune est priée de quitter proprement : une app avec un document non enregistré posera sa propre question.`))return;
+  logline(`🧹 fermeture de ${paths.length} appli(s)…`);
+  const r=await(await fetch("/api/quit-apps",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({paths,dry:false})})).json();
+  logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+  extraSel=null;setTimeout(refresh,900);
+}
+// The fixes IN PROGRESS, by key. The page rebuilds itself every second: without this
+// memory, the greyed-out button was recreated brand new and clickable one second after
+// the click, whereas a fix lasts up to forty-five. So one saw a button that did not look
+// like it was working, and clicked again — exactly what had to be prevented.
+const enCours = new Map();
+let toastT=null;
+// kind: "run" (in progress, stays up), "ok" (4 s), "ko" (9 s — a failure gets read).
+function toast(kind,text){
+  const el=document.getElementById("toast");
+  el.className=kind;el.textContent=text;el.style.display="block";
+  clearTimeout(toastT);
+  if(kind!=="run") toastT=setTimeout(()=>{el.style.display="none";},kind==="ko"?9000:4000);
+}
+function logline(t){const l=document.getElementById("log");l.style.display="block";l.textContent=(new Date().toLocaleTimeString()+"  "+t+"\n"+l.textContent).slice(0,4000);}
+async function refresh(){
+  const y=window.scrollY;
+  let s;try{s=await(await fetch("/api/state")).json();}catch(e){return;}
+  lastState=s;paintBanner();
+  document.querySelectorAll("#modeseg button").forEach(b=>{
+    b.classList.toggle("on",b.dataset.m===s.requested);
+    // Only Auto carries the colour of the resolved mode: on Live or Studio picked by
+    // hand, the button IS already the answer.
+    b.classList.toggle("res-live",b.dataset.m==="auto"&&s.mode==="live");
+    b.classList.toggle("res-studio",b.dataset.m==="auto"&&s.mode==="studio");
+    if(b.dataset.m==="auto")b.title=`Auto — actuellement ${s.mode==="live"?"🎤 Live":"🎧 Studio"}`;
+  });
+  // Each zone takes the colour of the worst of ITS group, and its summary says how many.
+  const xapps=s.items.filter(i=>i.key.startsWith("xapp:"));
+  const cfg=s.items.filter(i=>!i.key.startsWith("xapp:")&&i.key!=="sc:play");
+  const nbad=cfg.filter(i=>i.status==="fail"||i.status==="warn").length;
+  // Each zone on ITS items, this one included: the diagram's blocks know which keys
+  // they cover, so we take exactly the same list.
+  const flowKeys=DNODES.flatMap(n=>n.k);
+  const flow=s.items.filter(i=>flowKeys.some(k=>i.key.startsWith(k)));
+  const fbad=flow.filter(i=>i.status==="fail").length;
+  zone("z-flow",worstOf(flow),fbad?`${fbad} bloquant(s)`:"rien à signaler");
+  zone("z-cfg",worstOf(cfg),nbad?`${nbad} à corriger`:"rien à corriger");
+  zone("z-apps",xapps.length?"info":"ok",
+       xapps.length?`${xapps.length} ouverte(s) en trop`:"aucune app en trop");
+  renderDiagram(s.items);
+  lastUnexpected=s.unexpected||[];
+  renderExtra(lastUnexpected);
+  // Everything that is not "ok" stays on a full row, SORTED fail > warn > info; only the
+  // "ok" ones fold up into chips. The "info" ones are therefore visible by default, at
+  // the bottom of the list: it is optional gear unplugged, we want to see it without
+  // confusing it with a problem — and above all to know the check ran rather than
+  // believing it forgotten.
+  const RANK={fail:0,warn:1,info:2};
+  // The surplus apps already have their own panel just above, with their icons, their
+  // boxes and the button that closes them. Repeating them here as info rows added as
+  // many lines as there were open apps, to say the same thing twice and with nothing
+  // actionable. They stay in the checks — the terminal has no panel and needs them;
+  // it is only the ON-SCREEN duplicate that we remove.
+  // "Soundcheck joué" leaves the list like the surplus apps: it has its own zone, which
+  // says the same thing while detailing each gesture. It STAYS in /api/state — it is
+  // what makes the menu bar, the badge and the border go red; it is only the on-screen
+  // duplicate that we remove, not the check.
+  const shown=s.items.filter(it=>!it.key.startsWith("xapp:")&&it.key!=="sc:play");
+  const bad=shown.filter(it=>it.status!=="ok").sort((a,b)=>(RANK[a.status]??3)-(RANK[b.status]??3));
+  const good=shown.filter(it=>it.status==="ok");
+  const prob=document.getElementById("problems");
+  if(!bad.length){prob.innerHTML='<div class="allok">✅ Tout est vert — rien à corriger.</div>';}
+  else{
+    // A reassuring banner when ONLY info is left: the list is not empty, but there is
+    // nothing to fix — without that word, a non-empty list reads as a problem.
+    prob.innerHTML = bad.some(it=>it.status!=="info") ? ""
+      : '<div class="allok">✅ Rien à corriger — seulement de l\'optionnel non branché.</div>';
+    for(const it of bad){
+    const row=document.createElement("div");row.className="row "+it.status;
+    row.title=`${it.label}\n${TIP[it.status]||""}`
+      +(it.detail?`\n\n${it.detail.replace(/\n→ /g,"\n→ ")}`:"")
+      +(it.remedy?`\n\nCorrectif proposé : ${it.remedy}`:"");
+    // The real thumbnails when we have one, the family emoji otherwise: a check with no
+    // hardware object nor app (the power supply, the network) has nothing better to show.
+    const vign=(it.icons&&it.icons.length)
+      ? it.icons.map(u=>`<img src="${u}" alt="" class="gic" loading="lazy">`).join("")
+      : iconFor(it.key);
+    row.innerHTML=`<div class="ic">${vign}</div>
+      <div class="lab"><div class="t">${it.label}</div>${it.detail?`<div class="d">${it.detail}</div>`:""}</div>
+      <div class="dot ${it.status}"></div>`;
+    if(it.remedy){const btn=document.createElement("button");btn.className="fix";btn.textContent=it.remedy;
+      btn.onclick=()=>fix(it.key,it.remedy,btn);
+      // Re-applies the waiting state on the freshly recreated button.
+      if(enCours.has(it.key)){btn.disabled=true;btn.textContent="⏳ "+enCours.get(it.key);}
+      row.appendChild(btn);}
+    if(it.key==="sys:iphonecharge"){const b=document.createElement("button");b.className="fix";
+      b.textContent="✓ Confirmer en charge";b.onclick=()=>manualSet("iphone_charge",true);row.appendChild(b);}
+    prob.appendChild(row);
+  }}
+  document.getElementById("oksum").textContent=good.length?`▸ ${good.length} checks OK (déplier)`:"";
+  const okc=document.getElementById("okchips");okc.innerHTML="";
+  for(const it of good){const c=document.createElement("span");c.className="chip";
+    c.innerHTML=`${iconFor(it.key)} ${it.label}`;
+    c.title=`${it.label}\n${TIP[it.status]||""}`+(it.detail?`\n\n${it.detail}`:"");
+    if(it.key==="sys:iphonecharge"){c.style.cursor="pointer";c.title="cliquer pour réinitialiser";
+      c.onclick=()=>manualSet("iphone_charge",false);}
+    okc.appendChild(c);}
+  document.getElementById("stamp").textContent="maj "+new Date().toLocaleTimeString();
+  window.scrollTo(0,y);
+}
+// The button puts itself into the waiting state. A fix is not instantaneous — opening
+// the set waits up to 45 s for Ableton's MIDI port to appear — and meanwhile the only
+// trace was a line in the log, which is not under one's eyes when one is looking at the
+// broken row. A button that does not react gets clicked again, and a fix restarted
+// twice is exactly what we do not want here.
+async function fix(key,label,btn){
+  logline(`→ ${label}…`);
+  toast("run","⏳ "+label+"…");
+  enCours.set(key,label);
+  if(btn){btn.disabled=true;btn.textContent="⏳ "+label;}
+  try{
+    const r=await(await fetch("/api/fix",{method:"POST",headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({key,dry:false})})).json();
+    const brut=(r.message||"").replace(/\n/g,"  |  ");
+    logline((r.ok?"✔ ":"✖ ")+brut);
+    // The report can run to ten lines; the banner keeps the NAME of the action, which
+    // is what one is looking to confirm, and points to the log for the detail.
+    toast(r.ok?"ok":"ko",(r.ok?"✔ ":"✖ ")+label+(brut?" — "+brut.slice(0,120):""));
+  }catch(e){
+    // Without this net, a request that fails left the button greyed out forever and
+    // said nothing: the failure looked like a wait that drags on.
+    logline("✖ "+label+" — "+e);
+    toast("ko","✖ "+label+" — "+e);
+  }finally{
+    // The rest is re-applied by the next refresh, from enCours.
+    enCours.delete(key);
+    if(btn){btn.disabled=false;btn.textContent=label;}
+  }
+  setTimeout(refresh,800);
+}
+// Tidying the windows away: the apps keep running, they just disappear from the screen.
+// WHICH ones get tidied is a CONFIG decision (`[windows.apps]` in rig.toml, where
+// Ableton is on "keep" because the set IS the stage screen) — not a checkbox that could
+// contradict the setting. To tidy everything, Ableton included: `readyset tidy --all`.
+async function tidy(){
+  logline(`🪟 rangement des fenêtres…`);
+  toast("run","⏳ Rangement des fenêtres…");
+  const r=await(await fetch("/api/windows",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({all:false,dry:false})})).json();
+  logline((r.ok?"✔ ":"✖ ")+(r.message||"").replace(/\n/g,"  |  "));
+  toast(r.ok?"ok":"ko",(r.ok?"✔ ":"✖ ")+"Rangement des fenêtres");
+}
+async function preflight(){
+  logline(`▶ préflight…`);
+  toast("run","⏳ Préflight — mise en place du rig…");
+  const r=await(await fetch("/api/preflight",{method:"POST",headers:{"Content-Type":"application/json"},
+    body:JSON.stringify({dry:false})})).json();
+  logline((r.message||"").replace(/\n/g,"  |  "));
+  setTimeout(refresh,1200);
+}
+// 1 s: the server serves an already-computed snapshot, the read costs nothing.
+refresh();setInterval(refresh,1000);
+// The soundcheck is polled continuously — even "verified", one has to see the moment a
+// wake of the Mac resets it to zero server-side (see midimon.sleep_stamp).
+scPoll();setInterval(scPoll,700);
+</script></body></html>

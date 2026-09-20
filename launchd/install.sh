@@ -1,6 +1,6 @@
 #!/bin/bash
 # Install the login agents:
-#   com.readyset.dashboard — auto-starts `rig serve` (dashboard on :8765)
+#   com.readyset.dashboard — auto-starts `readyset serve` (dashboard on :8765)
 #   com.readyset.menubar   — 🎹 menu-bar icon that opens the dashboard
 # Both are relaunched by launchd if they die.
 #   ./launchd/install.sh          # build menubar + install/start both
@@ -23,10 +23,10 @@ fi
 mkdir -p "$REPO/logs"
 # The menu-bar app is a native binary — build it (output in the repo), then DEPLOY it to the
 # standard apps folder so it lives like any installed app; the LaunchAgent points to /Applications.
-bash "$REPO/menubar/build.sh"
+bash "$REPO/readyset/surfaces/menubar/build.sh"
 APP_DEST="/Applications/RigMenuBar.app"
 rm -rf "$APP_DEST"
-cp -R "$REPO/menubar/RigMenuBar.app" "$APP_DEST"
+cp -R "$REPO/readyset/surfaces/menubar/RigMenuBar.app" "$APP_DEST"
 echo "✔ RigMenuBar.app déployé dans /Applications"
 
 for L in "${LABELS[@]}"; do
@@ -40,4 +40,4 @@ echo "  • dashboard → http://127.0.0.1:8765 (relancé au login)"
 echo "  • 🎹 icône barre de menus → clic = ouvre le dashboard"
 echo "  logs: $REPO/logs/{dashboard,menubar}.log"
 echo "  note: RigMenuBar.app est ad-hoc signé (pas notarisé). Sur CE Mac = OK ;"
-echo "        copié ailleurs → clic-droit ▸ Ouvrir (voir menubar/build.sh)."
+echo "        copié ailleurs → clic-droit ▸ Ouvrir (voir readyset/surfaces/menubar/build.sh)."
